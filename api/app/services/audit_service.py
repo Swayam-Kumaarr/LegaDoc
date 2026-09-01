@@ -8,7 +8,8 @@ Every state-changing action writes an append-only AuditLog row with:
 This creates an internal tamper-evident hash chain independent of Hyperledger Fabric.
 
 To prevent write races across API handlers and Celery workers, appending uses
-SELECT ... FOR UPDATE on the latest row to serialize concurrent writes.
+PostgreSQL transaction-level advisory locks (SELECT pg_advisory_xact_lock(...))
+to strictly serialize concurrent writers across all threads and worker processes.
 """
 
 import hashlib
@@ -17,9 +18,13 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Union
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import AuditLog
+
+# Global lock ID for audit log sequencing (ASCII for 'LEGA' = 1279610689)
+AUDIT_LOCK_ID = 1279610689
 
 
 def compute_row_hash(
@@ -65,18 +70,23 @@ def append_audit_log(
     """
     Appends a new audit log entry with atomic hash chaining.
     Takes a SQLAlchemy Session directly so both FastAPI handlers and Celery workers can call it.
+    
+    Uses pg_advisory_xact_lock to strictly serialize concurrent appends across
+    any number of API threads and Celery worker processes.
     """
-    now = datetime.now(timezone.utc)
+    # 1. Acquire transaction-level advisory lock (released automatically on commit/rollback)
+    db.execute(text(f"SELECT pg_advisory_xact_lock({AUDIT_LOCK_ID})"))
 
-    # Serialize concurrent appends using FOR UPDATE on the latest row in audit_log
+    # 2. Query the latest row
     latest = (
         db.query(AuditLog)
         .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
-        .with_for_update()
         .first()
     )
 
     prev_hash = latest.row_hash if latest else None
+    now = datetime.now(timezone.utc)
+    
     row_hash = compute_row_hash(
         prev_hash=prev_hash,
         actor_user_id=actor_user_id,
