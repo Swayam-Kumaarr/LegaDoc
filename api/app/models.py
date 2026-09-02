@@ -82,6 +82,21 @@ class Document(Base):
     status = Column(String, nullable=False, default="processing")  # processing | ready | needs_review
     chain_status = Column(String, nullable=False, default="pending")  # pending | confirmed | failed
     uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    original_filename = Column(String, nullable=True)  # Original upload filename for display
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class DocumentExtraction(Base):
+    """Stores OCR-extracted text for a specific document version.
+    Created by the upload pipeline (empty); filled by the OCR Worker.
+    Read by the AI Parser Worker for sensitivity tagging.
+    Never stores redacted text — only the raw extraction."""
+    __tablename__ = "document_extractions"
+    id = uuid_pk()
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False)
+    version = Column(Integer, nullable=False)
+    raw_text = Column(Text, nullable=True)  # Filled by OCR Worker
+    extraction_status = Column(String, nullable=False, default="pending")  # pending | completed | failed
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

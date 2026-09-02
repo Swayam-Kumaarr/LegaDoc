@@ -15,7 +15,16 @@ class DocumentUploadResponse(BaseModel):
     version: int
     status: str
     chain_status: str
+    doc_hash: Optional[str] = None
+    original_filename: Optional[str] = None
     created_at: datetime
+
+
+class DocumentListResponse(BaseModel):
+    items: List["DocumentVersionResponse"]
+    total: int
+    page: int = 1
+    per_page: int = 20
 
 
 class DocumentSensitivityTagResponse(BaseModel):
@@ -40,6 +49,8 @@ class DocumentView(BaseModel):
     status: str  # processing | ready | needs_review
     chain_status: str  # pending | confirmed | failed
     uploaded_by: UUID
+    original_filename: Optional[str] = None
+    download_url: Optional[str] = None
     created_at: datetime
     text: Optional[str] = None  # Role-filtered redacted text
     tags: Optional[List[DocumentSensitivityTagResponse]] = None  # Only visible to authorized roles
@@ -56,6 +67,7 @@ class DocumentVersionResponse(BaseModel):
     status: str
     chain_status: str
     doc_hash: Optional[str] = None
+    original_filename: Optional[str] = None
     created_at: datetime
 
     class Config:

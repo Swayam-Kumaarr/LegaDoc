@@ -129,7 +129,9 @@ def verify_audit_chain(db: Session, case_id: Optional[UUID] = None) -> dict:
     if not rows:
         return {"valid": True, "total_rows": 0, "first_break_at": None}
 
-    expected_prev = None
+    # If verifying a scoped subset (e.g. by case_id), initialize to the first row's
+    # recorded prev_hash rather than assuming genesis (None).
+    expected_prev = rows[0].prev_hash if case_id else None
     for row in rows:
         # Check prev_hash linkage
         if row.prev_hash != expected_prev:

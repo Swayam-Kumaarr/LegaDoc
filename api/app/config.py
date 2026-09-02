@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     OBJECT_STORAGE_SECRET_KEY: str = "minioadmin"
     OBJECT_STORAGE_BUCKET: str = "legadoc-documents"
 
+    # Upload & Ingestion Controls
+    MAX_UPLOAD_SIZE_MB: int = 50
+    UPLOAD_ALLOWED_ROLES: str = "io,sho,duty_officer,authority_staff,admin"
+
     # Queue
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/1"

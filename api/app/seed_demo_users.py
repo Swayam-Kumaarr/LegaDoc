@@ -100,6 +100,10 @@ def seed_all():
             db.commit()
             db.refresh(user)
             print(f"Created User: {user.name} | Role: {user.role} | Email: {user.email}")
+        else:
+            user.hashed_password = get_password_hash(DEFAULT_PASSWORD)
+            db.commit()
+            print(f"Reset Password for: {user.name} | Role: {user.role} | Email: {user.email}")
         created_users[udata["role"]] = user
 
     print("\n--- Seeding Showcase Case ---")

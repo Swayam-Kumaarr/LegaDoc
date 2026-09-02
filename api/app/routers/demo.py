@@ -410,6 +410,48 @@ Loading session...
                 </div>
             </div>
 
+            <!-- Phase 2: Document Upload & Pipeline Tester -->
+            <div class="card" style="margin-top: 1.5rem;">
+                <div class="card-title">
+                    <span>📤 Phase 2 — Document Upload & Chain Poll</span>
+                    <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: normal;">Max 50MB &bull; MIME Magic-Sniffed</span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.3rem;">CASE ID (Default: FIR-2026-DEL-0042)</label>
+                        <input id="docCaseId" type="text" value="41403d8b-54fc-417d-9268-147af0d71577" style="width: 100%; background: #060911; border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.6rem; color: var(--text-main); font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">
+                    </div>
+                    <div>
+                        <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.3rem;">DOCUMENT TYPE</label>
+                        <select id="docTypeSelect" style="width: 100%; background: #060911; border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.6rem; color: var(--text-main); font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">
+                            <option value="FIR_Report">FIR_Report (Text/PDF)</option>
+                            <option value="Medical_Legal_Certificate">Medical_Legal_Certificate (Tier 1)</option>
+                            <option value="Witness_Statement">Witness_Statement (Tier 1)</option>
+                            <option value="CCTV_Footage">CCTV_Footage (Binary Evidence)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem;">
+                    <input id="docFileInput" type="file" style="font-size: 0.75rem; color: var(--text-muted); flex: 1;">
+                    <button class="btn-test" style="background: var(--accent-green);" onclick="uploadDemoDocument()">Upload Document</button>
+                    <button class="btn-test" style="background: #374151;" onclick="createSampleAndUpload()">Upload Test PDF</button>
+                </div>
+
+                <div id="uploadResultBanner" style="display: none; padding: 0.75rem; border-radius: 8px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: 'JetBrains Mono', monospace;">
+                        <span>Uploaded Doc ID: <strong id="lastDocId" style="color: #60a5fa;">-</strong></span>
+                        <span id="lastChainStatus" class="status-badge status-401">PENDING</span>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.6rem;">
+                        <button class="btn-test" style="font-size: 0.7rem; padding: 0.25rem 0.6rem;" onclick="pollLastDocChain()">Poll Chain Status</button>
+                        <button class="btn-test" style="font-size: 0.7rem; padding: 0.25rem 0.6rem; background: #4b5563;" onclick="viewLastDoc()">View Document</button>
+                        <button class="btn-test" style="font-size: 0.7rem; padding: 0.25rem 0.6rem; background: #b45309;" onclick="retryLastDocChain()">Retry Chain Write (Admin)</button>
+                    </div>
+                </div>
+            </div>
+
             <div style="margin-top: 1.5rem;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
                     <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">LIVE SERVER RESPONSE</span>
@@ -458,9 +500,123 @@ Loading session...
                 document.getElementById('sessionStatus').textContent = 'ROLE: ' + data.role.toUpperCase();
                 document.getElementById('responseOutput').textContent = '✅ Switched to ' + data.name + ' (' + data.role + '). Ready to test routes.';
                 document.getElementById('responseStatus').style.display = 'none';
+
+                // Pre-populate showcase case ID if empty
+                if (!document.getElementById('docCaseId').value) {
+                    loadDefaultCase();
+                }
             } catch (err) {
                 document.getElementById('claimsDisplay').textContent = 'Error: ' + err.message;
             }
+        }
+
+        async function loadDefaultCase() {
+            try {
+                const res = await fetch('/cases', {
+                    headers: { 'Authorization': 'Bearer ' + currentToken }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.items && data.items.length > 0) {
+                        document.getElementById('docCaseId').value = data.items[0].id;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        let lastUploadedDocId = "";
+
+        async function uploadDemoDocument() {
+            const caseId = document.getElementById('docCaseId').value;
+            const docType = document.getElementById('docTypeSelect').value;
+            const fileInput = document.getElementById('docFileInput');
+
+            if (!caseId) {
+                alert('Please enter a valid Case ID');
+                return;
+            }
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert('Please select a file or click "Upload Test PDF"');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('case_id', caseId);
+            formData.append('doc_type', docType);
+            formData.append('file', fileInput.files[0]);
+
+            executeUpload(formData);
+        }
+
+        async function createSampleAndUpload() {
+            const caseId = document.getElementById('docCaseId').value;
+            const docType = document.getElementById('docTypeSelect').value;
+            if (!caseId) {
+                alert('Please enter a valid Case ID');
+                return;
+            }
+
+            // Minimal valid PDF binary
+            const samplePdf = "%PDF-1.4\\n1 0 obj\\n<< /Type /Catalog /Pages 2 0 R >>\\nendobj\\n2 0 obj\\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\\nendobj\\n3 0 obj\\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\\nendobj\\n4 0 obj\\n<< /Length 44 >>\\nstream\\nBT /F1 12 Tf 72 712 Td (LegaDoc Test FIR) Tj ET\\nendstream\\nendobj\\nxref\\n0 5\\n0000000000 65535 f\\n0000000009 00000 n\\n0000000058 00000 n\\n0000000115 00000 n\\n0000000214 00000 n\\ntrailer\\n<< /Size 5 /Root 1 0 R >>\\nstartxref\\n307\\n%%EOF";
+            const blob = new Blob([samplePdf], { type: 'application/pdf' });
+            const testFile = new File([blob], 'demo_fir_' + Date.now() + '.pdf', { type: 'application/pdf' });
+
+            const formData = new FormData();
+            formData.append('case_id', caseId);
+            formData.append('doc_type', docType);
+            formData.append('file', testFile);
+
+            executeUpload(formData);
+        }
+
+        async function executeUpload(formData) {
+            const out = document.getElementById('responseOutput');
+            const statusBadge = document.getElementById('responseStatus');
+            out.textContent = 'Uploading document via POST /documents...';
+            statusBadge.style.display = 'inline-block';
+
+            try {
+                const res = await fetch('/documents', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + currentToken },
+                    body: formData
+                });
+
+                statusBadge.textContent = 'HTTP ' + res.status + ' ' + res.statusText;
+                statusBadge.className = 'status-badge ' + (res.status < 300 ? 'status-200' : (res.status === 403 ? 'status-403' : 'status-401'));
+
+                const json = await res.json();
+                out.textContent = 'Request: POST /documents\\n' +
+                                  'Status:  ' + res.status + ' ' + res.statusText + '\\n' +
+                                  'Auth:    Bearer (' + currentClaims.role + ' / ' + currentClaims.sub + ')\\n\\n' +
+                                  JSON.stringify(json, null, 2);
+
+                if (res.ok && json.document_id) {
+                    lastUploadedDocId = json.document_id;
+                    document.getElementById('lastDocId').textContent = json.document_id.slice(0, 18) + '...';
+                    document.getElementById('lastChainStatus').textContent = (json.chain_status || 'PENDING').toUpperCase();
+                    document.getElementById('uploadResultBanner').style.display = 'block';
+                }
+            } catch (err) {
+                statusBadge.textContent = 'ERROR';
+                statusBadge.className = 'status-badge status-403';
+                out.textContent = 'Upload Error: ' + err.message;
+            }
+        }
+
+        async function pollLastDocChain() {
+            if (!lastUploadedDocId) return;
+            testEndpoint('/documents/' + lastUploadedDocId + '/chain-status', 'GET');
+        }
+
+        async function viewLastDoc() {
+            if (!lastUploadedDocId) return;
+            testEndpoint('/documents/' + lastUploadedDocId, 'GET');
+        }
+
+        async function retryLastDocChain() {
+            if (!lastUploadedDocId) return;
+            testEndpoint('/documents/' + lastUploadedDocId + '/retry-chain-write', 'POST');
         }
 
         async function testEndpoint(path, method) {
@@ -485,6 +641,9 @@ Loading session...
                 try {
                     const json = await res.json();
                     bodyText = JSON.stringify(json, null, 2);
+                    if (json.chain_status) {
+                        document.getElementById('lastChainStatus').textContent = json.chain_status.toUpperCase();
+                    }
                 } catch {
                     bodyText = await res.text();
                 }
