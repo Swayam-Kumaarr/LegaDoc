@@ -157,13 +157,31 @@ async def upload_document(
 def list_documents_needing_review(
     status_filter: Optional[str] = Query(default=None, alias="status"),
     claims: dict = Depends(require_role("config_admin", "io")),
+    db: Session = Depends(get_db),
 ):
     """GET /documents?status=needs_review — Config Admin / Investigating
-    Officer. Not implemented in this pass — deferred alongside the AI
-    Parser worker itself, since a document can only reach needs_review
-    through a pipeline stage (real Presidio/spaCy tagging) that isn't wired
-    up in this environment."""
-    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Not implemented yet")
+    Officer. Lists documents flagged for manual review after the AI Parser
+    fell back to fully-redacted after repeated failure, or whose confidence
+    fell below the threshold (default 70/100)."""
+    query = db.query(models.Document)
+
+    if status_filter:
+        query = query.filter(models.Document.status == status_filter)
+
+    docs = query.order_by(models.Document.created_at.desc()).all()
+
+    return [
+        {
+            "id": str(d.id),
+            "case_id": str(d.case_id),
+            "doc_type": d.doc_type,
+            "version": d.version,
+            "status": d.status,
+            "chain_status": d.chain_status,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+        }
+        for d in docs
+    ]
 
 
 @router.get("/{document_id}", response_model=schemas.DocumentView)
@@ -178,7 +196,7 @@ def get_document(
     bespoke redacted-vs-full branch written ad hoc in this handler."""
     document = db.get(models.Document, UUID(document_id))
     if document is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     assert_case_access(document.case_id, claims, db)
 
@@ -205,7 +223,7 @@ def get_document_versions(document_id: str, claims: dict = Depends(get_current_c
     Append-only — originals never overwritten."""
     document = db.get(models.Document, UUID(document_id))
     if document is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     assert_case_access(document.case_id, claims, db)
 
@@ -223,7 +241,7 @@ def get_chain_status(document_id: str, claims: dict = Depends(get_current_claims
     confirmation. Short-poll target for Flow 2."""
     document = db.get(models.Document, UUID(document_id))
     if document is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     assert_case_access(document.case_id, claims, db)
 
@@ -247,7 +265,7 @@ def retry_chain_write(
     """
     document = db.get(models.Document, UUID(document_id))
     if document is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     if document.chain_status == "confirmed":
         return {"chain_status": "confirmed", "retry_enqueued": False, "note": "already confirmed, nothing to retry"}
@@ -283,7 +301,7 @@ def correct_redaction_tag(
     """
     document = db.get(models.Document, UUID(document_id))
     if document is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     assert_case_access(document.case_id, claims, db)
 

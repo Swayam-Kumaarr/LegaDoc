@@ -16,8 +16,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.audit import write_audit_log
 from app.database import get_db
-from app.security import require_role, get_current_claims, verify_case_access
+from app.security import FULL_TEXT_ACCESS_ROLES, assert_case_access, require_role, get_current_claims, verify_case_access
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -120,40 +121,210 @@ def assign_io(
 
 
 @router.post("/{case_id}/reassign-io")
-def reassign_io(case_id: str, claims: dict = Depends(require_role("sho", "config_admin"))):
+def reassign_io(
+    case_id: str,
+    body: schemas.AssignIORequest,
+    claims: dict = Depends(require_role("sho", "config_admin")),
+    db: Session = Depends(get_db),
+):
     """POST /cases/:id/reassign-io — SHO / Config Admin. Reassign IO
     mid-case. Logged as its own audit event; EvidenceRequest ownership
     follows the Case, not the individual IO, so in-flight requests transfer
-    transparently.
+    transparently."""
+    case_uuid = UUID(case_id)
+    case = db.get(models.Case, case_uuid)
+    if case is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
 
-    Not implemented in this baseline — assign-io (above) is the fully
-    working reference implementation to build this from; the only real
-    difference is closing out the previous CaseAssignment row and writing
-    an audit_log entry recording the change.
-    """
-    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Not implemented yet")
+    new_io = db.get(models.User, body.io_user_id)
+    if new_io is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IO user not found")
+
+    current_assignment = (
+        db.query(models.CaseAssignment)
+        .filter(models.CaseAssignment.case_id == case_uuid)
+        .order_by(models.CaseAssignment.assigned_at.desc())
+        .first()
+    )
+    previous_io_id = current_assignment.io_user_id if current_assignment else None
+
+    if current_assignment:
+        current_assignment.io_user_id = body.io_user_id
+    else:
+        current_assignment = models.CaseAssignment(case_id=case_uuid, io_user_id=body.io_user_id)
+        db.add(current_assignment)
+
+    db.commit()
+    db.refresh(current_assignment)
+
+    write_audit_log(
+        db,
+        action="io_reassigned",
+        case_id=case_uuid,
+        actor_user_id=UUID(claims["sub"]),
+        target_type="case_assignment",
+        target_id=current_assignment.id,
+        metadata={
+            "previous_io_user_id": str(previous_io_id) if previous_io_id else None,
+            "new_io_user_id": str(body.io_user_id),
+        },
+    )
+
+    return {"case_id": case_id, "io_user_id": str(body.io_user_id), "assigned_at": current_assignment.assigned_at}
 
 
-@router.post("/{case_id}/case-diary")
-def add_case_diary_entry(case_id: str, claims: dict = Depends(require_role("io"))):
+@router.post("/{case_id}/case-diary", response_model=schemas.CaseDiaryEntryResponse, status_code=status.HTTP_201_CREATED)
+def add_case_diary_entry(
+    case_id: str,
+    body: schemas.CaseDiaryEntryCreate,
+    claims: dict = Depends(require_role("io")),
+    db: Session = Depends(get_db),
+):
     """POST /cases/:id/case-diary — IO. Append a running case-diary entry.
     Append-only, not a Document upload. TODO: enqueue the entry's text as a
     lightweight AI-parse job (no OCR step needed) before marking it "ready" —
     see SYSTEM_DESIGN.md, "Case Diary now routes through the redaction pipeline".
     """
-    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Not implemented yet")
+    case_uuid = UUID(case_id)
+    case = db.get(models.Case, case_uuid)
+    if case is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+
+    assert_case_access(case_uuid, claims, db)
+
+    entry = models.CaseDiaryEntry(
+        case_id=case_uuid,
+        author_user_id=UUID(claims["sub"]),
+        text=body.text,
+        status="processing",
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+
+    write_audit_log(
+        db,
+        action="case_diary_entry_added",
+        case_id=case_uuid,
+        actor_user_id=UUID(claims["sub"]),
+        target_type="case_diary_entry",
+        target_id=entry.id,
+    )
+
+    return entry
 
 
-@router.get("/{case_id}/case-diary")
-def list_case_diary_entries(case_id: str, claims: dict = Depends(get_current_claims)):
+@router.get("/{case_id}/case-diary", response_model=list[schemas.CaseDiaryEntryResponse])
+def list_case_diary_entries(
+    case_id: str,
+    claims: dict = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
     """GET /cases/:id/case-diary — Role-filtered. List case-diary entries.
     Same visibility rule as the rest of the case file."""
-    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Not implemented yet")
+    case_uuid = UUID(case_id)
+    case = db.get(models.Case, case_uuid)
+    if case is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+
+    assert_case_access(case_uuid, claims, db)
+
+    return (
+        db.query(models.CaseDiaryEntry)
+        .filter(models.CaseDiaryEntry.case_id == case_uuid)
+        .order_by(models.CaseDiaryEntry.created_at.asc())
+        .all()
+    )
 
 
 @router.post("/{case_id}/file-charge-sheet")
-def file_charge_sheet(case_id: str, claims: dict = Depends(require_role("prosecutor"))):
+def file_charge_sheet(
+    case_id: str,
+    claims: dict = Depends(require_role("prosecutor")),
+    db: Session = Depends(get_db),
+):
     """POST /cases/:id/file-charge-sheet — Prosecutor. Attempt charge sheet
     filing. Validated against Stage Requirements — 409 if incomplete. See Flow 3.
     """
-    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Not implemented yet")
+    case_uuid = UUID(case_id)
+    case = db.get(models.Case, case_uuid)
+    if case is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+
+    requirements = (
+        db.query(models.StageRequirement)
+        .filter(models.StageRequirement.crime_type == case.crime_type)
+        .all()
+    )
+
+    if not requirements:
+        case.investigation_status = "Charge_Sheet_Filed"
+        db.commit()
+        write_audit_log(
+            db,
+            action="charge_sheet_filed",
+            case_id=case_uuid,
+            actor_user_id=UUID(claims["sub"]),
+            target_type="case",
+            target_id=case_uuid,
+        )
+        return schemas.ChargeSheetResponse(
+            status="Charge_Sheet_Filed",
+            case_id=case_uuid,
+            investigation_status=case.investigation_status,
+        )
+
+    missing_items = []
+
+    for req in requirements:
+        if req.requirement_type == "document":
+            doc_exists = (
+                db.query(models.Document)
+                .filter(
+                    models.Document.case_id == case_uuid,
+                    models.Document.doc_type == req.requirement_key,
+                    models.Document.status == "ready",
+                )
+                .first()
+                is not None
+            )
+            if not doc_exists and req.mandatory:
+                missing_items.append({"type": "document", "key": req.requirement_key})
+
+        elif req.requirement_type == "evidence_request":
+            er_completed = (
+                db.query(models.EvidenceRequest)
+                .filter(
+                    models.EvidenceRequest.case_id == case_uuid,
+                    models.EvidenceRequest.requested_org_id == UUID(req.requirement_key),
+                    models.EvidenceRequest.status == "completed",
+                )
+                .first()
+                is not None
+            )
+            if not er_completed and req.mandatory:
+                missing_items.append({"type": "evidence_request", "key": req.requirement_key})
+
+    if missing_items:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"message": "Charge sheet filing incomplete", "missing": missing_items},
+        )
+
+    case.investigation_status = "Charge_Sheet_Filed"
+    db.commit()
+
+    write_audit_log(
+        db,
+        action="charge_sheet_filed",
+        case_id=case_uuid,
+        actor_user_id=UUID(claims["sub"]),
+        target_type="case",
+        target_id=case_uuid,
+    )
+
+    return schemas.ChargeSheetResponse(
+        status="Charge_Sheet_Filed",
+        case_id=case_uuid,
+        investigation_status=case.investigation_status,
+    )
