@@ -706,9 +706,12 @@ flowchart TD
 | GET | /admin/document-schemas | Config Admin | Manage field-sensitivity schema registry | Tiered: full field definitions for the ~13 Tier 1+2 types (FIR, MLC, Witness Statement + Domestic Violence showcase set), one generic default profile inherited by the remaining ~40+ of the 57 canonical types |
 | POST | /admin/document-schemas/:type/recognizers | Config Admin | Map entity types (name, phone, medical condition, ID number, ...) to a DocumentSchema's sensitivity fields | One-time-per-type config step that drives the AI Parser; every change writes an old-vs-new diff to the audit log |
 | GET | /admin/stage-requirements | Config Admin | Manage mandatory-document/evidence config per crime type | Drives Flow 3's validation check |
+| POST | /admin/api-keys | Config Admin | Create a user-bound API key for programmatic access | Raw key returned exactly once; only its SHA-256 hash is ever stored; the key acts as its owning user (its org_id + role), so existing RBAC and case-scoping apply unchanged |
+| GET | /admin/api-keys | Config Admin | List API keys with prefix + status | Raw keys are never stored, so nothing here can leak them |
+| POST | /admin/api-keys/:id/revoke | Config Admin | Revoke an API key immediately | Soft delete — the row stays for the audit trail, revoked_at stops it being accepted |
 | GET | /reports/case-metadata | Records / NCRB Analyst | De-identified case metadata only | Backed by a dedicated Postgres view (e.g. `case_metadata_deidentified`) exposing only non-sensitive columns — no separate redaction logic to build or keep in sync |
 
-*(36 endpoints — every route maps to a resource + verb derived mechanically from the case/document/evidence/bail resource model, not invented ad hoc. `/auth/refresh` and `/auth/logout` are the two additions from this pass — required once the access-token TTL was tightened to 15 minutes.)*
+*(39 endpoints — every route maps to a resource + verb derived mechanically from the case/document/evidence/bail resource model, not invented ad hoc. `/auth/refresh` and `/auth/logout` are the two additions from this pass — required once the access-token TTL was tightened to 15 minutes. `/admin/api-keys*` (×3) added with the API-key slice.)*
 
 ### Arrow Specifications (every connection in the container diagram)
 
@@ -772,6 +775,7 @@ short-polling a status endpoint is the simplest thing that works.
 | Audit log (incl. AI Parser decisions + corrections) | API, append-only write on every state-changing action, including AI Parser auto-tags, human corrections, and recognizer-mapping config changes | Role-filtered readers (aggregate view); full AI-parser entity-level detail is Security Auditor only | None — blockchain holds only the *hash* of each entry, not a full copy | Immutable by design; audit entries never store the redacted content itself, only metadata about the tagging decision. Each row also stores `row_hash = hash(prev_row_hash + content)`, an internal chain independent of Fabric that makes deleting or reordering a row detectable — **every append must hold `pg_advisory_xact_lock` for its duration, or concurrent writers can fork the chain silently** |
 | Document retention state (`retention_legal_hold`) | Config Admin (sets/clears a legal hold) | API (blocks any future archival/deletion action while set) | None | LATER: full hot/warm/cold retention tiers and a secure-deletion policy are out of MVP scope by conscious decision (see Open Questions) — this one column exists now so a hold can be recorded even before that policy is built |
 | Meta-audit (who read the AI-parser audit trail) | API, append-only write triggered on every `GET /cases/:id/audit-log/ai-parser` | Security Auditor only | None | Same immutability rule as the audit log itself |
+| API keys (user-bound programmatic credentials) | Config Admin, via `/admin/api-keys` | The owning user's org_id + role flow into the JWT claims dict, so every existing org/case-scoping check applies to API-key auth unchanged | None — raw key shown once at creation, only its SHA-256 hash is persisted | Revocation is a soft delete (`revoked_at`); creation/use/revocation all land in the audit log |
 
 **Rule enforced here**: the blockchain is never treated as a second full copy of anything — it holds
 hashes only. Postgres is the single owner of all actual content; Fabric is the tamper-evidence layer

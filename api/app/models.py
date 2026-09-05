@@ -82,6 +82,26 @@ class User(Base):
     role_rel = relationship("Role", back_populates="users")
 
 
+class ApiKey(Base):
+    """A user-bound bearer token for programmatic access (machine-to-machine
+    or headless clients acting on a user's behalf). The raw key is shown to
+    the creator exactly once; only its SHA-256 hash is ever stored, so a
+    leaked database dump doesn't expose usable keys. Revocation is a soft
+    delete — revoking sets revoked_at so the key stops working while its
+    creation/use remains visible in the audit trail."""
+    __tablename__ = "api_keys"
+    id = uuid_pk()
+    user_id = Column(GUID(), ForeignKey("users.id"), nullable=False)  # the user the key acts as
+    name = Column(String, nullable=False)  # human label, e.g. "CCTNS integration"
+    key_hash = Column(String, unique=True, nullable=False)  # sha256 of the raw key — never the raw key
+    key_prefix = Column(String, nullable=False)  # short display prefix (e.g. "legadoc_a1b2c3"), never enough to reconstruct the key
+    created_by_user_id = Column(GUID(), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # null = never
+    revoked_at = Column(DateTime(timezone=True), nullable=True)  # null = active
+
+
 class Case(Base):
     __tablename__ = "cases"
     id = uuid_pk()
