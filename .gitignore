@@ -45,3 +45,9 @@ Thumbs.db
 # Generated PDFs & local docs
 *.pdf
 
+# Windows installer executable — not part of the repo
+python-3.11.9-amd64.exe
+
+# npm cache directory
+.npm-cache/
+
