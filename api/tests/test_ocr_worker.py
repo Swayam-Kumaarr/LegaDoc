@@ -346,3 +346,74 @@ def test_ocr_pipeline_with_multilingual_haryana_fir(client, db_session, make_org
     assert "AADHAAR" in entity_types
 
     assert verify_chain_intact(db_session) is True
+
+
+def test_devanagari_numeral_normalization():
+    """Verifies that Devanagari numerals (०-९) normalize accurately to ASCII digits."""
+    raw_hindi_number = "०१४२/२०२४"
+    norm = layout_mod.normalize_devanagari_digits(raw_hindi_number)
+    assert norm == "0142/2024"
+
+    hindi_date = "१५/०८/२०२४"
+    assert layout_mod.normalize_devanagari_digits(hindi_date) == "15/08/2024"
+
+
+def test_cross_lingual_devanagari_priority_nms():
+    """Verifies that authentic Devanagari detections suppress overlapping Latin ASCII ghost boxes
+    emitted by single-script English CTC decoders.
+    """
+    # Simulate an English CTC hallucination ('T1T 2llldl' at conf 0.89) overlapping authentic Hindi ('थाना कोतवाली' at conf 0.82)
+    boxes = [
+        {
+            "box": [100, 50, 300, 80],
+            "text": "T1T 2llldl",
+            "confidence": 0.89,
+            "lang": "en",
+        },
+        {
+            "box": [100, 50, 295, 80],
+            "text": "थाना कोतवाली",
+            "confidence": 0.82,
+            "lang": "hi",
+        },
+    ]
+
+    deduped = layout_mod.deduplicate_boxes_nms(boxes, iou_thresh=0.35)
+    assert len(deduped) == 1
+    assert deduped[0]["text"] == "थाना कोतवाली"
+
+
+def test_pure_hindi_fir_extraction_up_police():
+    """Accurately extracts canonical FIR fields from a pure Hindi Uttar Pradesh Police FIR
+    using Devanagari script and Devanagari numerals.
+    """
+    up_fir_boxes = [
+        {"box": [50, 20, 200, 40], "text": "उत्तर प्रदेश पुलिस", "confidence": 0.95},
+        {"box": [50, 50, 250, 70], "text": "जनपद: वाराणसी", "confidence": 0.94},
+        {"box": [300, 50, 500, 70], "text": "थाना: सिगरा", "confidence": 0.94},
+        {"box": [550, 50, 700, 70], "text": "वर्ष: २०२४", "confidence": 0.95},
+        {"box": [50, 80, 350, 100], "text": "मु.अ.सं.: ०१४२/२०२४", "confidence": 0.96},
+        {"box": [400, 80, 650, 100], "text": "दिनांक: १५/०८/२०२४ समय: १४:३० बजे", "confidence": 0.94},
+        {"box": [50, 110, 450, 130], "text": "धाराएं: ३७९, ४११ भा.दं.सं.", "confidence": 0.95},
+        {"box": [50, 140, 500, 160], "text": "वादी का नाम: सुरेश कुमार पुत्र श्री राम मनोहर", "confidence": 0.93},
+        {"box": [50, 170, 450, 190], "text": "निवासी: संकट मोचन, वाराणसी", "confidence": 0.92},
+        {"box": [50, 200, 500, 220], "text": "घटना स्थल: लंका चौराहा के पास, वाराणसी", "confidence": 0.93},
+        {"box": [50, 230, 600, 250], "text": "घटना का विवरण: वादी का मोबाइल फोन अज्ञात चोर द्वारा चोरी कर लिया गया", "confidence": 0.92},
+    ]
+
+    res = layout_mod.process_ocr_boxes_to_layout(up_fir_boxes)
+    assert res["template"] == "UP Police FIR"
+    fields = res["fields"]
+
+    assert fields["fir_number"] == "0142/2024"
+    assert "वाराणसी" in fields["district"]
+    assert "सिगरा" in fields["police_station"]
+    assert fields["year"] == "2024"
+    assert fields["registration_date"] == "15/08/2024"
+    assert "14:30" in fields["registration_time"]
+    assert any("379" in s for s in fields["ipc_sections"])
+    assert "सुरेश कुमार" in fields["complainant"]
+    assert "संकट मोचन" in fields["address"]
+    assert "लंका चौराहा" in fields["place_of_occurrence"]
+    assert "मोबाइल फोन" in fields["incident_description"]
+
