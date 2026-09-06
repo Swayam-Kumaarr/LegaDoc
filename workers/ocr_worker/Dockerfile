@@ -7,7 +7,7 @@ WORKDIR /worker
 COPY workers/ocr_worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY workers/ocr_worker/worker.py .
+COPY workers/ocr_worker/worker.py workers/ocr_worker/layout_reconstruction.py ./
 
 # Reuses api/app's models/database/audit/storage/config directly instead of
 # duplicating them — same reasoning as chain_worker's Dockerfile. Lands at
