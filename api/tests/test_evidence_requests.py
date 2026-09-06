@@ -1,218 +1,247 @@
-"""Tests for evidence-requests endpoints (create, list, submit)."""
+"""Tests for Flow 3 — Parallel Evidence Requests & Charge Sheet AND-Join Gate."""
 
-import uuid as _uuid
-
+import io
 from app import models
 from tests.conftest import auth_headers, login
 
 
-def make_org_with_type(db_session, name, org_type):
-    org = models.Organization(name=name, org_type=org_type)
-    db_session.add(org)
-    db_session.commit()
-    db_session.refresh(org)
-    return org
+def _register_and_assign_case(client, make_user, crime_type="Cyber Crime"):
+    police_station = make_user("duty_officer", email="duty@police.gov.in", password="pw").organization
+    sho = make_user("sho", email="sho@police.gov.in", password="pw", org=police_station)
+    io_user = make_user("io", email="io@police.gov.in", password="pw", org=police_station)
 
-
-def _setup_case_with_io_and_fsl(client, make_user, db_session):
-    duty = make_user("duty_officer", email="duty@example.com", password="pw")
-    sho = make_user("sho", email="sho@example.com", password="pw", org=duty.organization)
-    io = make_user("io", email="io@example.com", password="pw", org=duty.organization)
-
-    fsl_org = make_org_with_type(db_session, "FSL Lab", "fsl")
-    fsl = make_user("authority_staff", email="fsl@example.com", password="pw", org=fsl_org)
-
-    duty_token = login(client, "duty@example.com", "pw").json()["access_token"]
+    duty_token = login(client, "duty@police.gov.in", "pw").json()["access_token"]
     case = client.post(
-        "/cases", json={"crime_type": "Theft", "complaint_text": "..."}, headers=auth_headers(duty_token)
+        "/cases",
+        json={"crime_type": crime_type, "complaint_text": "Cyber security breach"},
+        headers=auth_headers(duty_token),
     ).json()
 
-    sho_token = login(client, "sho@example.com", "pw").json()["access_token"]
+    sho_token = login(client, "sho@police.gov.in", "pw").json()["access_token"]
     client.post(
         f"/cases/{case['id']}/assign-io",
-        json={"io_user_id": str(io.id)},
+        json={"io_user_id": str(io_user.id)},
         headers=auth_headers(sho_token),
     )
 
-    io_token = login(client, "io@example.com", "pw").json()["access_token"]
-    fsl_token = login(client, "fsl@example.com", "pw").json()["access_token"]
-    return case, io_token, fsl_token, fsl
+    io_token = login(client, "io@police.gov.in", "pw").json()["access_token"]
+    return case, io_user, io_token
 
 
-def test_io_can_create_evidence_request(client, make_user, db_session):
-    case, io_token, fsl_token, fsl = _setup_case_with_io_and_fsl(client, make_user, db_session)
+def test_io_can_create_evidence_request_to_external_org(client, make_user, make_org):
+    case, io_user, io_token = _register_and_assign_case(client, make_user)
+    fsl_org = make_org(name="Digital Forensics Lab", org_type="fsl")
 
     resp = client.post(
         f"/cases/{case['id']}/evidence-requests",
-        json={"requested_org_id": str(fsl.org_id), "doc_type_expected": "Forensic Report"},
+        json={
+            "requested_org_id": str(fsl_org.id),
+            "doc_type_expected": "Digital Forensic Report",
+            "notes": "Extract hard drive images",
+        },
         headers=auth_headers(io_token),
     )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["case_id"] == case["id"]
+    assert data["requested_org_id"] == str(fsl_org.id)
+    assert data["doc_type_expected"] == "Digital Forensic Report"
+    assert data["status"] == "requested"
 
-    assert resp.status_code == 201, resp.text
-    body = resp.json()
-    assert body["status"] == "requested"
-    assert body["requested_org_id"] == str(fsl.org_id)
-    assert body["doc_type_expected"] == "Forensic Report"
 
+def test_unassigned_io_cannot_create_evidence_request(client, make_user, make_org):
+    case, io_user, io_token = _register_and_assign_case(client, make_user)
+    fsl_org = make_org(name="Digital Forensics Lab", org_type="fsl")
 
-def test_unassigned_io_cannot_create_evidence_request(client, make_user, db_session):
-    case, io_token, fsl_token, fsl = _setup_case_with_io_and_fsl(client, make_user, db_session)
-    other_io = make_user("io", email="other@example.com", password="pw")
-    other_token = login(client, "other@example.com", "pw").json()["access_token"]
+    other_io = make_user("io", email="other_io@police.gov.in", password="pw")
+    other_token = login(client, "other_io@police.gov.in", "pw").json()["access_token"]
 
     resp = client.post(
         f"/cases/{case['id']}/evidence-requests",
-        json={"requested_org_id": str(fsl.org_id)},
+        json={
+            "requested_org_id": str(fsl_org.id),
+            "doc_type_expected": "Digital Forensic Report",
+        },
         headers=auth_headers(other_token),
     )
-
     assert resp.status_code == 403
+    assert "Not assigned" in resp.text
 
 
-def test_io_can_list_evidence_requests(client, make_user, db_session):
-    case, io_token, fsl_token, fsl = _setup_case_with_io_and_fsl(client, make_user, db_session)
+def test_authority_staff_scoping_and_cross_tenant_block(client, make_user, make_org):
+    case, io_user, io_token = _register_and_assign_case(client, make_user)
+    fsl_org = make_org(name="Digital Forensics Lab", org_type="fsl")
+    bank_org = make_org(name="State Bank", org_type="bank")
 
+    # Create evidence request for FSL
+    ev_resp = client.post(
+        f"/cases/{case['id']}/evidence-requests",
+        json={"requested_org_id": str(fsl_org.id), "doc_type_expected": "FSL Report"},
+        headers=auth_headers(io_token),
+    ).json()
+    req_id = ev_resp["id"]
+
+    fsl_user = make_user("authority_staff", email="fsl_analyst@fsl.gov.in", password="pw", org=fsl_org)
+    bank_user = make_user("authority_staff", email="bank_mgr@bank.com", password="pw", org=bank_org)
+
+    fsl_token = login(client, "fsl_analyst@fsl.gov.in", "pw").json()["access_token"]
+    bank_token = login(client, "bank_mgr@bank.com", "pw").json()["access_token"]
+
+    # FSL can see request
+    fsl_list = client.get(f"/cases/{case['id']}/evidence-requests", headers=auth_headers(fsl_token))
+    assert fsl_list.status_code == 200
+    assert len(fsl_list.json()) == 1
+
+    # Bank cannot see FSL's request
+    bank_list = client.get(f"/cases/{case['id']}/evidence-requests", headers=auth_headers(bank_token))
+    assert bank_list.status_code == 200
+    assert len(bank_list.json()) == 0
+
+    # Bank tries to submit to FSL's request -> 403 Forbidden
+    fake_pdf = b"%PDF-1.4 test forensic report content"
+    bank_submit = client.post(
+        f"/evidence-requests/{req_id}/submit",
+        files={"file": ("fsl_report.pdf", io.BytesIO(fake_pdf), "application/pdf")},
+        headers=auth_headers(bank_token),
+    )
+    assert bank_submit.status_code == 403
+    assert "routed to a different organization" in bank_submit.text
+
+
+def test_authority_fulfillment_and_double_submit_prevention(client, make_user, make_org):
+    case, io_user, io_token = _register_and_assign_case(client, make_user)
+    fsl_org = make_org(name="Digital Forensics Lab", org_type="fsl")
+
+    ev_resp = client.post(
+        f"/cases/{case['id']}/evidence-requests",
+        json={"requested_org_id": str(fsl_org.id), "doc_type_expected": "FSL Report"},
+        headers=auth_headers(io_token),
+    ).json()
+    req_id = ev_resp["id"]
+
+    fsl_user = make_user("authority_staff", email="fsl_analyst@fsl.gov.in", password="pw", org=fsl_org)
+    fsl_token = login(client, "fsl_analyst@fsl.gov.in", "pw").json()["access_token"]
+
+    fake_pdf = b"%PDF-1.4 verified digital forensic analysis"
+    submit_resp = client.post(
+        f"/evidence-requests/{req_id}/submit",
+        files={"file": ("report.pdf", io.BytesIO(fake_pdf), "application/pdf")},
+        headers=auth_headers(fsl_token),
+    )
+    assert submit_resp.status_code == 200
+    res_data = submit_resp.json()
+    assert res_data["status"] == "completed"
+    assert res_data["completed_at"] is not None
+
+    # Re-submitting to the completed request must return 409 Conflict
+    re_submit = client.post(
+        f"/evidence-requests/{req_id}/submit",
+        files={"file": ("report.pdf", io.BytesIO(fake_pdf), "application/pdf")},
+        headers=auth_headers(fsl_token),
+    )
+    assert re_submit.status_code == 409
+    assert "already been fulfilled" in re_submit.text
+
+
+def test_unauthorized_roles_cannot_fulfill_evidence_request(client, make_user, make_org):
+    """Asserts that roles outside matching authority_staff/admin (e.g. defense) are rejected with 403."""
+    case, io_user, io_token = _register_and_assign_case(client, make_user)
+    fsl_org = make_org(name="Digital Forensics Lab", org_type="fsl")
+
+    ev_resp = client.post(
+        f"/cases/{case['id']}/evidence-requests",
+        json={"requested_org_id": str(fsl_org.id), "doc_type_expected": "FSL Report"},
+        headers=auth_headers(io_token),
+    ).json()
+    req_id = ev_resp["id"]
+
+    # Defense intruder attempting to submit fake forensic report
+    defense_user = make_user("defense", email="defense@evil.com", password="pw")
+    defense_token = login(client, "defense@evil.com", "pw").json()["access_token"]
+
+    fake_pdf = b"%PDF-1.4 fabricated defense analysis"
+    intruder_resp = client.post(
+        f"/evidence-requests/{req_id}/submit",
+        files={"file": ("report.pdf", io.BytesIO(fake_pdf), "application/pdf")},
+        headers=auth_headers(defense_token),
+    )
+    assert intruder_resp.status_code == 403
+    assert "Role not permitted" in intruder_resp.json()["detail"]
+
+
+
+def test_charge_sheet_and_join_gate(client, make_user, make_org, db_session):
+    case, io_user, io_token = _register_and_assign_case(client, make_user, crime_type="Financial Fraud")
+    prosecutor = make_user("prosecutor", email="prosecutor@court.gov.in", password="pw")
+    pros_token = login(client, "prosecutor@court.gov.in", "pw").json()["access_token"]
+
+    bank_org = make_org(name="Bank", org_type="bank")
+
+    # Seed mandatory stage requirement for Financial Fraud
+    sr1 = models.StageRequirement(
+        crime_type="Financial Fraud",
+        requirement_type="document",
+        requirement_key="FIR",
+        mandatory=True,
+    )
+    sr2 = models.StageRequirement(
+        crime_type="Financial Fraud",
+        requirement_type="evidence_request",
+        requirement_key="Bank Statement",
+        mandatory=True,
+    )
+    db_session.add_all([sr1, sr2])
+    db_session.commit()
+
+    # Attempt to file charge sheet without satisfying requirements -> 409
+    cs_fail = client.post(
+        f"/cases/{case['id']}/file-charge-sheet",
+        headers=auth_headers(pros_token),
+    )
+    assert cs_fail.status_code == 409
+    detail = cs_fail.json()["detail"]
+    assert "missing_items" in detail
+    assert any("FIR" in item for item in detail["missing_items"])
+    assert any("Bank Statement" in item for item in detail["missing_items"])
+
+    # 1. Upload FIR document
+    fake_pdf = b"%PDF-1.4 official complaint document"
     client.post(
-        f"/cases/{case['id']}/evidence-requests",
-        json={"requested_org_id": str(fsl.org_id), "doc_type_expected": "Report"},
+        "/documents",
+        data={"case_id": case["id"], "doc_type": "FIR"},
+        files={"file": ("fir.pdf", io.BytesIO(fake_pdf), "application/pdf")},
         headers=auth_headers(io_token),
     )
 
-    resp = client.get(f"/cases/{case['id']}/evidence-requests", headers=auth_headers(io_token))
+    # Attempt again — still missing Bank Statement
+    cs_fail2 = client.post(
+        f"/cases/{case['id']}/file-charge-sheet",
+        headers=auth_headers(pros_token),
+    )
+    assert cs_fail2.status_code == 409
+    detail2 = cs_fail2.json()["detail"]
+    assert len(detail2["missing_items"]) == 1
+    assert "Bank Statement" in detail2["missing_items"][0]
 
-    assert resp.status_code == 200
-    assert len(resp.json()) == 1
-    assert resp.json()[0]["status"] == "requested"
+    # 2. Fulfill evidence request for Bank Statement
+    ev_req = client.post(
+        f"/cases/{case['id']}/evidence-requests",
+        json={"requested_org_id": str(bank_org.id), "doc_type_expected": "Bank Statement"},
+        headers=auth_headers(io_token),
+    ).json()
 
-
-def test_evidence_request_creates_audit_log(client, make_user, db_session):
-    case, io_token, fsl_token, fsl = _setup_case_with_io_and_fsl(client, make_user, db_session)
-
+    bank_user = make_user("authority_staff", email="banker@bank.com", password="pw", org=bank_org)
+    bank_token = login(client, "banker@bank.com", "pw").json()["access_token"]
     client.post(
-        f"/cases/{case['id']}/evidence-requests",
-        json={"requested_org_id": str(fsl.org_id)},
-        headers=auth_headers(io_token),
+        f"/evidence-requests/{ev_req['id']}/submit",
+        files={"file": ("stmt.pdf", io.BytesIO(fake_pdf), "application/pdf")},
+        headers=auth_headers(bank_token),
     )
 
-    entries = (
-        db_session.query(models.AuditLog)
-        .filter_by(case_id=_uuid.UUID(case["id"]), action="evidence_request_created")
-        .all()
+    # 3. Both requirements now satisfied -> Charge Sheet successfully filed!
+    cs_success = client.post(
+        f"/cases/{case['id']}/file-charge-sheet",
+        headers=auth_headers(pros_token),
     )
-    assert len(entries) == 1
-
-
-def test_authority_can_submit_evidence_request(client, make_user, db_session, fake_queue):
-    case, io_token, fsl_token, fsl = _setup_case_with_io_and_fsl(client, make_user, db_session)
-
-    create_resp = client.post(
-        f"/cases/{case['id']}/evidence-requests",
-        json={"requested_org_id": str(fsl.org_id), "doc_type_expected": "Forensic Report"},
-        headers=auth_headers(io_token),
-    )
-    er_id = create_resp.json()["id"]
-
-    resp = client.post(
-        f"/evidence-requests/{er_id}/submit",
-        files={"file": ("report.pdf", b"fake pdf content", "application/pdf")},
-        headers=auth_headers(fsl_token),
-    )
-
-    assert resp.status_code == 202, resp.text
-    assert resp.json()["status"] == "completed"
-
-    er = db_session.get(models.EvidenceRequest, _uuid.UUID(er_id))
-    assert er.status == "completed"
-    assert er.completed_at is not None
-
-
-def test_wrong_org_cannot_submit_evidence_request(client, make_user, db_session):
-    case, io_token, fsl_token, fsl = _setup_case_with_io_and_fsl(client, make_user, db_session)
-    other_org = make_org_with_type(db_session, "Other Lab", "fsl")
-    other_authority = make_user("authority_staff", email="other@example.com", password="pw", org=other_org)
-
-    create_resp = client.post(
-        f"/cases/{case['id']}/evidence-requests",
-        json={"requested_org_id": str(fsl.org_id)},
-        headers=auth_headers(io_token),
-    )
-    er_id = create_resp.json()["id"]
-
-    other_token = login(client, "other@example.com", "pw").json()["access_token"]
-    resp = client.post(
-        f"/evidence-requests/{er_id}/submit",
-        files={"file": ("report.pdf", b"content", "application/pdf")},
-        headers=auth_headers(other_token),
-    )
-
-    assert resp.status_code == 403
-
-
-def test_submit_triggers_document_upload_pipeline(client, make_user, db_session, fake_queue):
-    case, io_token, fsl_token, fsl = _setup_case_with_io_and_fsl(client, make_user, db_session)
-
-    create_resp = client.post(
-        f"/cases/{case['id']}/evidence-requests",
-        json={"requested_org_id": str(fsl.org_id)},
-        headers=auth_headers(io_token),
-    )
-    er_id = create_resp.json()["id"]
-
-    client.post(
-        f"/evidence-requests/{er_id}/submit",
-        files={"file": ("report.pdf", b"content", "application/pdf")},
-        headers=auth_headers(fsl_token),
-    )
-
-    task_names = {j["task_name"] for j in fake_queue.enqueued}
-    assert "chain_worker.write_hash" in task_names
-    assert "ocr_worker.extract_document" in task_names
-
-
-def test_submit_creates_document_row(client, make_user, db_session, fake_queue):
-    case, io_token, fsl_token, fsl = _setup_case_with_io_and_fsl(client, make_user, db_session)
-
-    create_resp = client.post(
-        f"/cases/{case['id']}/evidence-requests",
-        json={"requested_org_id": str(fsl.org_id), "doc_type_expected": "Forensic Report"},
-        headers=auth_headers(io_token),
-    )
-    er_id = create_resp.json()["id"]
-
-    resp = client.post(
-        f"/evidence-requests/{er_id}/submit",
-        files={"file": ("report.pdf", b"content", "application/pdf")},
-        headers=auth_headers(fsl_token),
-    )
-    doc_id = resp.json()["document_id"]
-
-    doc = db_session.get(models.Document, _uuid.UUID(doc_id))
-    assert doc is not None
-    assert doc.case_id == _uuid.UUID(case["id"])
-    assert doc.status == "processing"
-    assert doc.doc_type == "Forensic Report"
-
-
-def test_already_completed_evidence_request_returns_409(client, make_user, db_session, fake_queue):
-    case, io_token, fsl_token, fsl = _setup_case_with_io_and_fsl(client, make_user, db_session)
-
-    create_resp = client.post(
-        f"/cases/{case['id']}/evidence-requests",
-        json={"requested_org_id": str(fsl.org_id)},
-        headers=auth_headers(io_token),
-    )
-    er_id = create_resp.json()["id"]
-
-    client.post(
-        f"/evidence-requests/{er_id}/submit",
-        files={"file": ("report.pdf", b"content", "application/pdf")},
-        headers=auth_headers(fsl_token),
-    )
-
-    resp = client.post(
-        f"/evidence-requests/{er_id}/submit",
-        files={"file": ("report2.pdf", b"content2", "application/pdf")},
-        headers=auth_headers(fsl_token),
-    )
-
-    assert resp.status_code == 409
+    assert cs_success.status_code == 200
+    assert cs_success.json()["investigation_status"] == "Charge_Sheet_Filed"

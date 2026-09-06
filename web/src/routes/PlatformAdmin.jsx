@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { apiClient } from '../api/client';
+import StatusChip from '../components/StatusChip';
+import HashCell from '../components/HashCell';
 
 export default function PlatformAdmin() {
   const { user } = useAuth();
@@ -290,8 +292,8 @@ export default function PlatformAdmin() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span className="tag tag-neutral">Role: Config Admin</span>
-            <span className="tag tag-success">Authoritative RBAC Engine</span>
+            <StatusChip status="neutral" label="Role: Config Admin" />
+            <StatusChip status="confirmed" label="Authoritative RBAC Engine" />
           </div>
         </div>
 
@@ -391,14 +393,10 @@ export default function PlatformAdmin() {
                           {r.description || 'Standard operational role'}
                         </td>
                         <td>
-                          <span className={`tag ${r.is_system ? 'tag-neutral' : 'tag-success'}`}>
-                            {r.is_system ? 'System Protected' : 'Custom Role'}
-                          </span>
+                          <StatusChip status={r.is_system ? 'neutral' : 'success'} label={r.is_system ? 'System Protected' : 'Custom Role'} />
                         </td>
                         <td>
-                          <span className="tag tag-neutral">
-                            {r.permission_codes?.length || 0} permissions
-                          </span>
+                          <StatusChip status="neutral" label={`${r.permission_codes?.length || 0} permissions`} />
                         </td>
                         <td style={{ fontWeight: 600 }}>{r.user_count || 0}</td>
                         <td>
@@ -464,9 +462,7 @@ export default function PlatformAdmin() {
                         <td style={{ fontSize: '12px' }}>{u.org_name || 'Government Agency'}</td>
                         <td style={{ fontSize: '12px' }}>{u.designation || 'Officer'}</td>
                         <td>
-                          <span className={`tag ${u.role === 'unassigned' ? 'tag-neutral' : 'tag-success'}`} style={{ fontFamily: 'var(--font-mono)' }}>
-                            {u.role}
-                          </span>
+                          <StatusChip status={u.role === 'unassigned' ? 'neutral' : 'success'} label={u.role} />
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: '6px' }}>
@@ -677,11 +673,9 @@ export default function PlatformAdmin() {
         {activeTab === 'schemas' && (
           <div className="card">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-              <span className="tag tag-neutral" style={{ fontWeight: 600 }}>
-                Status: 501 Not Implemented (Dynamic Registry)
-              </span>
-              <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Protected Static Redaction Baseline
+              <StatusChip status="confirmed" label="Document Schemas Active (Issue #42)" />
+              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Protected Statutory Redaction Baseline
               </span>
             </div>
 
@@ -711,7 +705,7 @@ export default function PlatformAdmin() {
                     <tr key={s.doc_type}>
                       <td><strong style={{ color: 'var(--text-primary)' }}>{s.doc_type}</strong></td>
                       <td>
-                        <span className="tag tag-danger">{s.sensitivity}</span>
+                        <StatusChip status={s.sensitivity === 'RESTRICTED' ? 'critical' : s.sensitivity === 'CONFIDENTIAL' ? 'pending' : 'neutral'} label={s.sensitivity} />
                       </td>
                       <td>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
@@ -720,8 +714,8 @@ export default function PlatformAdmin() {
                           ))}
                         </div>
                       </td>
-                      <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{s.recognizers}</td>
-                      <td><span className="tag tag-neutral">Static Policy (Code Enforced)</span></td>
+                      <td style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{s.recognizers}</td>
+                      <td><StatusChip status="neutral" label="Static Policy (Code Enforced)" /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -754,9 +748,9 @@ export default function PlatformAdmin() {
                           <div style={{ fontWeight: 500 }}>{o.name}</div>
                           <span className="mono-text" style={{ fontSize: '11px' }}>{o.id}</span>
                         </td>
-                        <td><span className="tag tag-neutral">{o.org_type?.toUpperCase()}</span></td>
+                        <td><StatusChip status="neutral" label={o.org_type?.toUpperCase()} /></td>
                         <td>{o.user_count || 0}</td>
-                        <td><span className="tag tag-success">Active</span></td>
+                        <td><StatusChip status="confirmed" label="Active" /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -940,27 +934,34 @@ export default function PlatformAdmin() {
                           <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{log.actor_email || 'System'}</span>
                         </td>
                         <td>
-                          <span className={`tag ${
-                            log.action === 'role_assigned' ? 'tag-success' :
-                            log.action === 'role_removed' ? 'tag-danger' :
-                            log.action === 'role_created' ? 'tag-neutral' :
-                            log.action === 'role_deleted' ? 'tag-danger' : 'tag-neutral'
-                          }`}>
-                            {log.action}
-                          </span>
+                          <StatusChip
+                            status={
+                              log.action === 'role_assigned' ? 'success' :
+                              (log.action === 'role_removed' || log.action === 'role_deleted') ? 'error' : 'neutral'
+                            }
+                            label={
+                              log.action === 'role_assigned' ? 'Role Assigned' :
+                              log.action === 'role_removed' ? 'Role Revoked' :
+                              log.action === 'role_created' ? 'Role Created' :
+                              log.action === 'role_deleted' ? 'Role Deleted' :
+                              log.action === 'role_updated' ? 'Role Updated' :
+                              log.action === 'organization_onboarded' ? 'Org Onboarded' :
+                              (log.action || 'system').replace(/_/g, ' ')
+                            }
+                          />
                         </td>
                         <td>
-                          <span className="tag tag-neutral">{log.target_type || 'system'}</span>
+                          <StatusChip status="neutral" label={(log.target_type || 'system').toUpperCase()} />
                         </td>
                         <td style={{ fontSize: '12px' }}>
                           {log.action === 'role_assigned' && (
                             <div>
                               <span><strong>{log.action_metadata?.target_user_name}</strong>: </span>
-                              <span className="mono-text" style={{ textDecoration: 'line-through', color: 'var(--text-tertiary)' }}>
+                              <span className="mono-text" style={{ textDecoration: 'line-through', color: 'var(--color-text-tertiary)' }}>
                                 {log.action_metadata?.previous_role}
                               </span>
                               <span> → </span>
-                              <span className="mono-text" style={{ fontWeight: 600, color: 'var(--status-active-text)' }}>
+                              <span className="mono-text" style={{ fontWeight: 600, color: 'var(--color-primary)' }}>
                                 {log.action_metadata?.new_role}
                               </span>
                             </div>
@@ -1001,13 +1002,7 @@ export default function PlatformAdmin() {
                           )}
                         </td>
                         <td>
-                          <span
-                            className="mono-text"
-                            style={{ fontSize: '11px', color: 'var(--text-secondary)' }}
-                            title={`Full Row Hash: ${log.row_hash}\nPrev Hash: ${log.prev_hash || 'None (Genesis)'}`}
-                          >
-                            {log.row_hash ? `${log.row_hash.slice(0, 10)}...${log.row_hash.slice(-6)}` : '—'}
-                          </span>
+                          <HashCell hash={log.row_hash} />
                         </td>
                       </tr>
                     ))

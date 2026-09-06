@@ -1,18 +1,30 @@
 # Fabric Network
 
-The first build milestone (see SYSTEM_DESIGN.md, Build Prompt Seed): stand
+**Status: confirmed working end-to-end against a real, live network.** The
+first build milestone (see SYSTEM_DESIGN.md, Build Prompt Seed) — stand
 this up and confirm the Chain Worker can submit and confirm one signed hash
-transaction end-to-end, in isolation, before wiring anything else to it.
-This is the highest-setup-risk component in the whole system — do it first,
-not last, and budget real time for it.
+transaction — is done, not just attempted. `RecordHash`, `GetHash`, and
+`VerifyHash` have all been run for real: a transaction committed as
+`VALID` on both peers, a real record read back, and live tamper detection
+confirmed (correct hash → true, tampered hash → false).
 
-**Read this before starting**: everything in this folder and in
-`workers/chain_worker/` was written without access to Docker, a Go
-compiler, or a running Fabric network. The code is a real, considered
-attempt at the correct shape — it is not proven to work. You (whoever picks
-this up) will be the first person to actually run it. Expect to debug real
-issues, especially in `fabric_client.py`'s exact SDK calls — its own
-docstring says exactly what to double-check first.
+One thing changed along the way worth knowing: `workers/chain_worker/fabric_client.py`
+does **not** use the `fabric-sdk-py` (`hfc`) library anymore. That library's
+own dependencies turned out to be genuinely broken on any current Python —
+confirmed by actually installing it, not assumed: `pysha3` (a hard pin)
+doesn't compile on Python 3.10+, its bundled protobuf files predate a
+breaking protoc change, and its pinned `requests`/`urllib3` versions no
+longer agree with each other. Rather than keep patching an abandoned
+library, `fabric_client.py` now shells out to the `peer` CLI directly via
+`subprocess` — the exact same command shape proven working below, just
+called from Python instead of typed by hand. See that file's docstring for
+the full reasoning.
+
+Still real, still-open work: only a 2-org network exists (the design's
+Container Diagram names 5 — Police/FSL/Hospital-Medical/Court/External-
+Verifiers), and this uses `test-network`'s demo CA, not a real production
+PKI. Both are separate, later milestones — see the Risk Dossier for the
+full list.
 
 ## What's here
 
@@ -76,37 +88,27 @@ Deliberately narrow — not a generic asset-transfer sample. Three functions:
    the 2-org network comes up cleanly. Confirm the single end-to-end
    transaction first (below), then extend to 5 orgs as its own step.
 
-3. **Generate a connection profile** for the org the Chain Worker will
-   submit as (matching `FABRIC_MSP_ID` in `.env`). `test-network` writes
-   these under `fabric-samples/test-network/organizations/peerOrganizations/<org>/connection-<org>.json`
-   — copy the relevant one to `fabric-network/connection-profile.json`
-   (gitignored; never commit real crypto material or a profile pointing at
-   a real deployment's peers).
-
-4. **Confirm one signed transaction end-to-end** before building anything
-   else on top:
+3. **Confirm one signed transaction end-to-end** — this is what's already
+   been done and confirmed working:
 
    ```bash
+   export FABRIC_SAMPLES_DIR=$HOME/fabric-samples   # or wherever bootstrap.sh put it
    cd workers/chain_worker
-   python -c "
+   python3 -c "
    from fabric_client import FabricClient
-   client = FabricClient(
-       connection_profile_path='../../fabric-network/connection-profile.json',
-       msp_id='Org1MSP',
-       org_name='org1.example.com',
-       user_name='Admin',
-       channel_name='legadoc-channel',
-   )
-   print(client.submit_hash(doc_id='test-doc-1', doc_hash='deadbeef', org_id='org1'))
-   print(client.get_hash(doc_id='test-doc-1'))
+   client = FabricClient(channel_name='legadoc-channel')
+   print('SUBMIT:', client.submit_hash(doc_id='test-doc-1', doc_hash='deadbeef', org_id='org1'))
+   print('GET:', client.get_hash(doc_id='test-doc-1'))
+   print('VERIFY (correct):', client.verify_hash(doc_id='test-doc-1', hash_to_check='deadbeef'))
+   print('VERIFY (tampered):', client.verify_hash(doc_id='test-doc-1', hash_to_check='wrong'))
    "
    ```
 
-   If this fails, it is very likely `fabric_client.py`'s exact `hfc` API
-   calls, not the network — see that file's docstring for what to check
-   first (method names, whether `wait_for_event` is still a valid kwarg,
-   whether `get_user` takes the same arguments in whatever version
-   `pip install fabric-sdk-py` actually resolves to).
+   No connection profile or `fabric-sdk-py` needed anymore — `fabric_client.py`
+   shells out to the `peer` CLI directly (see its docstring for why). This
+   reads test-network's crypto material straight from `FABRIC_SAMPLES_DIR`,
+   hardcoded to Org1 submitting / Org1+Org2 endorsing, matching the default
+   2-org network above.
 
 ## Never commit here
 

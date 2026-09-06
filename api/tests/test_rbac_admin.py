@@ -138,17 +138,7 @@ def test_unimplemented_admin_endpoints_explicit_501(client):
     token = res.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    # 1. document-schemas must return explicit 501, not fake mock data
-    schema_res = client.get("/admin/document-schemas", headers=headers)
-    assert schema_res.status_code == 501
-    assert "not implemented" in schema_res.json()["detail"].lower()
-
-    # 2. recognizer mappings must return explicit 501
-    rec_res = client.post("/admin/document-schemas/FIR/recognizers", headers=headers)
-    assert rec_res.status_code == 501
-    assert "not implemented" in rec_res.json()["detail"].lower()
-
-    # 3. stage-requirements must return explicit 501
+    # stage-requirements must return explicit 501
     stage_res = client.get("/admin/stage-requirements", headers=headers)
     assert stage_res.status_code == 501
     assert "not implemented" in stage_res.json()["detail"].lower()
@@ -334,4 +324,317 @@ def test_organization_management_and_audit(client, db_session):
     )
     assert org_log is not None
     assert org_log.action_metadata["org_name"] == "State Cyber Cell Rajasthan"
+
+
+# ---------- Document Schema & Recognizer Endpoint Tests (Issue #42) ----------
+
+def test_admin_create_document_schema(client):
+    res = client.post("/auth/login", json={"email": "admin.sharma@legadoc.gov.in", "password": DEFAULT_TEST_PASSWORD})
+    token = res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    payload = {
+        "doc_type": "FIR",
+        "tier": 1,
+        "sensitivity_fields": [
+            {"field_name": "victim_name", "sensitive": True},
+            {"field_name": "complaint_text", "sensitive": False},
+        ],
+    }
+    create_res = client.post("/admin/document-schemas", headers=headers, json=payload)
+    assert create_res.status_code == 201
+    data = create_res.json()
+    assert data["doc_type"] == "FIR"
+    assert data["tier"] == 1
+    assert len(data["sensitivity_fields"]) == 2
+    assert data["sensitivity_fields"][0]["field_name"] == "victim_name"
+    assert data["sensitivity_fields"][0]["sensitive"] is True
+    assert data["recognizer_mappings"] == []
+
+
+def test_admin_create_document_schema_duplicate_conflict(client):
+    res = client.post("/auth/login", json={"email": "admin.sharma@legadoc.gov.in", "password": DEFAULT_TEST_PASSWORD})
+    token = res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    payload = {
+        "doc_type": "WITNESS_STATEMENT",
+        "tier": 2,
+        "sensitivity_fields": [
+            {"field_name": "witness_name", "sensitive": True},
+        ],
+    }
+    res1 = client.post("/admin/document-schemas", headers=headers, json=payload)
+    assert res1.status_code == 201
+
+    res2 = client.post("/admin/document-schemas", headers=headers, json=payload)
+    assert res2.status_code == 409
+    assert "already exists" in res2.json()["detail"].lower()
+
+
+def test_admin_create_tier3_schema_rejects_fields(client):
+    res = client.post("/auth/login", json={"email": "admin.sharma@legadoc.gov.in", "password": DEFAULT_TEST_PASSWORD})
+    token = res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Reject tier 3 with sensitivity fields
+    payload_bad = {
+        "doc_type": "GENERIC_MEMO",
+        "tier": 3,
+        "sensitivity_fields": [
+            {"field_name": "memo_text", "sensitive": False},
+        ],
+    }
+    res_bad = client.post("/admin/document-schemas", headers=headers, json=payload_bad)
+    assert res_bad.status_code == 400
+    assert "Tier 3 schemas must have null sensitivity_fields" in res_bad.json()["detail"]
+
+    # Reject tier 1/2 with empty or null sensitivity fields
+    res_bad_tier1 = client.post(
+        "/admin/document-schemas",
+        headers=headers,
+        json={"doc_type": "ARREST_MEMO", "tier": 1, "sensitivity_fields": None},
+    )
+    assert res_bad_tier1.status_code == 400
+    assert "Tier 1 and Tier 2 schemas must specify non-empty sensitivity_fields" in res_bad_tier1.json()["detail"]
+
+    # Accept tier 3 with null fields
+    payload_good = {
+        "doc_type": "GENERIC_MEMO",
+        "tier": 3,
+        "sensitivity_fields": None,
+    }
+    res_good = client.post("/admin/document-schemas", headers=headers, json=payload_good)
+    assert res_good.status_code == 201
+    assert res_good.json()["tier"] == 3
+    assert res_good.json()["sensitivity_fields"] is None
+
+
+def test_admin_update_document_schema(client, db_session):
+    res = client.post("/auth/login", json={"email": "admin.sharma@legadoc.gov.in", "password": DEFAULT_TEST_PASSWORD})
+    token = res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create schema
+    client.post(
+        "/admin/document-schemas",
+        headers=headers,
+        json={
+            "doc_type": "MLC",
+            "tier": 2,
+            "sensitivity_fields": [{"field_name": "doctor_name", "sensitive": False}],
+        },
+    )
+
+    # Update schema
+    update_res = client.put(
+        "/admin/document-schemas/MLC",
+        headers=headers,
+        json={
+            "tier": 1,
+            "sensitivity_fields": [
+                {"field_name": "doctor_name", "sensitive": False},
+                {"field_name": "injuries", "sensitive": True},
+            ],
+        },
+    )
+    assert update_res.status_code == 200
+    updated = update_res.json()
+    assert updated["tier"] == 1
+    assert len(updated["sensitivity_fields"]) == 2
+
+    # Check audit log diff
+    audit = (
+        db_session.query(models.AuditLog)
+        .filter(models.AuditLog.action == "document_schema_updated")
+        .order_by(models.AuditLog.created_at.desc())
+        .first()
+    )
+    assert audit is not None
+    assert audit.action_metadata["doc_type"] == "MLC"
+    assert audit.action_metadata["previous_tier"] == 2
+    assert audit.action_metadata["new_tier"] == 1
+    assert len(audit.action_metadata["previous_sensitivity_fields"]) == 1
+    assert len(audit.action_metadata["new_sensitivity_fields"]) == 2
+
+    # Verify updating to tier 3 without clearing sensitivity_fields fails
+    res_invalid_tier3 = client.put(
+        "/admin/document-schemas/MLC",
+        headers=headers,
+        json={"tier": 3},
+    )
+    assert res_invalid_tier3.status_code == 400
+
+
+def test_admin_set_recognizer_mappings(client):
+    res = client.post("/auth/login", json={"email": "admin.sharma@legadoc.gov.in", "password": DEFAULT_TEST_PASSWORD})
+    token = res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    client.post(
+        "/admin/document-schemas",
+        headers=headers,
+        json={
+            "doc_type": "CHARGE_SHEET",
+            "tier": 1,
+            "sensitivity_fields": [
+                {"field_name": "accused_name", "sensitive": True},
+                {"field_name": "police_station", "sensitive": False},
+            ],
+        },
+    )
+
+    rec_res = client.post(
+        "/admin/document-schemas/CHARGE_SHEET/recognizers",
+        headers=headers,
+        json={
+            "mappings": [
+                {"entity_type": "PERSON", "field_name": "accused_name"},
+                {"entity_type": "LOCATION", "field_name": "police_station"},
+            ]
+        },
+    )
+    assert rec_res.status_code == 200
+    mappings = rec_res.json()
+    assert len(mappings) == 2
+    assert {m["entity_type"] for m in mappings} == {"PERSON", "LOCATION"}
+    assert {m["field_name"] for m in mappings} == {"accused_name", "police_station"}
+
+
+def test_admin_set_recognizer_mappings_unknown_field_rejected(client):
+    res = client.post("/auth/login", json={"email": "admin.sharma@legadoc.gov.in", "password": DEFAULT_TEST_PASSWORD})
+    token = res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    client.post(
+        "/admin/document-schemas",
+        headers=headers,
+        json={
+            "doc_type": "SEIZURE_MEMO",
+            "tier": 2,
+            "sensitivity_fields": [{"field_name": "item_description", "sensitive": False}],
+        },
+    )
+
+    bad_res = client.post(
+        "/admin/document-schemas/SEIZURE_MEMO/recognizers",
+        headers=headers,
+        json={"mappings": [{"entity_type": "PERSON", "field_name": "victim_name"}]},
+    )
+    assert bad_res.status_code == 400
+    assert "victim_name" in bad_res.json()["detail"]
+
+
+def test_admin_set_recognizer_mappings_no_schema_404(client):
+    res = client.post("/auth/login", json={"email": "admin.sharma@legadoc.gov.in", "password": DEFAULT_TEST_PASSWORD})
+    token = res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    res_404 = client.post(
+        "/admin/document-schemas/NON_EXISTENT_DOC/recognizers",
+        headers=headers,
+        json={"mappings": [{"entity_type": "PERSON", "field_name": "victim_name"}]},
+    )
+    assert res_404.status_code == 404
+
+
+def test_admin_set_recognizer_mappings_replaces_not_appends(client):
+    res = client.post("/auth/login", json={"email": "admin.sharma@legadoc.gov.in", "password": DEFAULT_TEST_PASSWORD})
+    token = res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    client.post(
+        "/admin/document-schemas",
+        headers=headers,
+        json={
+            "doc_type": "INQUEST_REPORT",
+            "tier": 1,
+            "sensitivity_fields": [
+                {"field_name": "deceased_name", "sensitive": True},
+                {"field_name": "cause_of_death", "sensitive": True},
+            ],
+        },
+    )
+
+    # First set
+    res1 = client.post(
+        "/admin/document-schemas/INQUEST_REPORT/recognizers",
+        headers=headers,
+        json={"mappings": [{"entity_type": "PERSON", "field_name": "deceased_name"}]},
+    )
+    assert res1.status_code == 200
+
+    # Second set
+    res2 = client.post(
+        "/admin/document-schemas/INQUEST_REPORT/recognizers",
+        headers=headers,
+        json={"mappings": [{"entity_type": "MEDICAL_CONDITION", "field_name": "cause_of_death"}]},
+    )
+    assert res2.status_code == 200
+
+    # Verify GET returns only second set, not union
+    get_res = client.get("/admin/document-schemas", headers=headers)
+    assert get_res.status_code == 200
+    schemas_list = get_res.json()
+    inquest_schema = next(s for s in schemas_list if s["doc_type"] == "INQUEST_REPORT")
+    assert len(inquest_schema["recognizer_mappings"]) == 1
+    assert inquest_schema["recognizer_mappings"][0]["entity_type"] == "MEDICAL_CONDITION"
+    assert inquest_schema["recognizer_mappings"][0]["field_name"] == "cause_of_death"
+
+
+def test_document_schema_changes_appear_in_audit_log(client):
+    res = client.post("/auth/login", json={"email": "admin.sharma@legadoc.gov.in", "password": DEFAULT_TEST_PASSWORD})
+    token = res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. Create schema
+    client.post(
+        "/admin/document-schemas",
+        headers=headers,
+        json={
+            "doc_type": "FORENSIC_REPORT",
+            "tier": 1,
+            "sensitivity_fields": [{"field_name": "expert_name", "sensitive": False}],
+        },
+    )
+
+    # 2. Update schema
+    client.put(
+        "/admin/document-schemas/FORENSIC_REPORT",
+        headers=headers,
+        json={
+            "tier": 2,
+            "sensitivity_fields": [{"field_name": "expert_name", "sensitive": True}],
+        },
+    )
+
+    # 3. Set recognizer mappings
+    client.post(
+        "/admin/document-schemas/FORENSIC_REPORT/recognizers",
+        headers=headers,
+        json={"mappings": [{"entity_type": "PERSON", "field_name": "expert_name"}]},
+    )
+
+    # Check audit logs via GET /admin/audit-logs
+    audit_res = client.get("/admin/audit-logs?target_type=document_schema", headers=headers)
+    assert audit_res.status_code == 200
+    logs = audit_res.json()
+    actions = [l["action"] for l in logs]
+    assert "document_schema_created" in actions
+    assert "document_schema_updated" in actions
+    assert "recognizer_mapping_updated" in actions
+
+    # Check update log metadata diff
+    update_log = next(l for l in logs if l["action"] == "document_schema_updated")
+    assert update_log["action_metadata"]["doc_type"] == "FORENSIC_REPORT"
+    assert update_log["action_metadata"]["previous_tier"] == 1
+    assert update_log["action_metadata"]["new_tier"] == 2
+
+    # Check recognizer mapping log metadata diff
+    rec_log = next(l for l in logs if l["action"] == "recognizer_mapping_updated")
+    assert rec_log["action_metadata"]["doc_type"] == "FORENSIC_REPORT"
+    assert rec_log["action_metadata"]["previous_mappings"] == []
+    assert len(rec_log["action_metadata"]["new_mappings"]) == 1
+    assert rec_log["action_metadata"]["new_mappings"][0]["entity_type"] == "PERSON"
+
 

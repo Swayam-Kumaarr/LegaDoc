@@ -8,13 +8,14 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 # ---------- Auth ----------
 class LoginRequest(BaseModel):
     email: str  # Official email or Government Service ID / Badge Number
     password: str
+    mfa_code: Optional[str] = None
 
 
 class TokenResponse(BaseModel):
@@ -30,6 +31,25 @@ class RefreshRequest(BaseModel):
 class AccessTokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class MFASetupResponse(BaseModel):
+    secret: str
+    provisioning_uri: str
+    mfa_enabled: bool
+
+
+class MFAVerifyRequest(BaseModel):
+    code: str
+
+
+class MFADisableRequest(BaseModel):
+    password: str
 
 
 # ---------- Cases ----------
@@ -50,108 +70,8 @@ class CaseResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class CaseAccessGrantRequest(BaseModel):
-    user_id: UUID
-    access_role: str  # court | prosecutor | defense
-
-
-class CaseAccessGrantResponse(BaseModel):
-    id: UUID
-    case_id: UUID
-    user_id: UUID
-    access_role: str
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class AssignIORequest(BaseModel):
     io_user_id: UUID
-
-
-class CaseDiaryEntryCreate(BaseModel):
-    text: str
-
-
-class CaseDiaryEntryResponse(BaseModel):
-    id: UUID
-    case_id: UUID
-    author_user_id: UUID
-    text: str
-    status: str
-    created_at: datetime
-    model_config = ConfigDict(from_attributes=True)
-
-
-class ChargeSheetResponse(BaseModel):
-    status: str
-    case_id: UUID
-    investigation_status: str
-
-
-class EvidenceRequestCreate(BaseModel):
-    requested_org_id: UUID
-    doc_type_expected: Optional[str] = None
-
-
-class EvidenceRequestResponse(EvidenceRequestCreate):
-    id: UUID
-    case_id: UUID
-    status: str
-    created_at: datetime
-    completed_at: Optional[datetime] = None
-    model_config = ConfigDict(from_attributes=True)
-
-
-class BailOrderRequest(BaseModel):
-    decision: str
-
-
-class BailRecordResponse(BaseModel):
-    id: UUID
-    case_id: UUID
-    stage: str
-    created_at: datetime
-    model_config = ConfigDict(from_attributes=True)
-
-
-class JudgmentRequest(BaseModel):
-    verdict: Optional[str] = None
-
-
-class AuditLogEntryResponse(BaseModel):
-    id: UUID
-    case_id: Optional[UUID] = None
-    actor_user_id: Optional[UUID] = None
-    action: str
-    target_type: Optional[str] = None
-    target_id: Optional[UUID] = None
-    action_metadata: Optional[dict] = None
-    created_at: datetime
-    model_config = ConfigDict(from_attributes=True)
-
-
-class OrgOnboardRequest(BaseModel):
-    name: str
-    org_type: str
-
-
-class UserSummary(BaseModel):
-    id: UUID
-    name: str
-    email: str
-    role: str
-    model_config = ConfigDict(from_attributes=True)
-
-
-class CaseMetadataReportResponse(BaseModel):
-    id: UUID
-    case_number: Optional[str] = None
-    crime_type: str
-    investigation_status: str
-    bail_status: Optional[str] = None
-    court_level: Optional[str] = None
-    created_at: datetime
 
 
 # ---------- Documents ----------
@@ -163,8 +83,6 @@ class DocumentUploadResponse(BaseModel):
     status: str
     chain_status: str
     doc_hash: Optional[str] = None
-    processing_error: Optional[str] = None
-    fabric_tx_id: Optional[str] = None
 
 
 class DocumentView(BaseModel):
@@ -174,11 +92,10 @@ class DocumentView(BaseModel):
     version: int
     status: str
     chain_status: str
+    retention_legal_hold: bool = False
     text: Optional[str] = None  # None while status != "ready"; masked or full depending on role
     download_url: Optional[str] = None
     doc_hash: Optional[str] = None
-    processing_error: Optional[str] = None
-    fabric_tx_id: Optional[str] = None
 
 
 class DocumentVersionSummary(BaseModel):
@@ -193,11 +110,23 @@ class DocumentVersionSummary(BaseModel):
 class ChainStatusResponse(BaseModel):
     document_id: UUID
     chain_status: str
-    fabric_tx_id: Optional[str] = None
+
+
+class LegalHoldRequest(BaseModel):
+    legal_hold: bool
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
+class LegalHoldResponse(BaseModel):
+    document_id: UUID
+    case_id: UUID
+    retention_legal_hold: bool
+    status: str
 
 
 class RedactTagRequest(BaseModel):
     entity_type: str
+
     span_start: int
     span_end: int
 
@@ -334,4 +263,215 @@ class AdminAuditLogEntry(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------- Document Schema & Recognizer Configuration ----------
+class SensitivityFieldSpec(BaseModel):
+    field_name: str
+    sensitive: bool
+
+
+class RecognizerMappingResponse(BaseModel):
+    id: UUID
+    entity_type: str
+    field_name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentSchemaResponse(BaseModel):
+    id: UUID
+    doc_type: str
+    tier: int
+    sensitivity_fields: Optional[list[SensitivityFieldSpec]] = None
+    recognizer_mappings: list[RecognizerMappingResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentSchemaCreateRequest(BaseModel):
+    doc_type: str
+    tier: int  # 1, 2, or 3
+    sensitivity_fields: Optional[list[SensitivityFieldSpec]] = None
+
+
+class DocumentSchemaUpdateRequest(BaseModel):
+    tier: Optional[int] = None
+    sensitivity_fields: Optional[list[SensitivityFieldSpec]] = None
+
+
+class RecognizerMappingItem(BaseModel):
+    entity_type: str
+    field_name: str
+
+
+class RecognizerMappingSetRequest(BaseModel):
+    mappings: list[RecognizerMappingItem]
+
+
+# ---------- Evidence Requests (Flow 3) ----------
+class CreateEvidenceRequest(BaseModel):
+    requested_org_id: UUID
+    doc_type_expected: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class EvidenceRequestResponse(BaseModel):
+    id: UUID
+    case_id: UUID
+    requested_org_id: UUID
+    doc_type_expected: Optional[str] = None
+    status: str
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------- Bail Track (Flow 4) ----------
+class BailOrderRequest(BaseModel):
+    granted: bool
+    conditions: Optional[str] = None
+
+
+class BailSuretyRequest(BaseModel):
+    surety_name: str
+    bond_amount: float
+
+
+class BailRecordResponse(BaseModel):
+    id: UUID
+    case_id: UUID
+    stage: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------- Trial & Judgment (Flow 5) ----------
+class JudgmentRequest(BaseModel):
+    verdict: str  # "acquitted" | "convicted"
+    summary: Optional[str] = None
+
+
+# ---------- Case Diary ----------
+class CaseDiaryCreate(BaseModel):
+    text: str
+
+
+class CaseDiaryResponse(BaseModel):
+    id: UUID
+    case_id: UUID
+    author_user_id: UUID
+    text: str
+    status: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------- Case Audit Trail & Verification (Flow 6) ----------
+class AuditLogEntry(BaseModel):
+    id: UUID
+    case_id: Optional[UUID] = None
+    actor_user_id: Optional[UUID] = None
+    actor_name: Optional[str] = None
+    actor_email: Optional[str] = None
+    action: str
+    target_type: Optional[str] = None
+    target_id: Optional[UUID] = None
+    action_metadata: Optional[dict] = None
+    prev_hash: Optional[str] = None
+    row_hash: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CaseAuditLogFullResponse(BaseModel):
+    case_id: UUID
+    view_type: str = "full"
+    chain_intact: bool
+    total_entries: int
+    entries: list[AuditLogEntry]
+
+
+class CaseAuditLogSummaryResponse(BaseModel):
+    case_id: UUID
+    view_type: str = "summary"
+    chain_intact: bool
+    total_entries: int
+    action_counts: dict[str, int]
+    first_entry_at: Optional[datetime] = None
+    last_entry_at: Optional[datetime] = None
+
+
+class AIParserAuditEntry(BaseModel):
+    id: UUID
+    document_id: Optional[UUID] = None
+    action: str
+    actor_type: str  # "system" or "human"
+    actor_user_id: Optional[UUID] = None
+    entity_type: Optional[str] = None
+    confidence: Optional[int] = None
+    span_start: Optional[int] = None
+    span_end: Optional[int] = None
+    created_at: datetime
+
+
+class AIParserAuditResponse(BaseModel):
+    case_id: UUID
+    total_entries: int
+    entries: list[AIParserAuditEntry]
+
+
+class CaseChainIntegrityResponse(BaseModel):
+    case_id: UUID
+    chain_intact: bool
+    total_entries: int
+    latest_hash: Optional[str] = None
+    verified_at: datetime
+
+
+# ---------- NCRB De-Identified Reporting (Domain 7) ----------
+class CaseMetadataDeidentified(BaseModel):
+    """Structurally excludes all identity fields. Only aggregate/statistical fields."""
+    id: UUID
+    case_number: str
+    crime_type: str
+    court_level: Optional[str] = None
+    investigation_status: str
+    bail_status: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------- IO Reassignment (Flow 1) ----------
+class ReassignIORequest(BaseModel):
+    new_io_user_id: UUID
+    reason: Optional[str] = Field(None, max_length=250)
+
+
+class ReassignIOResponse(BaseModel):
+    case_id: UUID
+    previous_io_user_id: UUID
+    new_io_user_id: UUID
+    reassigned_at: datetime
+
+
+# ---------- Document Review Queue (Flow 2) ----------
+class DocumentReviewItem(BaseModel):
+    """List queue item. raw_text is intentionally excluded to prevent bulk PII leaks."""
+    id: UUID
+    case_id: UUID
+    doc_type: str
+    version: int
+    status: str
+    chain_status: str
+    doc_hash: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
 

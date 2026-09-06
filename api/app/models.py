@@ -196,12 +196,22 @@ class CaseDiaryEntry(Base):
 
 class DocumentSchemaConfig(Base):
     """The tiered sensitivity-schema registry. Tier 1/2 types get real field
-    definitions; Tier 3 types inherit the one generic default profile."""
+    definitions; Tier 3 types inherit the one generic default profile.
+
+    sensitivity_fields JSON shape:
+    [
+        {"field_name": "victim_name", "sensitive": true},
+        {"field_name": "complaint_text", "sensitive": false}
+    ]
+    """
     __tablename__ = "document_schemas"
     id = uuid_pk()
     doc_type = Column(String, unique=True, nullable=False)
     tier = Column(Integer, nullable=False)  # 1, 2, or 3
     sensitivity_fields = Column(JSON, nullable=True)  # null for Tier 3 (uses the default profile)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    recognizer_mappings = relationship("RecognizerMapping", back_populates="document_schema", cascade="all, delete-orphan")
 
 
 class RecognizerMapping(Base):
@@ -211,6 +221,8 @@ class RecognizerMapping(Base):
     document_schema_id = Column(GUID(), ForeignKey("document_schemas.id"), nullable=False)
     entity_type = Column(String, nullable=False)
     field_name = Column(String, nullable=False)
+
+    document_schema = relationship("DocumentSchemaConfig", back_populates="recognizer_mappings")
 
 
 class StageRequirement(Base):

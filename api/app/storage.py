@@ -9,10 +9,20 @@ Path convention matches SYSTEM_DESIGN.md: {org_id}/{case_id}/{doc_id}/v{version}
 — this is what prevents cross-tenant object traversal in a single bucket.
 """
 
+import base64
 import hashlib
+import logging
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+try:
+    from cryptography.fernet import Fernet
+    _HAS_FERNET = True
+except ImportError:
+    _HAS_FERNET = False
 
 
 class ObjectStorage(ABC):
@@ -26,17 +36,27 @@ class ObjectStorage(ABC):
     def exists(self, key: str) -> bool: ...
 
     @abstractmethod
+    def delete(self, key: str) -> None: ...
+
+    @abstractmethod
     def get_presigned_url(self, key: str, expires_in: int = 300) -> str: ...
 
 
 class LocalObjectStorage(ObjectStorage):
-    """Disk-backed. Not encrypted at rest — SYSTEM_DESIGN.md's encryption
-    requirement (AES-256 via MinIO server-side encryption) applies to the
-    real deployment target, not this local/test stand-in."""
+    """Disk-backed object storage hardened with encryption at rest (Fernet/AES-128-CBC + HMAC-SHA256).
+    Key is derived from settings.JWT_SECRET. Transparently encrypts bytes on write and decrypts on read.
+    """
 
-    def __init__(self, root: str):
+    def __init__(self, root: str, secret: str = "change-me-in-every-env-except-local"):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self.secret = secret
+        if _HAS_FERNET:
+            fernet_key = base64.urlsafe_b64encode(hashlib.sha256(self.secret.encode("utf-8")).digest())
+            self._cipher = Fernet(fernet_key)
+        else:
+            self._cipher = None
+            logger.warning("cryptography package missing: LocalObjectStorage falling back to unencrypted storage.")
 
     def _path(self, key: str) -> Path:
         # key is always our own {org_id}/{case_id}/{doc_id}/v{version} —
@@ -49,19 +69,33 @@ class LocalObjectStorage(ObjectStorage):
     def put(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
+        payload = self._cipher.encrypt(data) if self._cipher else data
         with open(path, "wb") as f:
-            f.write(data)
+            f.write(payload)
 
     def get(self, key: str) -> bytes:
         with open(self._path(key), "rb") as f:
-            return f.read()
+            raw = f.read()
+        if self._cipher:
+            try:
+                return self._cipher.decrypt(raw)
+            except Exception:
+                # If reading legacy or pre-existing unencrypted bytes, return gracefully
+                return raw
+        return raw
 
     def exists(self, key: str) -> bool:
         return self._path(key).exists()
 
+    def delete(self, key: str) -> None:
+        path = self._path(key)
+        if path.exists():
+            path.unlink()
+
     def get_presigned_url(self, key: str, expires_in: int = 300) -> str:
         # Stand-in URL for local disk testing
         return f"/local-storage/{key}?expires={expires_in}"
+
 
 
 class MinIOObjectStorage(ObjectStorage):
@@ -129,6 +163,13 @@ class MinIOObjectStorage(ObjectStorage):
         except Exception:
             return False
 
+    def delete(self, key: str) -> None:
+        self._ensure_bucket()
+        try:
+            self.client.delete_object(Bucket=self.bucket, Key=key)
+        except Exception:
+            pass
+
     def get_presigned_url(self, key: str, expires_in: int = 300) -> str:
         self._ensure_bucket()
         return self.client.generate_presigned_url(
@@ -171,8 +212,9 @@ def get_storage() -> ObjectStorage:
             except Exception:
                 # Endpoint unreachable (e.g. running natively outside docker-compose)
                 root = os.environ.get("OBJECT_STORAGE_LOCAL_DIR", "./data/objects")
-                _default_storage = LocalObjectStorage(root)
+                _default_storage = LocalObjectStorage(root, secret=settings.JWT_SECRET)
         else:
             root = os.environ.get("OBJECT_STORAGE_LOCAL_DIR", "./data/objects")
-            _default_storage = LocalObjectStorage(root)
+            _default_storage = LocalObjectStorage(root, secret=settings.JWT_SECRET)
     return _default_storage
+

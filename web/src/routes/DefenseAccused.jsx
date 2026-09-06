@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import StatusChip from '../components/StatusChip';
 
 export default function DefenseAccused() {
   const { user } = useAuth();
@@ -66,8 +67,8 @@ export default function DefenseAccused() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span className="tag tag-neutral">Role: Defense Counsel</span>
-            <span className="tag tag-neutral">Access: Submission-Only</span>
+            <StatusChip status="neutral" label="Role: Defense Counsel" />
+            <StatusChip status="neutral" label="Access: Submission-Only" />
           </div>
         </div>
 
@@ -100,6 +101,17 @@ export default function DefenseAccused() {
                   onChange={(e) => setCaseNumber(e.target.value)}
                   required
                 />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Statutory Petition Category</label>
+                <select className="form-select" defaultValue="regular">
+                  <option value="regular">Regular Bail Petition — Section 437/439 CrPC (Sec 480/483 BNSS)</option>
+                  <option value="anticipatory">Anticipatory Bail Application — Section 438 CrPC (Sec 482 BNSS)</option>
+                  <option value="interim">Interim Medical / Humanitarian Bail Application</option>
+                  <option value="ndps">Special Bail Petition under NDPS Act § 37 (Commercial Contraband)</option>
+                  <option value="pmla">Special Bail Petition under PMLA § 45 (Economic Offenses)</option>
+                </select>
               </div>
 
               <div className="form-group">
@@ -203,8 +215,8 @@ export default function DefenseAccused() {
                     <td style={{ fontWeight: 500 }}>{sub.type}</td>
                     <td><span className="mono-text">{sub.case_number}</span></td>
                     <td>{sub.filed_on}</td>
-                    <td><span className="tag tag-success">{sub.status}</span></td>
-                    <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{sub.next_action}</td>
+                    <td><StatusChip status={sub.status} /></td>
+                    <td style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{sub.next_action}</td>
                   </tr>
                 ))}
               </tbody>

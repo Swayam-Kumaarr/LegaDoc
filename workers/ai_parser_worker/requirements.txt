@@ -7,4 +7,9 @@ psycopg2-binary==2.9.9
 # guess a patch number, since getting this wrong silently breaks the build.
 presidio-analyzer>=2.2,<3.0
 spacy>=3.7,<3.8
-# After install: python -m spacy download en_core_web_lg
+# After install: python -m spacy download en_core_web_sm
+# (small, ~15MB — matches what worker.py's NlpEngineProvider actually loads;
+# en_core_web_lg is ~588MB and was being downloaded unused, the single
+# biggest chunk of this image's build time. Only bump to _lg if the AI
+# Parser's NER accuracy genuinely needs it and that's confirmed to be worth
+# the size, not by default.)

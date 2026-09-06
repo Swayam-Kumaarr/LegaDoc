@@ -42,6 +42,22 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 50
     UPLOAD_ALLOWED_ROLES: str = "io,sho,duty_officer,authority_staff,config_admin"
 
+    # CORS configuration (Issue #43)
+    # Comma-separated or list of allowed frontend origins. Never allows wildcard (*).
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parsed list of allowed origins. Rejects wildcards to prevent credential leak."""
+        raw = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        if "*" in raw:
+            raise ValueError(
+                "Wildcard origin ('*') is strictly forbidden when allow_credentials=True. "
+                "Specify exact origins in CORS_ORIGINS."
+            )
+        return raw or ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
     # Queue
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/1"

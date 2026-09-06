@@ -6,7 +6,7 @@ WORKDIR /worker
 
 COPY workers/ai_parser_worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
-    && python -m spacy download en_core_web_lg
+    && python -m spacy download en_core_web_sm
 
 COPY workers/ai_parser_worker/worker.py .
 

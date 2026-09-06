@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import StatusChip from '../components/StatusChip';
 
 export default function ExternalAuthority() {
   const { user } = useAuth();
@@ -72,8 +73,8 @@ export default function ExternalAuthority() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span className="tag tag-neutral">Organization: State Forensic Science Laboratory</span>
-            <span className="tag tag-success">Scoped Gateway</span>
+            <StatusChip status="neutral" label="Organization: State Forensic Science Laboratory" />
+            <StatusChip status="confirmed" label="Scoped Gateway: Active" />
           </div>
         </div>
 
@@ -127,17 +128,15 @@ export default function ExternalAuthority() {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                     <span className="mono-text" style={{ fontSize: '11px' }}>{req.id}</span>
-                    <span className="tag tag-pending" style={{ fontSize: '11px' }}>
-                      Open {req.days_open} days
-                    </span>
+                    <StatusChip status="pending" label={`Open ${req.days_open} days`} />
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>
+                  <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-text-primary)' }}>
                     {req.request_type}
                   </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
                     Requested by: {req.requesting_officer} (Case: {req.case_number})
                   </div>
-                  <div style={{ fontSize: '12px', color: 'var(--ink-900)', marginTop: '4px', fontWeight: 500 }}>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-primary)', marginTop: '4px', fontWeight: 500 }}>
                     Target: {req.target_subject}
                   </div>
                 </div>

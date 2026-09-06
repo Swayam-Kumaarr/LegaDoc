@@ -1,44 +1,64 @@
+/* ==========================================================================
+   Visual Design System — SIH26190 Secure Digital DMS
+   Binding Institutional Visual Specification (GIGW / USWDS Compliant)
+   ========================================================================== */
+
 :root {
-  --font-sans: "Public Sans", "Noto Sans", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  /* Core Palette (Section 3.1) */
+  --color-primary: #0B2547;         /* Deep Navy */
+  --color-primary-hover: #12335E;
+  --color-background: #F4F6F9;      /* Warm off-white (never pure white) */
+  --color-surface: #FFFFFF;         /* Cards, tables, modals */
+  --color-surface-subtle: #ECEEF2;   /* Table headers, sunken panels */
+  --color-critical: #A3242F;        /* Muted crimson for critical/error only */
+  --color-critical-bg: rgba(163, 36, 47, 0.12);
+  --color-text-primary: #111827;
+  --color-text-secondary: #5B6472;  /* Slate grey */
+  --color-text-tertiary: #8792A2;
+  --color-border: #D7DCE3;          /* 1px borders */
+  --color-border-strong: #BAC2CC;
+
+  /* Semantic Status Colors (Section 3.2 - paired with text labels) */
+  --color-status-success: #1E6B3E;  /* Deep green */
+  --color-status-pending: #8A6D1F;  /* Muted amber/gold */
+  --color-status-error: #A3242F;    /* Crimson */
+  --color-status-neutral: #5B6472;  /* Slate grey */
+
+  /* Typography (Section 4 - Source Serif 4 headers, Public Sans UI, never Inter) */
+  --font-serif: "Source Serif 4", Georgia, serif;
+  --font-sans: "Public Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "IBM Plex Mono", "Courier New", monospace;
 
-  /* 4.1 Neutrals */
-  --surface-page: #F5F6F8;
-  --surface-panel: #FFFFFF;
-  --surface-sunken: #F0F1F3;
-  --border-default: #D9DEE4;
-  --border-strong: #B6BEC8;
-  --text-primary: #111827;
-  --text-secondary: #4B5565;
-  --text-tertiary: #8A94A3;
-
-  /* 4.2 Institutional / Brand */
-  --ink-900: #0B2547;
-  --ink-700: #12335E;
-  --accent-maroon: #7A1F2B;
-
-  /* 4.3 Status */
-  --status-success-text: #146C2E;
-  --status-success-bg: #E7F6EC;
-  --status-success-border: #97d4a9;
-
-  --status-pending-text: #8A5A00;
-  --status-pending-bg: #FCF1D6;
-  --status-pending-border: #f0cf85;
-
-  --status-danger-text: #B42318;
-  --status-danger-bg: #FBE9E7;
-  --status-danger-border: #f5aba5;
-
-  --status-neutral-text: #4B5565;
-  --status-neutral-bg: #EEF0F2;
-  --status-neutral-border: #cbd3db;
-
-  --radius-default: 4px;
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06);
+  /* Geometry & Elevation (Section 5) */
+  --radius: 3px;                    /* Strict 2–4px radius (never pill, never 0) */
+  --shadow-modal: 0 1px 3px rgba(11, 37, 71, 0.12), 0 1px 2px rgba(11, 37, 71, 0.08);
+  --header-height: 54px;
+  --sidebar-width: 240px;
 }
 
-* {
+/* Dark Mode Tokens (Section 3.3 - >= 4.5:1 contrast ratio) */
+[data-theme="dark"] {
+  --color-primary: #7FA8D9;         /* Lightened navy for dark background */
+  --color-primary-hover: #96BBE6;
+  --color-background: #0E1420;      /* Dark navy background */
+  --color-surface: #161D2B;         /* Surface card */
+  --color-surface-subtle: #1C2536;   /* Sunken panels */
+  --color-critical: #D9505C;        /* Lightened crimson */
+  --color-critical-bg: rgba(217, 80, 92, 0.15);
+  --color-text-primary: #E6E9EF;
+  --color-text-secondary: #9AA4B2;
+  --color-text-tertiary: #6E798A;
+  --color-border: #2A3444;
+  --color-border-strong: #3D4B60;
+
+  --color-status-success: #34D399;
+  --color-status-pending: #FBBF24;
+  --color-status-error: #F87171;
+  --color-status-neutral: #9AA4B2;
+}
+
+/* Reset & Base */
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -46,34 +66,154 @@
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--surface-page);
-  color: var(--text-primary);
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
   font-size: 14px;
-  line-height: 20px;
-  min-height: 100vh;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
 }
 
-/* Layout */
+/* ==========================================================================
+   Typography Classes (Section 4)
+   ========================================================================== */
+.text-display {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 34px;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.text-heading {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--color-text-primary);
+}
+
+.text-body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  color: var(--color-text-primary);
+}
+
+.text-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-secondary);
+}
+
+.text-caption {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  color: var(--color-text-secondary);
+}
+
+.mono-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background-color: var(--color-surface-subtle);
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
+/* In data tables, render identifiers clean and unboxed (Institutional typography) */
+.data-table .mono-text {
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+.hash-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-primary);
+}
+
+.hash-cell-prefix {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hash-cell-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.hash-cell-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all 120ms ease-out;
+}
+
+.hash-cell-copy:hover {
+  background-color: var(--color-surface-subtle);
+  border-color: var(--color-border);
+  color: var(--color-primary);
+}
+
+.hash-cell-copy.copied {
+  color: var(--color-status-success);
+  border-color: var(--color-status-success);
+}
+
+/* ==========================================================================
+   Layout Hierarchy (Section 5: Sidebar + Full-width Content Area)
+   ========================================================================== */
 .app-layout {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  background-color: var(--color-background);
 }
 
-/* 6. Header Band (56px tall, ink-900, white text) */
+/* Top Institutional Masthead */
 .gov-masthead {
-  height: 56px;
-  background-color: var(--ink-900);
+  height: var(--header-height);
+  background-color: #0B2547;
   color: #FFFFFF;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  border-bottom: 2px solid var(--accent-maroon);
+  padding: 0 20px;
+  border-bottom: 2px solid #A3242F;
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 1000;
 }
 
 .gov-masthead-left {
@@ -84,108 +224,195 @@ body {
 
 .gov-emblem-badge {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   padding: 2px 6px;
-  border-radius: var(--radius-default);
+  border-radius: var(--radius);
   text-transform: uppercase;
 }
 
 .gov-system-title {
-  font-size: 15px;
+  font-family: var(--font-serif);
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: #FFFFFF;
 }
 
 .gov-system-subtitle {
+  font-family: var(--font-sans);
   font-size: 11px;
-  color: #B6BEC8;
+  color: #9AA4B2;
   display: block;
 }
 
 .gov-masthead-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
 }
 
-.gov-role-pill {
+.gov-user-id-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-right: 4px;
+}
+
+.gov-user-name {
   font-size: 12px;
+  font-weight: 600;
   color: #FFFFFF;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  padding: 4px 10px;
-  border-radius: var(--radius-default);
+}
+
+.gov-user-badge {
+  font-size: 10px;
+  color: #9AA4B2;
+  font-family: var(--font-mono);
+}
+
+/* Theme Toggle Button */
+.theme-toggle-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #FFFFFF;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-sans);
   font-weight: 500;
+}
+
+.theme-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .gov-logout-btn {
   background: transparent;
   color: #FFFFFF;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   padding: 4px 10px;
   font-size: 12px;
-  border-radius: var(--radius-default);
+  font-family: var(--font-sans);
+  border-radius: var(--radius);
   cursor: pointer;
-  transition: background-color 140ms ease-out;
+  font-weight: 500;
+  transition: background-color 120ms ease-out;
 }
 
 .gov-logout-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.16);
 }
 
-/* Secondary Service Navigation Band (GOV.UK two-tier style) */
-.gov-nav-band {
-  background: var(--surface-panel);
-  border-bottom: 1px solid var(--border-default);
-  padding: 0 24px;
+/* Two-Panel App Body */
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: calc(100vh - var(--header-height));
+}
+
+/* Left Sidebar Navigation (Section 5 & 8: Navy in light mode, left-border active accent, no pills) */
+.gov-sidebar {
+  width: var(--sidebar-width);
+  background-color: #0B2547;
+  color: #FFFFFF;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-border);
+  position: sticky;
+  top: var(--header-height);
+  height: calc(100vh - var(--header-height));
+  overflow-y: auto;
+}
+
+[data-theme="dark"] .gov-sidebar {
+  background-color: #161D2B;
+  border-right-color: #2A3444;
+}
+
+.sidebar-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7FA8D9;
+  padding: 16px 16px 8px 16px;
+}
+
+[data-theme="dark"] .sidebar-section-title {
+  color: #9AA4B2;
+}
+
+.sidebar-nav-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-nav-item {
   display: flex;
   align-items: center;
-  overflow-x: auto;
-}
-
-.gov-nav-item {
-  color: var(--text-secondary);
-  text-decoration: none;
+  gap: 10px;
+  padding: 10px 16px;
   font-size: 13px;
   font-weight: 500;
-  padding: 12px 14px;
-  border-bottom: 3px solid transparent;
-  white-space: nowrap;
-  transition: background-color 140ms ease-out, color 140ms ease-out;
+  color: #D7DCE3;
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+  border-radius: 0; /* Never pill */
 }
 
-.gov-nav-item:hover {
-  color: var(--text-primary);
-  background-color: var(--surface-sunken);
+.sidebar-nav-item:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
 }
 
-.gov-nav-item.active {
-  color: var(--ink-900);
+.sidebar-nav-item.active {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #FFFFFF;
   font-weight: 600;
-  border-bottom-color: var(--ink-900);
-  background-color: var(--surface-sunken);
+  border-left-color: #7FA8D9; /* Section 8: Active item marked with left-border accent */
 }
 
-/* Breadcrumb Row (40px) */
+[data-theme="dark"] .sidebar-nav-item.active {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-left-color: #7FA8D9;
+}
+
+/* Content Area */
+.app-content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background-color: var(--color-background);
+}
+
+/* Breadcrumb Bar (40px) */
 .gov-breadcrumb-bar {
   height: 40px;
   display: flex;
   align-items: center;
   padding: 0 24px;
   font-size: 12px;
-  color: var(--text-secondary);
-  background-color: var(--surface-page);
-  border-bottom: 1px solid var(--border-default);
+  color: var(--color-text-secondary);
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .gov-breadcrumb-bar a {
-  color: var(--ink-900);
+  color: var(--color-primary);
   text-decoration: none;
+  font-weight: 500;
 }
 
 .gov-breadcrumb-bar a:hover {
@@ -194,21 +421,20 @@ body {
 
 .gov-breadcrumb-separator {
   margin: 0 8px;
-  color: var(--text-tertiary);
+  color: var(--color-text-tertiary);
 }
 
-/* Page Container (Max-width 1280px, 24px padding) */
+/* Page Container (Max-width 1440px per Section 5, 24px gutter) */
 .page-container {
-  max-width: 1280px;
+  max-width: 1440px;
   width: 100%;
   margin: 0 auto;
-  padding: 24px;
+  padding: 20px 24px;
   flex: 1;
 }
 
-/* Page Header */
 .page-header {
-  margin-bottom: 20px;
+  margin-bottom: 18px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -217,55 +443,45 @@ body {
 }
 
 .page-title {
-  font-size: 28px;
-  line-height: 36px;
+  font-family: var(--font-serif);
+  font-size: 26px;
+  line-height: 32px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
   letter-spacing: -0.01em;
 }
 
 .page-desc {
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--text-secondary);
-  margin-top: 4px;
-  max-width: 860px;
-}
-
-/* Institutional Notice Callout */
-.domain-notice {
-  background-color: var(--surface-sunken);
-  border: 1px solid var(--border-default);
-  border-left: 4px solid var(--ink-900);
-  padding: 12px 16px;
   font-size: 13px;
   line-height: 18px;
-  color: var(--text-primary);
-  margin-bottom: 20px;
-  border-radius: var(--radius-default);
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+  max-width: 900px;
 }
 
-/* Panels & Cards (No glass, no large shadow) */
+/* ==========================================================================
+   Cards & Surfaces (Section 6.4: 1px border, 2–4px radius, no top strips)
+   ========================================================================== */
 .card {
-  background-color: var(--surface-panel);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-default);
-  padding: 20px;
-  box-shadow: var(--shadow-card);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px;
   margin-bottom: 16px;
 }
 
 .card-title {
+  font-family: var(--font-serif);
   font-size: 16px;
-  line-height: 24px;
+  line-height: 22px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
   margin-bottom: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--color-border);
 }
 
-/* Grids */
+/* Grid Layouts (12-col grid, 24px gutter per Section 5) */
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
@@ -275,223 +491,313 @@ body {
 
 .grid-3 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
   margin-bottom: 16px;
 }
 
-/* Operational Metrics (Plain numbers, no vanity rings) */
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* Stat Widgets (Density over whitespace) */
 .stat-widget {
-  background-color: var(--surface-panel);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-default);
-  padding: 16px;
-  box-shadow: var(--shadow-card);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
 }
 
 .stat-value {
-  font-size: 24px;
-  line-height: 28px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 22px;
+  line-height: 26px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
 }
 
 .stat-label {
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--text-secondary);
-  font-weight: 500;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
   margin-top: 4px;
   display: block;
 }
 
 .stat-sub {
-  font-size: 12px;
-  color: var(--text-tertiary);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
   margin-top: 2px;
   display: block;
 }
 
-/* Tables (7.2 Primary UI element) */
-.table-caption {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-  display: block;
+/* Institutional Notice Callout */
+.domain-notice {
+  background-color: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary);
+  padding: 10px 14px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--color-text-primary);
+  margin-bottom: 16px;
+  border-radius: var(--radius);
 }
 
+/* ==========================================================================
+   Buttons (Section 6.1: Rectangular, 2–4px radius, NEVER rounded-full/pill)
+   ========================================================================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  border-radius: var(--radius); /* Strict 2–4px radius */
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 100ms ease-out, border-color 100ms ease-out;
+}
+
+/* Primary Button: Deep Navy fill, white text, no gradient */
+.btn-primary {
+  background-color: #0B2547;
+  color: #FFFFFF;
+  border-color: #0B2547;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #12335E;
+  border-color: #12335E;
+}
+
+/* Secondary Button: White fill, 1px navy border, navy text */
+.btn-secondary {
+  background-color: var(--color-surface);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--color-surface-subtle);
+  border-color: var(--color-primary);
+}
+
+/* Destructive Button: Critical muted crimson fill, white text */
+.btn-destructive {
+  background-color: var(--color-critical);
+  color: #FFFFFF;
+  border-color: var(--color-critical);
+}
+
+.btn-destructive:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+/* Disabled Button */
+.btn:disabled, .btn-disabled {
+  background-color: var(--color-surface-subtle);
+  border-color: var(--color-border);
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Small Button modifier */
+.btn-sm {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+/* ==========================================================================
+   Tables (Section 6.3: Row height 40px, no zebra, status chip 12% opacity)
+   ========================================================================== */
 .table-container {
   overflow-x: auto;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-default);
-  background-color: var(--surface-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background-color: var(--color-surface);
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
   text-align: left;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .data-table th {
-  background-color: var(--surface-sunken);
-  color: var(--text-primary);
+  background-color: var(--color-surface-subtle);
+  color: var(--color-text-secondary);
   font-weight: 600;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-strong);
-  font-size: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-}
-
-.data-table td {
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--border-default);
-  color: var(--text-primary);
-  height: 44px;
-  vertical-align: middle;
-}
-
-.data-table tr:hover td {
-  background-color: var(--surface-sunken);
-}
-
-/* Status Tags (Section 4.3 - rectangular, 4px radius) */
-.tag {
-  display: inline-block;
-  padding: 2px 8px;
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 500;
-  border-radius: var(--radius-default);
-  border: 1px solid transparent;
+  font-family: var(--font-sans);
   white-space: nowrap;
 }
 
-.tag-success {
-  background-color: var(--status-success-bg);
-  color: var(--status-success-text);
-  border-color: var(--status-success-border);
+.data-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  height: 40px; /* Section 5: Table row height 40px, not 56px+ */
+  vertical-align: middle;
 }
 
-.tag-pending {
-  background-color: var(--status-pending-bg);
-  color: var(--status-pending-text);
-  border-color: var(--status-pending-border);
+/* Hover: subtle background fill only, NO zebra striping */
+.data-table tbody tr:hover td {
+  background-color: var(--color-surface-subtle);
 }
 
-.tag-danger {
-  background-color: var(--status-danger-bg);
-  color: var(--status-danger-text);
-  border-color: var(--status-danger-border);
-}
-
-.tag-neutral {
-  background-color: var(--status-neutral-bg);
-  color: var(--status-neutral-text);
-  border-color: var(--status-neutral-border);
-}
-
-/* 7.4 Redacted Field Chip */
-.redacted-field-chip {
+/* ==========================================================================
+   Status Chips (Section 3.2 & 6.3: 12% opacity fill + full opacity text + 1px border)
+   Square corners (2–4px radius), NEVER rounded-full/pill
+   ========================================================================== */
+.status-chip, .tag {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 24px;
-  background-color: var(--surface-sunken);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-default);
-  padding: 0 8px;
-  font-family: var(--font-sans);
-  font-size: 12px;
-  color: var(--text-secondary);
-  user-select: none;
-}
-
-/* 7.3 Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 36px;
-  padding: 0 14px;
-  font-size: 14px;
-  font-weight: 500;
-  font-family: var(--font-sans);
-  border-radius: var(--radius-default);
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 15px;
+  font-weight: 600;
+  border-radius: var(--radius); /* Square-cornered chip */
   border: 1px solid transparent;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background-color 140ms ease-out;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
-.btn-primary {
-  background-color: var(--ink-900);
-  color: #FFFFFF;
+/* Success / Registered / Confirmed / Ready */
+.status-chip-success, .tag-success {
+  background-color: rgba(30, 107, 62, 0.12);
+  color: var(--color-status-success);
+  border-color: var(--color-status-success);
 }
 
-.btn-primary:hover {
-  background-color: var(--ink-700);
+/* Pending / Processing */
+.status-chip-pending, .tag-pending {
+  background-color: rgba(138, 109, 31, 0.12);
+  color: var(--color-status-pending);
+  border-color: var(--color-status-pending);
 }
 
-.btn-primary:disabled {
-  background-color: var(--surface-sunken);
-  color: var(--text-tertiary);
-  cursor: not-allowed;
+/* Error / Needs Review / Critical / Rejected */
+.status-chip-error, .tag-danger {
+  background-color: rgba(163, 36, 47, 0.12);
+  color: var(--color-status-error);
+  border-color: var(--color-status-error);
 }
 
-.btn-secondary {
-  background-color: var(--surface-panel);
-  border-color: var(--border-default);
-  color: var(--text-primary);
+/* Neutral / Not Started */
+.status-chip-neutral, .tag-neutral {
+  background-color: rgba(91, 100, 114, 0.12);
+  color: var(--color-status-neutral);
+  border-color: var(--color-status-neutral);
 }
 
-.btn-secondary:hover {
-  background-color: var(--surface-sunken);
+/* ==========================================================================
+   Redaction Styling (Section 6.5: Functional Security Requirement)
+   Solid #1A1A1A block, lock icon, entity-type label, NO blur, NO hover reveal
+   ========================================================================== */
+.redacted-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px;
+  background-color: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  user-select: none;
+  cursor: default;
+  vertical-align: middle;
 }
 
-.btn-destructive {
-  background-color: var(--surface-panel);
-  border-color: var(--status-danger-text);
-  color: var(--status-danger-text);
+.redacted-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-critical);
+  background: var(--color-critical-bg);
+  border: 1px solid var(--color-critical);
+  padding: 1px 5px;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
 }
 
-.btn-destructive:hover {
-  background-color: var(--status-danger-bg);
+.redacted-block-bar {
+  display: inline-block;
+  height: 14px;
+  background-color: #1A1A1A; /* Section 6.5: Solid #1A1A1A block */
+  border-radius: 2px;
+  min-width: 60px;
 }
 
-/* 7.1 Forms & Inputs */
+/* ==========================================================================
+   Forms & Custom Dropdowns (Section 6.2 & 6.6: No native unstyled selects)
+   ========================================================================== */
 .form-group {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .form-label {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
 }
 
-.form-input, .form-select, .form-textarea {
+.form-required {
+  color: var(--color-critical);
+  margin-left: 2px;
+}
+
+.form-input, .form-textarea {
   width: 100%;
-  height: 36px;
-  background-color: var(--surface-panel);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-default);
+  height: 34px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
   padding: 0 10px;
   font-family: var(--font-sans);
-  font-size: 14px;
-  color: var(--text-primary);
+  font-size: 13px;
+  color: var(--color-text-primary);
   outline: none;
+  transition: border-color 100ms ease-out, box-shadow 100ms ease-out;
 }
 
-.form-input:focus, .form-select:focus, .form-textarea:focus {
-  border-color: var(--ink-900);
-  outline: 1px solid var(--ink-900);
+.form-input:focus, .form-textarea:focus {
+  border-color: #0B2547;
+  box-shadow: 0 0 0 2px rgba(11, 37, 71, 0.15);
+}
+
+[data-theme="dark"] .form-input:focus, [data-theme="dark"] .form-textarea:focus {
+  border-color: #7FA8D9;
+  box-shadow: 0 0 0 2px rgba(127, 168, 217, 0.2);
 }
 
 .form-textarea {
@@ -501,60 +807,157 @@ body {
   resize: vertical;
 }
 
-/* Monospace text */
-.mono-text {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  background-color: var(--surface-sunken);
-  padding: 2px 6px;
-  border-radius: var(--radius-default);
-  border: 1px solid var(--border-default);
-  color: var(--text-primary);
+/* Official Styled Dropdown / Select (Section 6.2) */
+.form-select {
+  width: 100%;
+  height: 34px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0 28px 0 10px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235B6472' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 14px;
+  transition: border-color 100ms ease-out, box-shadow 100ms ease-out;
 }
 
-/* 7.7 Status Banner */
-.gov-status-banner {
-  padding: 8px 24px;
+.form-select:focus {
+  border-color: #0B2547;
+  box-shadow: 0 0 0 2px rgba(11, 37, 71, 0.15);
+}
+
+[data-theme="dark"] .form-select {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239AA4B2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
+/* Multi-select filter chips (Section 6.2: square corners, not pill) */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 2px 8px;
   font-size: 12px;
+  color: var(--color-text-primary);
+}
+
+.filter-chip-remove {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* ==========================================================================
+   Tabs (Section 8: Underlined text tabs, NOT pill/rounded)
+   ========================================================================== */
+.gov-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 16px;
+}
+
+.gov-tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: 0; /* Strictly underlined, never pill */
+  transition: color 100ms ease-out, border-color 100ms ease-out;
+}
+
+.gov-tab-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.gov-tab-btn.active {
+  color: var(--color-primary);
+  font-weight: 600;
+  border-bottom-color: var(--color-primary);
+}
+
+/* ==========================================================================
+   Alerts & System Banners
+   ========================================================================== */
+.alert {
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 18px;
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+  border: 1px solid transparent;
+}
+
+.alert-error {
+  background-color: var(--color-critical-bg);
+  color: var(--color-critical);
+  border-color: var(--color-critical);
+}
+
+.alert-success {
+  background-color: rgba(30, 107, 62, 0.12);
+  color: var(--color-status-success);
+  border-color: var(--color-status-success);
+}
+
+.alert-warning {
+  background-color: rgba(138, 109, 31, 0.12);
+  color: var(--color-status-pending);
+  border-color: var(--color-status-pending);
+}
+
+.gov-status-banner {
+  padding: 6px 20px;
+  font-size: 11px;
   line-height: 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-weight: 500;
-  border-bottom: 1px solid transparent;
-}
-
-.gov-status-banner-operational {
-  background-color: #F8F9FA;
-  color: var(--text-secondary);
-  border-bottom-color: var(--border-default);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .gov-status-banner-degraded {
-  background-color: var(--status-pending-bg);
-  color: var(--status-pending-text);
-  border-bottom-color: var(--status-pending-border);
+  background-color: rgba(138, 109, 31, 0.15);
+  color: var(--color-status-pending);
+  border-bottom-color: var(--color-status-pending);
 }
 
 .gov-status-banner-down {
-  background-color: var(--status-danger-bg);
-  color: var(--status-danger-text);
-  border-bottom-color: var(--status-danger-border);
+  background-color: rgba(163, 36, 47, 0.15);
+  color: var(--color-critical);
+  border-bottom-color: var(--color-critical);
 }
 
-/* 11. Footer / Identity Bar */
+/* Institutional Footer */
 .gov-footer {
-  background-color: var(--ink-900);
+  background-color: #0B2547;
   color: #FFFFFF;
-  padding: 16px 24px;
-  font-size: 12px;
-  line-height: 18px;
+  padding: 12px 20px;
+  font-size: 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
   margin-top: auto;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .gov-footer-content {
-  max-width: 1280px;
+  max-width: 1440px;
   margin: 0 auto;
   display: flex;
   justify-content: space-between;
@@ -563,67 +966,86 @@ body {
   gap: 8px;
 }
 
-.gov-footer-note {
-  color: #B6BEC8;
-}
-
-/* Simple Tab Navigation */
-.gov-tabs {
+/* ==========================================================================
+   Login Split Panel (Section 8: Left panel navy, right panel warm off-white)
+   ========================================================================== */
+.login-split-page {
   display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--border-default);
-  margin-bottom: 20px;
+  min-height: calc(100vh - var(--header-height));
+  background-color: var(--color-background);
 }
 
-.gov-tab-btn {
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  border-radius: var(--radius-default) var(--radius-default) 0 0;
-  transition: background-color 140ms ease-out;
+.login-left-panel {
+  flex: 1;
+  background-color: #0B2547;
+  color: #FFFFFF;
+  padding: 48px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-.gov-tab-btn:hover {
-  color: var(--text-primary);
-  background-color: var(--surface-sunken);
-}
-
-.gov-tab-btn.active {
-  color: var(--ink-900);
+.login-left-branding h1 {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  line-height: 38px;
   font-weight: 600;
-  border-bottom-color: var(--ink-900);
-  background-color: var(--surface-panel);
+  margin-bottom: 12px;
+  color: #FFFFFF;
 }
 
-/* Alerts */
-.alert {
-  padding: 12px 16px;
-  font-size: 13px;
-  line-height: 18px;
-  border-radius: var(--radius-default);
-  margin-bottom: 16px;
-  border: 1px solid transparent;
+.login-left-branding p {
+  font-size: 14px;
+  line-height: 22px;
+  color: #BAC2CC;
+  max-width: 460px;
 }
 
-.alert-success {
-  background-color: var(--status-success-bg);
-  color: var(--status-success-text);
-  border-color: var(--status-success-border);
+.login-institutional-docket {
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  padding-top: 24px;
 }
 
-.alert-error {
-  background-color: var(--status-danger-bg);
-  color: var(--status-danger-text);
-  border-color: var(--status-danger-border);
+.login-docket-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #BAC2CC;
+  margin-bottom: 8px;
 }
 
-.alert-warning {
-  background-color: var(--status-pending-bg);
-  color: var(--status-pending-text);
-  border-color: var(--status-pending-border);
+.login-docket-row strong {
+  color: #FFFFFF;
+  font-family: var(--font-mono);
+}
+
+.login-right-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  background-color: var(--color-background);
+}
+
+.login-card {
+  max-width: 460px;
+  width: 100%;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 28px;
+}
+
+@media (max-width: 900px) {
+  .login-split-page {
+    flex-direction: column;
+  }
+  .login-left-panel {
+    padding: 24px;
+  }
+  .gov-sidebar {
+    display: none; /* Collapsible on mobile */
+  }
 }

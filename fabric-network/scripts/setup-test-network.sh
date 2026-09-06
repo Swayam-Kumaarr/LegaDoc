@@ -28,7 +28,7 @@ echo "== Bringing up the test network and creating '$CHANNEL_NAME' =="
 ./network.sh up createChannel -c "$CHANNEL_NAME"
 
 echo "== Deploying $CHAINCODE_NAME from $CHAINCODE_PATH =="
-./network.sh deployCC -ccn "$CHAINCODE_NAME" -ccp "$CHAINCODE_PATH" -ccl go
+./network.sh deployCC -c "$CHANNEL_NAME" -ccn "$CHAINCODE_NAME" -ccp "$CHAINCODE_PATH" -ccl go
 
 echo
 echo "Network is up, channel '$CHANNEL_NAME' created, '$CHAINCODE_NAME' deployed."

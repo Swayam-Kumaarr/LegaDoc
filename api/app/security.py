@@ -5,8 +5,12 @@ happen — per SYSTEM_DESIGN.md's B2B multi-tenant overlay, don't reinvent
 this per-endpoint.
 """
 
-import hashlib
+import base64
 from datetime import datetime, timedelta, timezone
+import hashlib
+import hmac
+import struct
+import time
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -34,6 +38,83 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 # so calling bcrypt directly removes the dependency conflict entirely rather
 # than pinning around it.
 _BCRYPT_MAX_BYTES = 72  # bcrypt's own hard limit — truncate rather than error
+
+DISALLOWED_WEAK_PASSWORDS = {
+    "password", "password123", "admin123", "12345678", "qwerty123", "letmein123"
+}
+
+
+def validate_password_strength(password: str) -> None:
+    """Validates that a password satisfies minimum complexity requirements (NIST SP 800-63B).
+    Raises HTTPException(422) if the password is too weak.
+    """
+    if not password or len(password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password must be at least 8 characters long."
+        )
+    if len(password) > 128:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password must not exceed 128 characters."
+        )
+    if password.lower() in DISALLOWED_WEAK_PASSWORDS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password is too common and easily guessable."
+        )
+    has_letter = any(c.isalpha() for c in password)
+    has_digit_or_special = any(c.isdigit() or not c.isalnum() for c in password)
+    if not (has_letter and has_digit_or_special):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password must contain at least one letter and at least one number or special character."
+        )
+
+
+def get_user_mfa_secret(user_id: str, email: str, jwt_secret: str = settings.JWT_SECRET) -> str:
+    """Derives a deterministic, high-entropy 160-bit base32 TOTP secret for a user
+    using HMAC-SHA256, eliminating the need for a separate database secret column.
+    """
+    secret_bytes = hmac.new(
+        jwt_secret.encode("utf-8"),
+        f"legadoc:mfa:{user_id}:{email}".encode("utf-8"),
+        hashlib.sha256
+    ).digest()[:20]
+    return base64.b32encode(secret_bytes).decode("utf-8")
+
+
+def generate_totp_code(secret: str, interval: int = 30) -> str:
+    """Generates a standard 6-digit TOTP code per RFC 6238."""
+    secret_bytes = base64.b32decode(secret.upper() + "=" * ((8 - len(secret) % 8) % 8))
+    counter = int(time.time() // interval)
+    msg = struct.pack(">Q", counter)
+    digest = hmac.new(secret_bytes, msg, hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    code_int = struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF
+    return f"{code_int % 1000000:06d}"
+
+
+def verify_totp_code(secret: str, code: str, interval: int = 30, window: int = 1) -> bool:
+    """Verifies a 6-digit TOTP code against a secret with +/- window steps."""
+    if not code or not secret:
+        return False
+    clean_code = code.strip()
+    try:
+        secret_bytes = base64.b32decode(secret.upper() + "=" * ((8 - len(secret) % 8) % 8))
+    except Exception:
+        secret_bytes = secret.encode("utf-8")
+
+    current_step = int(time.time() // interval)
+    for step in range(current_step - window, current_step + window + 1):
+        msg = struct.pack(">Q", step)
+        digest = hmac.new(secret_bytes, msg, hashlib.sha1).digest()
+        offset = digest[-1] & 0x0F
+        code_int = struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF
+        expected = f"{code_int % 1000000:06d}"
+        if hmac.compare_digest(expected, clean_code):
+            return True
+    return False
 
 
 def _prepare(plain: str) -> bytes:
@@ -291,4 +372,9 @@ def verify_evidence_request_org_access(
             )
         return req
 
-    return req
+    # Default-deny: only the target authority organization (or oversight roles) can fulfill/touch evidence requests
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Role not permitted to fulfill or access external evidence requests",
+    )
+

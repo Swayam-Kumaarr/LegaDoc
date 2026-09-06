@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import StatusChip from '../components/StatusChip';
 
 export default function NeedsReviewQueue() {
   const { user } = useAuth();
@@ -73,8 +74,8 @@ export default function NeedsReviewQueue() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span className="tag tag-pending">Queue Depth: {queueItems.length}</span>
-            <span className="tag tag-danger">Oldest: {Math.max(...queueItems.map(i => i.age_hours))} hours</span>
+            <StatusChip status="pending" label={`Queue Depth: ${queueItems.length}`} />
+            <StatusChip status="critical" label={`Oldest: ${Math.max(...queueItems.map(i => i.age_hours))}h SLA`} />
           </div>
         </div>
 
@@ -162,7 +163,7 @@ export default function NeedsReviewQueue() {
                       <div style={{ fontSize: '13px', color: 'var(--status-danger-text)' }}>
                         {item.failed_step}
                       </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
                         {item.flagged_entity}
                       </div>
                     </td>
@@ -170,11 +171,9 @@ export default function NeedsReviewQueue() {
                       {Math.round(item.confidence_score * 100)}%
                     </td>
                     <td>
-                      <span className={`tag ${item.age_hours >= 24 ? 'tag-danger' : 'tag-neutral'}`}>
-                        {item.age_hours} hrs
-                      </span>
+                      <StatusChip status={item.age_hours >= 24 ? 'error' : 'neutral'} label={`${item.age_hours} hrs`} />
                     </td>
-                    <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                    <td style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                       {item.uploaded_by}
                     </td>
                     <td>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import StatusChip from '../components/StatusChip';
 
 export default function ChargeSheetFiling() {
   const { id: caseId } = useParams();
@@ -74,8 +75,8 @@ export default function ChargeSheetFiling() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span className="tag tag-neutral">Role: Public Prosecutor</span>
-            <span className="tag tag-success">Stage Requirements Engine: Active</span>
+            <StatusChip status="neutral" label="Role: Public Prosecutor" />
+            <StatusChip status="confirmed" label="Stage Requirements Engine: Active" />
           </div>
         </div>
 
@@ -136,9 +137,10 @@ export default function ChargeSheetFiling() {
                     <div style={{ fontWeight: 500, fontSize: '13px' }}>{req.name}</div>
                     <span className="mono-text" style={{ fontSize: '11px' }}>{req.docType}</span>
                   </div>
-                  <span className={`tag ${req.ready ? 'tag-success' : 'tag-pending'}`}>
-                    {req.ready ? 'Attached & Verified' : 'Missing Dependency'}
-                  </span>
+                  <StatusChip
+                    status={req.ready ? 'confirmed' : 'pending'}
+                    label={req.ready ? 'Attached & Verified' : 'Missing Dependency'}
+                  />
                 </div>
               ))}
             </div>

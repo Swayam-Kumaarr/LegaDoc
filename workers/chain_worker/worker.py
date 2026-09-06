@@ -47,13 +47,15 @@ app = Celery(
 
 def _get_fabric_client() -> FabricClient:
     """Separate function, not module-level, so tests can monkeypatch this
-    instead of needing a real connection profile on disk."""
+    instead of needing a real Fabric network on disk.
+
+    org="org1" is hardcoded to match the 2-org test-network this has
+    actually been run against — see fabric_client.py's docstring. A real
+    multi-org deployment should make this configurable per-deployment
+    rather than hardcoded."""
     return FabricClient(
-        connection_profile_path=settings.FABRIC_CONNECTION_PROFILE,
-        msp_id=settings.FABRIC_MSP_ID,
-        org_name=settings.FABRIC_MSP_ID.replace("MSP", "").lower(),  # "PoliceMSP" -> "police" — a real deployment should just configure this explicitly rather than derive it
-        user_name="Admin",
         channel_name="legadoc-channel",
+        org="org1",
     )
 
 

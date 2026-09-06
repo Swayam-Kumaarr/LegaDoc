@@ -73,6 +73,18 @@ def detect_mime_from_bytes(header_bytes: bytes, fallback_content_type: str = "")
     if header_bytes.startswith(b"#!"):
         return "text/x-shellscript"  # Shell / Bash / Python script
 
+    # Detect archive signatures to prevent polyglot archive spoofing & zip bomb entry
+    if header_bytes.startswith(b"PK\x03\x04") or header_bytes.startswith(b"PK\x05\x06") or header_bytes.startswith(b"PK\x07\x08"):
+        return "application/zip"
+    if header_bytes.startswith(b"\x1f\x8b"):
+        return "application/gzip"
+    if header_bytes.startswith(b"7z\xbc\xaf\x27\x1c"):
+        return "application/x-7z-compressed"
+    if header_bytes.startswith(b"Rar!\x1a\x07"):
+        return "application/x-rar-compressed"
+    if header_bytes.startswith(b"BZh"):
+        return "application/x-bzip2"
+
     # 2. Match authentic file format magic signatures
     if header_bytes.startswith(b"%PDF"):
         return "application/pdf"
@@ -118,6 +130,134 @@ def detect_mime_from_bytes(header_bytes: bytes, fallback_content_type: str = "")
     return norm_content_type if norm_content_type else "application/octet-stream"
 
 
+DANGEROUS_PDF_TOKENS = [
+    b"/JavaScript",
+    b"/JS",
+    b"/Launch",
+    b"/SubmitForm",
+    b"/ImportData",
+    b"/EmbeddedFiles",
+]
+
+
+def scan_buffer_for_exploits(data: bytes, detected_mime: str) -> None:
+    """Deep inspection of uploaded file buffers to detect weaponized payloads:
+    1. PDF exploits: Embedded JavaScript, /Launch commands, or embedded binary files.
+    2. Image decompression bombs: Pixel dimensions exceeding 40 Megapixels.
+    3. Script injection in text files: Embedded HTML/JS tags or shell script markers.
+    Raises HTTPException(400) if a security threat is detected.
+    """
+    import struct
+
+    if not data:
+        return
+
+    # 1. PDF weaponization scanning
+    if detected_mime == "application/pdf":
+        for token in DANGEROUS_PDF_TOKENS:
+            if token in data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Security validation failed: File contains potentially malicious PDF action '{token.decode()}'.",
+                )
+
+    # 2. Image pixel decompression bomb defense
+    elif detected_mime == "image/png":
+        if len(data) >= 24 and data.startswith(b"\x89PNG\r\n\x1a\n"):
+            try:
+                width, height = struct.unpack(">II", data[16:24])
+                if width > 10000 or height > 10000 or (width * height) > 40000000:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Security validation failed: Image dimensions exceed maximum safe limit (pixel decompression bomb defense).",
+                    )
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+
+    elif detected_mime == "image/jpeg":
+        try:
+            idx = 2
+            data_len = len(data)
+            while idx < data_len - 8:
+                if data[idx] == 0xFF and data[idx + 1] in (0xC0, 0xC1, 0xC2):
+                    h, w = struct.unpack(">HH", data[idx + 5 : idx + 9])
+                    if w > 10000 or h > 10000 or (w * h) > 40000000:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Security validation failed: Image dimensions exceed maximum safe limit (pixel decompression bomb defense).",
+                        )
+                    break
+                if data[idx] == 0xFF and data[idx + 1] not in (0x00, 0xFF, 0xD8, 0xD9):
+                    marker_len = struct.unpack(">H", data[idx + 2 : idx + 4])[0]
+                    idx += 2 + marker_len
+                else:
+                    idx += 1
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    # 3. Script injection in plain text or CSV files
+    elif detected_mime in ("text/plain", "text/csv"):
+        lower_data = data.lower()
+        if b"<script" in lower_data or b"javascript:" in lower_data or b"powershell" in lower_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Security validation failed: Text document contains forbidden script executable markers.",
+            )
+
+
+def safe_inspect_archive_decompression(
+    archive_bytes: bytes,
+    max_decompressed_bytes: int = 50 * 1024 * 1024,
+    max_ratio: float = 100.0,
+) -> None:
+    """Enforces zip-bomb and zip-slip defenses on archive buffers per security-audit skill:
+    1. Maximum compression ratio cap (<= 100:1)
+    2. Decompressed size cap (<= 50MB)
+    3. Zip-Slip path traversal prevention (rejects '../' and absolute paths)
+    4. Recursion depth limit (rejects nested archives)
+    """
+    import io
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+            total_uncompressed = 0
+            for info in zf.infolist():
+                if info.filename.startswith(("/", "\\")) or ".." in info.filename:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Security validation failed: Archive contains dangerous path traversal (Zip-Slip defense).",
+                    )
+                if info.filename.lower().endswith((".zip", ".tar", ".gz", ".7z", ".rar")):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Security validation failed: Nested archives are prohibited (recursion depth defense).",
+                    )
+                comp_size = max(info.compress_size, 1)
+                if info.file_size > 1024 * 1024 and (info.file_size / comp_size) > max_ratio:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Security validation failed: Archive compression ratio exceeds safe limit (Zip Bomb defense).",
+                    )
+                total_uncompressed += info.file_size
+                if total_uncompressed > max_decompressed_bytes:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="Security validation failed: Decompressed archive exceeds maximum allowed size (Zip Bomb defense).",
+                    )
+    except HTTPException:
+        raise
+    except zipfile.BadZipFile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed or corrupt zip archive.",
+        )
+
+
 async def validate_upload_stream(
     upload_file: UploadFile,
     max_size_mb: int = 50,
@@ -130,6 +270,7 @@ async def validate_upload_stream(
     4. Streams content into SpooledTemporaryFile (5MB memory threshold).
     5. Computes SHA-256 incrementally.
     6. Aborts immediately if size exceeds max_size_mb.
+    7. Scans entire buffer for embedded exploits, weaponized PDF actions, and pixel bombs.
     """
     sanitized_name = sanitize_filename(upload_file.filename or "")
     max_bytes = max_size_mb * 1024 * 1024
@@ -189,6 +330,10 @@ async def validate_upload_stream(
 
         spooled_file.seek(0)
         data = spooled_file.read()
+
+        # 5. Deep security scan for weaponized exploits, scripts, and pixel bombs
+        scan_buffer_for_exploits(data, detected_mime)
+
         is_binary = detected_mime in BINARY_EVIDENCE_MIME_TYPES
 
         return UploadValidationResult(
@@ -201,3 +346,4 @@ async def validate_upload_stream(
         )
     finally:
         spooled_file.close()
+

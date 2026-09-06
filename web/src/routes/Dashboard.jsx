@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
+import StatusChip from '../components/StatusChip';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -9,224 +10,223 @@ export default function Dashboard() {
 
   const role = user?.role || 'duty_officer';
 
-  // Role-specific action cards & metrics
-  const getRoleConfig = () => {
+  // Real domain cases table per PRD Section 8
+  const [assignedCases] = useState([
+    {
+      case_number: 'CYB-2026-482910',
+      id: 'b1a2c3d4-0001-4000-8000-000000000001',
+      crime_type: 'Financial Cyberfraud (Sec 66D IT Act)',
+      stage: 'Investigation & Evidence Ingestion',
+      days_open: 5,
+      status: 'UNDER_INVESTIGATION',
+      status_label: 'Under Investigation',
+      priority: 'CRITICAL'
+    },
+    {
+      case_number: 'NDP-2026-119482',
+      id: 'b1a2c3d4-0002-4000-8000-000000000002',
+      crime_type: 'Commercial Contraband Seizure (NDPS Act)',
+      stage: 'Panchnama Certification & FSL Forwarding',
+      days_open: 12,
+      status: 'CONFIRMED',
+      status_label: 'Chain Confirmed',
+      priority: 'HIGH'
+    },
+    {
+      case_number: 'HOM-2026-004921',
+      id: 'b1a2c3d4-0003-4000-8000-000000000003',
+      crime_type: 'Homicide / Grievous Hurt (Sec 302 IPC)',
+      stage: 'Forensic Autopsy Report Integration',
+      days_open: 28,
+      status: 'NEEDS_REVIEW',
+      status_label: 'Needs Review',
+      priority: 'CRITICAL'
+    },
+    {
+      case_number: 'COR-2026-902144',
+      id: 'b1a2c3d4-0004-4000-8000-000000000004',
+      crime_type: 'Public Procurement Bribery (PC Act)',
+      stage: 'Section 17A Sanction Verification',
+      days_open: 44,
+      status: 'PROCESSING',
+      status_label: 'SLA Pending',
+      priority: 'MEDIUM'
+    },
+    {
+      case_number: 'ROB-2026-339102',
+      id: 'b1a2c3d4-0005-4000-8000-000000000005',
+      crime_type: 'Armed Bank Robbery (Sec 392 IPC)',
+      stage: 'Test Identification Parade & CCTV Review',
+      days_open: 2,
+      status: 'REGISTERED',
+      status_label: 'FIR Registered',
+      priority: 'HIGH'
+    }
+  ]);
+
+  // Operational metrics (density over whitespace per PRD Section 2)
+  const getRoleMetrics = () => {
     switch (role) {
-      case 'io':
-      case 'sho':
-      case 'duty_officer':
-        return {
-          title: t('role_' + role, 'Police Investigation Authority'),
-          metrics: [
-            { label: t('dash_metric_active_cases', 'Active Cases'), value: '24', sub: 'Assigned in this precinct' },
-            { label: t('dash_metric_integrity', 'Fabric Ledger Integrity'), value: '100%', sub: 'SHA-256 hashes confirmed' },
-            { label: t('dash_metric_sla', 'Oldest Pending SLA Requisition'), value: '48h', sub: 'HDFC Bank Nodal Unit' }
-          ],
-          actions: [
-            { label: 'Register New FIR', desc: 'Create initial case docket and commit hash to Fabric', route: '/cases' },
-            { label: 'Inspect Case Worklist', desc: 'Manage evidence, witness statements, and case diary', route: '/cases' },
-            { label: 'Check Needs-Review Queue', desc: 'Verify low-confidence and fallback redacted documents', route: '/review-queue' }
-          ]
-        };
-
       case 'court':
-        return {
-          title: t('role_court', 'Judicial Bench & Magistrate Portal'),
-          metrics: [
-            { label: 'Pending Bail Applications', value: '4', sub: 'Awaiting judicial determination' },
-            { label: 'Active Trial Proceedings', value: '12', sub: 'Charges framed & scheduled' },
-            { label: 'Unredacted Audit Trail', value: '1,420', sub: 'Immutable ledger events' }
-          ],
-          actions: [
-            { label: 'Review Bail Applications', desc: 'Adjudicate bail petitions and issue orders with conditions', route: '/judiciary' },
-            { label: 'Trial Proceedings & Hearings', desc: 'Inspect case dossiers and Section 173 compliance', route: '/judiciary' },
-            { label: 'Inspect Audit Trail', desc: 'Examine cryptographic chain of custody and AI decisions', route: '/judiciary' }
-          ]
-        };
-
+        return [
+          { label: 'Pending Bail Petitions', value: '4', sub: 'Magistrate Court No. 3' },
+          { label: 'Active Trial Proceedings', value: '12', sub: 'Charges framed & docketed' },
+          { label: 'Immutable Ledger Events', value: '1,420', sub: '100% cryptographic integrity' },
+          { label: 'Avg Judicial Turnaround', value: '3.2d', sub: 'Within statutory guidelines' }
+        ];
       case 'prosecutor':
-        return {
-          title: t('role_prosecutor', 'Public Prosecutor Review'),
-          metrics: [
-            { label: 'Cases Pending Charge Sheet', value: '8', sub: 'Evidence collection nearing 60/90 days' },
-            { label: 'Stage Requirements Passed', value: '5', sub: 'Ready for court docketing' },
-            { label: 'Section 409 Conflicts', value: '3', sub: 'Missing mandatory evidence' }
-          ],
-          actions: [
-            { label: 'Validate Stage Requirements', desc: 'Check crime-type mandatory requirements before filing', route: '/cases' },
-            { label: 'Review Evidentiary Dockets', desc: 'Inspect forensic certificates and seizure panchnamas', route: '/cases' }
-          ]
-        };
-
+        return [
+          { label: 'Cases Pending Charge Sheet', value: '8', sub: 'Evidence nearing 60/90 days' },
+          { label: 'Stage Compliance Verified', value: '5', sub: 'Ready for court filing' },
+          { label: 'Section 409 Inconsistencies', value: '3', sub: 'Supplementary required' },
+          { label: 'FSL Certificate Clearance', value: '94%', sub: 'Forensic science division' }
+        ];
       case 'external_authority':
-        return {
-          title: t('role_external_authority', 'External Authority Fulfillment'),
-          metrics: [
-            { label: 'Pending Requisitions', value: '6', sub: 'Dispatched under Section 91 CrPC' },
-            { label: 'Oldest Requisition', value: '6 days', sub: 'Target SLA: under 5 days' },
-            { label: 'Completed Submissions', value: '84', sub: 'Certified reports committed to chain' }
-          ],
-          actions: [
-            { label: 'View Requisitions Inbox', desc: 'Inspect pending evidence requests sorted Oldest First', route: '/authority' },
-            { label: 'Submit Certified Report', desc: 'Upload signed PDF and commit directly to custody chain', route: '/authority' }
-          ]
-        };
-
+        return [
+          { label: 'Pending Requisitions', value: '6', sub: 'Dispatched under Section 91 CrPC' },
+          { label: 'Oldest Requisition SLA', value: '48h', sub: 'Target: under 72h' },
+          { label: 'Certified Submissions', value: '84', sub: 'Committed to ledger' },
+          { label: 'Cryptographic MSP Status', value: 'Active', sub: 'Mutual TLS valid' }
+        ];
       case 'defense':
-        return {
-          title: t('role_defense', 'Defense Counsel Gateway'),
-          metrics: [
-            { label: 'Active Bail Petitions', value: '2', sub: 'Under consideration by Magistrate' },
-            { label: 'Next Scheduled Hearing', value: '10 Sept', sub: 'Court No. 3 Patiala House' },
-            { label: 'Surety Undertakings', value: '1', sub: 'Registered & solvency verified' }
-          ],
-          actions: [
-            { label: 'File Bail Application', desc: 'Submit petition under Section 437/439 CrPC', route: '/defense' },
-            { label: 'Register Surety Bond', desc: 'Submit guarantor documents following bail grant', route: '/defense' }
-          ]
-        };
-
+        return [
+          { label: 'Active Bail Applications', value: '2', sub: 'Under Section 437/439 CrPC' },
+          { label: 'Next Scheduled Hearing', value: '10 Sept', sub: 'Court No. 3 Patiala House' },
+          { label: 'Surety Undertakings', value: '1', sub: 'Guarantor verified' },
+          { label: 'Accessible Case Files', value: '8', sub: 'Sanitized redacted dockets' }
+        ];
       case 'config_admin':
       case 'security_auditor':
-        return {
-          title: t('role_config_admin', 'Platform Administration & Security Governance'),
-          metrics: [
-            { label: 'System & Custom Roles', value: '10', sub: 'Authoritative RBAC definitions' },
-            { label: 'Active Organizations', value: '4', sub: 'Cryptographic MSP tenants' },
-            { label: 'Audit Log Chain Status', value: 'Healthy', sub: 'Zero forks, serial hash valid' }
-          ],
-          actions: [
-            { label: 'Manage Roles & Permissions', desc: 'Create custom roles, assign permissions, and manage users', route: '/admin' },
-            { label: 'Configure Document Schemas', desc: 'Manage sensitivity tiers and entity recognizers', route: '/admin' },
-            { label: 'Blockchain Chain Recovery', desc: 'Two-person control manual retry recovery for documents', route: '/admin' }
-          ]
-        };
-
+        return [
+          { label: 'Active RBAC Role Matrix', value: '10', sub: 'Authoritative mappings' },
+          { label: 'Fabric MSP Tenants', value: '4', sub: 'Multi-organization quorum' },
+          { label: 'Audit Chain Serial Hash', value: 'Valid', sub: 'Zero forks detected' },
+          { label: 'Failed Decryption Attempts', value: '0', sub: '24-hour log window' }
+        ];
       case 'records_ncrb_analyst':
+      case 'duty_officer':
+      case 'io':
+      case 'sho':
       default:
-        return {
-          title: t('role_records_ncrb_analyst', 'NCRB Statistical Analytics'),
-          metrics: [
-            { label: 'Total Matters Tracked', value: '1,482', sub: 'Across 42 state police stations' },
-            { label: 'Avg Days to Charge Sheet', value: '38.4', sub: 'Statutory compliance: 100%' },
-            { label: 'De-Identified Records', value: '100%', sub: 'Zero PII data leakage' }
-          ],
-          actions: [
-            { label: 'Explore Statistical Reports', desc: 'De-identified criminal justice analytics and trends', route: '/reports' }
-          ]
-        };
+        return [
+          { label: 'Active Assigned Cases', value: '24', sub: 'Assigned in this precinct' },
+          { label: 'Fabric Ledger Integrity', value: '100%', sub: 'SHA-256 hashes validated' },
+          { label: 'Oldest Requisition SLA', value: '48h', sub: 'HDFC Bank Nodal Unit' },
+          { label: 'Pending Redaction Verifications', value: '3', sub: 'Requires IO confirmation' }
+        ];
     }
   };
 
-  const config = getRoleConfig();
+  const metrics = getRoleMetrics();
 
   return (
     <div>
+      {/* Breadcrumb Row */}
       <div className="gov-breadcrumb-bar">
         <span>{t('nav_dashboard', 'Dashboard Hub')}</span>
         <span className="gov-breadcrumb-separator">›</span>
-        <span>{user?.name || 'Officer'}</span>
+        <span>{user?.name || 'Officer Identity'}</span>
       </div>
 
       <div className="page-container">
-        
-        {/* Officer Identity Banner */}
-        <div className="card" style={{ marginBottom: '20px', background: 'var(--surface-panel)', borderLeft: '4px solid var(--ink-900)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
-            <div>
-              <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                {t('dash_officer_profile', 'Officer Identity Profile')}
-              </div>
-              <h1 style={{ fontSize: '22px', fontWeight: 600, color: 'var(--ink-900)', marginTop: '4px' }}>
-                {user?.name || 'Authorized Officer'}
-              </h1>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '2px' }}>
-                {user?.designation || 'Government Official'} · {user?.org_name || 'Government Organization'}
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-              <span className="tag tag-neutral" style={{ fontSize: '12px', padding: '4px 8px' }}>
-                {t('dash_service_id', 'Service ID')}: <strong style={{ marginLeft: '4px', fontFamily: 'var(--font-mono)' }}>{user?.service_id || 'GOV-SEC-ID'}</strong>
-              </span>
-              <span className="tag tag-success" style={{ fontSize: '12px', padding: '4px 8px' }}>
-                {config.title}
-              </span>
-            </div>
+        {/* Page Header (No generic hero banner - straight to business per Section 8) */}
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">
+              {user?.designation || 'Investigating Officer'} Worklist
+            </h1>
+            <p className="page-desc">
+              Authoritative case dockets, evidence verification queue, and immutable audit ledger status.
+            </p>
           </div>
-
-          <div style={{ display: 'flex', gap: '20px', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border-default)', fontSize: '12px', color: 'var(--text-secondary)' }}>
-            <div>
-              <span>Official Email:</span> <strong style={{ color: 'var(--text-primary)' }}>{user?.email}</strong>
-            </div>
-            <div>
-              <span>Authoritative Role Code:</span> <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{user?.role}</strong>
-            </div>
-            <div>
-              <span>Access Clearance:</span> <span className="tag tag-success" style={{ marginLeft: '4px' }}>Authoritative RBAC Verified</span>
-            </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <Link to="/cases" className="btn btn-primary">
+              Register New Case / FIR
+            </Link>
           </div>
         </div>
 
-        {/* Operational Metrics */}
-        <div className="grid-3" style={{ marginBottom: '20px' }}>
-          {config.metrics.map((m, idx) => (
+        {/* Operational Metrics (Dense 4-column row per Section 2 & 5) */}
+        <div className="grid-4">
+          {metrics.map((m, idx) => (
             <div key={idx} className="stat-widget">
-              <span className="stat-value">{m.value}</span>
+              <div className="stat-value">{m.value}</div>
               <span className="stat-label">{m.label}</span>
               <span className="stat-sub">{m.sub}</span>
             </div>
           ))}
         </div>
 
-        {/* Role-Specific Workflows & Actions */}
-        <div className="card">
-          <h2 className="card-title">{t('dash_quick_actions', 'Operational Quick Actions')}</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-            Primary workflows and tasks assigned to your authoritative jurisdiction:
-          </p>
+        {/* Dense Table: My Assigned Cases (PRD Section 8) */}
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h2 className="text-heading" style={{ fontSize: '15px' }}>
+                My Assigned Cases
+              </h2>
+              <span className="text-caption">
+                Active matters assigned to this official identity under Section 156/157 CrPC
+              </span>
+            </div>
+            <Link to="/cases" className="text-caption" style={{ color: 'var(--color-primary)', fontWeight: 600, textDecoration: 'none' }}>
+              View All Case Records →
+            </Link>
+          </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-            {config.actions.map((act, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: '16px',
-                  borderRadius: '4px',
-                  border: '1px solid var(--border-default)',
-                  background: 'var(--surface-sunken)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between'
-                }}
-              >
-                <div>
-                  <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--ink-900)', margin: '0 0 6px 0' }}>
-                    {act.label}
-                  </h3>
-                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 16px 0', lineHeight: '18px' }}>
-                    {act.desc}
-                  </p>
-                </div>
-                <Link
-                  to={act.route}
-                  className="btn btn-primary"
-                  style={{ textDecoration: 'none', textAlign: 'center', width: 'auto', alignSelf: 'flex-start' }}
-                >
-                  Launch Workflow →
-                </Link>
-              </div>
-            ))}
+          <div className="table-container" style={{ border: 'none', borderRadius: 0 }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Case Number</th>
+                  <th>Crime Type</th>
+                  <th>Investigation Stage</th>
+                  <th style={{ width: '100px' }}>Days Open</th>
+                  <th style={{ width: '140px' }}>Status</th>
+                  <th style={{ width: '120px', textAlign: 'right' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assignedCases.map((c) => (
+                  <tr key={c.case_number}>
+                    <td>
+                      <Link
+                        to={`/cases/${c.id}`}
+                        style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}
+                      >
+                        {c.case_number}
+                      </Link>
+                    </td>
+                    <td>{c.crime_type}</td>
+                    <td>
+                      <span className="text-caption" style={{ color: 'var(--color-text-primary)' }}>
+                        {c.stage}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="mono-text" style={{ fontSize: '11px' }}>
+                        {c.days_open}d
+                      </span>
+                    </td>
+                    <td>
+                      <StatusChip status={c.status} label={c.status_label} />
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <Link to={`/cases/${c.id}`} className="btn btn-secondary btn-sm">
+                        Inspect Docket
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        {/* System & Jurisdictional Notice */}
-        <div className="domain-notice" style={{ marginTop: '20px' }}>
-          <strong>Role-Based Access Control Enforcement:</strong> Your navigation and data views are filtered
-          strictly to match the authoritative role and permissions associated with your official service identity.
-          Cross-jurisdictional reads and privilege self-escalation are structurally prevented at the API boundary.
+        {/* Statutory Compliance Notice */}
+        <div className="domain-notice" style={{ marginTop: '16px' }}>
+          <strong>Statutory Compliance Requirement:</strong> All documentary evidence ingested must have an accompanying
+          Section 65B Electronic Certificate committed to the Hyperledger Fabric ledger prior to final Charge Sheet dispatch.
         </div>
-
       </div>
     </div>
   );

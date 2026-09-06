@@ -111,3 +111,40 @@ def verify_chain_intact(db: Session) -> bool:
             return False
         prev_hash = row.row_hash
     return True
+
+
+def verify_case_chain_integrity(db: Session, case_id) -> dict:
+    """Verifies tamper-evident integrity for audit entries associated with a specific case.
+    Validates that:
+      1. Every audit row in the global table maintains valid hash chaining (row_hash == hash(prev_hash + content)
+         and prev_hash == previous_row.row_hash).
+      2. The case's entries are properly embedded in this intact chain.
+    Returns a dict matching schemas.CaseChainIntegrityResponse:
+      case_id, chain_intact, total_entries, latest_hash
+    """
+    case_uuid = case_id if isinstance(case_id, UUID) else UUID(str(case_id))
+    rows = db.query(models.AuditLog).order_by(models.AuditLog.seq.asc()).all()
+    prev_hash = None
+    chain_intact = True
+    case_rows = []
+
+    for row in rows:
+        content = _row_content(row.case_id, row.actor_user_id, row.action, row.target_type, row.target_id, row.action_metadata, row.created_at)
+        expected = hashlib.sha256(f"{prev_hash}|{content}".encode("utf-8")).hexdigest()
+        if expected != row.row_hash or row.prev_hash != prev_hash:
+            chain_intact = False
+            break
+        prev_hash = row.row_hash
+        if row.case_id == case_uuid:
+            case_rows.append(row)
+
+    total_entries = len(case_rows) if chain_intact else db.query(models.AuditLog).filter(models.AuditLog.case_id == case_uuid).count()
+    latest_hash = case_rows[-1].row_hash if (chain_intact and case_rows) else None
+
+    return {
+        "case_id": case_uuid,
+        "chain_intact": chain_intact,
+        "total_entries": total_entries,
+        "latest_hash": latest_hash,
+    }
+

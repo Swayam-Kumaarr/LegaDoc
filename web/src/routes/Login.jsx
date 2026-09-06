@@ -15,8 +15,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showTestDrawer, setShowTestDrawer] = useState(false);
 
-  const from = location.state?.from?.pathname || '/dashboard';
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
@@ -39,144 +37,184 @@ export default function Login() {
   };
 
   return (
-    <div style={{ minHeight: '85vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-      <div className="card" style={{ maxWidth: '480px', width: '100%', padding: '32px' }}>
-        
-        {/* Language Selector Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', fontWeight: 600 }}>
-            {t('official_system', 'Official System')}
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-              {t('choose_language', 'Language')}:
-            </label>
-            <select
-              className="form-select"
-              style={{ width: 'auto', height: '28px', fontSize: '11px', padding: '2px 6px' }}
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-            >
-              {supportedLanguages.map(l => (
-                <option key={l.code} value={l.code}>{l.native} ({l.label})</option>
-              ))}
-            </select>
+    <div className="login-split-page">
+      {/* Left Panel: Deep Navy, Serif Wordmark, Institutional Context (PRD Section 8) */}
+      <div className="login-left-panel">
+        <div className="login-left-branding">
+          <div style={{ display: 'inline-block', marginBottom: '16px' }}>
+            <span className="gov-emblem-badge">[NATIONAL LAW ENFORCEMENT PORTAL]</span>
           </div>
-        </div>
-
-        {/* Portal Branding */}
-        <div style={{ marginBottom: '24px', borderBottom: '1px solid var(--border-default)', paddingBottom: '16px' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: 600, color: 'var(--ink-900)', margin: 0 }}>
-            {t('login_portal_title', 'Secure Digital DMS Access Portal')}
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '4px' }}>
-            {t('login_portal_sub', 'Official Electronic Records & Chain-of-Custody System')}
+          <h1>Secure Digital DMS</h1>
+          <p>
+            Cryptographically audited electronic records, forensic evidence chain-of-custody,
+            and inter-agency case docketing for state law enforcement and judicial authorities.
           </p>
         </div>
 
-        {error && <div className="alert alert-error">{error}</div>}
-
-        {/* Authoritative Credentials Form */}
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label">
-              {t('service_id_label', 'Official Email ID or Government Service ID / Badge')}
-            </label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder={t('service_id_placeholder', 'e.g. officer.rao@police.gov.in or DL-POL-4921')}
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              required
-            />
+        <div className="login-institutional-docket">
+          <div className="login-docket-row">
+            <span>Statutory Authority</span>
+            <strong>Section 173 CrPC / BNSS 2023</strong>
           </div>
-
-          <div className="form-group">
-            <label className="form-label">
-              {t('password_label', 'Password / Authentication Secret')}
-            </label>
-            <input
-              type="password"
-              className="form-input"
-              placeholder="••••••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+          <div className="login-docket-row">
+            <span>Cryptographic Proof Engine</span>
+            <strong>SHA-256 Fabric Ledger</strong>
           </div>
-
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ width: '100%', marginTop: '8px' }}
-            disabled={loading}
-          >
-            {loading ? t('signin_loading', 'Verifying Authoritative Credentials...') : t('signin_btn', 'Sign In & Authorize')}
-          </button>
-        </form>
-
-        {/* Authoritative Access Control Notice */}
-        <div style={{ marginTop: '20px', fontSize: '11px', color: 'var(--text-tertiary)', lineHeight: '16px' }}>
-          {t('auth_notice', 'Notice: Access is strictly audited. Role and permissions are authoritatively retrieved from the Government Identity Directory upon verification.')}
+          <div className="login-docket-row">
+            <span>Access Control Model</span>
+            <strong>Authoritative RBAC Level-4</strong>
+          </div>
+          <div className="login-docket-row">
+            <span>Verification Standard</span>
+            <strong>Section 65B Indian Evidence Act</strong>
+          </div>
         </div>
+      </div>
 
-        {/* Pre-Registered Official Test Credentials (Evaluation Drawer) */}
-        <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-default)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink-900)' }}>
-              {t('test_accounts_header', 'Pre-Registered Official Test Accounts')}
+      {/* Right Panel: Clean Government Form on Warm Off-White (PRD Section 8) */}
+      <div className="login-right-panel">
+        <div className="login-card">
+          {/* Header & Language Selection */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <span className="text-label" style={{ fontSize: '11px' }}>
+              Official Identity Verification
             </span>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ height: '26px', fontSize: '11px', padding: '0 8px' }}
-              onClick={() => setShowTestDrawer(!showTestDrawer)}
-            >
-              {showTestDrawer ? 'Hide Accounts' : 'Show Accounts'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <label htmlFor="login-lang-select" className="text-caption" style={{ fontWeight: 600 }}>
+                {t('choose_language', 'Lang')}:
+              </label>
+              <select
+                id="login-lang-select"
+                className="form-select"
+                style={{ width: 'auto', height: '26px', fontSize: '11px', padding: '1px 22px 1px 6px' }}
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+              >
+                {supportedLanguages.map(l => (
+                  <option key={l.code} value={l.code}>{l.native} ({l.label})</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {showTestDrawer && (
-            <div style={{ marginTop: '12px' }}>
-              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                {t('test_accounts_sub', 'Click any official identity to auto-fill credentials and verify authoritative server-side role resolution:')}
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '220px', overflowY: 'auto' }}>
-                {testCredentials.map((acc) => (
-                  <div
-                    key={acc.email}
-                    onClick={() => handleSelectTestAccount(acc)}
-                    style={{
-                      padding: '8px 10px',
-                      borderRadius: '4px',
-                      border: '1px solid var(--border-default)',
-                      background: 'var(--surface-sunken)',
-                      cursor: 'pointer',
-                      fontSize: '11px',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {acc.designation}
-                      </div>
-                      <div style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>
-                        {acc.service_id} · {acc.email}
-                      </div>
-                    </div>
-                    <span className="tag tag-neutral" style={{ fontSize: '10px' }}>
-                      {acc.role_label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+          <h2 className="text-heading" style={{ fontSize: '20px', marginBottom: '4px' }}>
+            Sign In to Officer Portal
+          </h2>
+          <p className="text-caption" style={{ marginBottom: '18px' }}>
+            Enter your authoritative badge number or official department email address.
+          </p>
 
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="badge-identifier">
+                Badge ID / Official Email <span className="form-required">*</span>
+              </label>
+              <input
+                id="badge-identifier"
+                type="text"
+                className="form-input"
+                placeholder="e.g. officer.rao@police.gov.in"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                required
+                autoComplete="username"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="auth-password">
+                Authentication Secret <span className="form-required">*</span>
+              </label>
+              <input
+                id="auth-password"
+                type="password"
+                className="form-input"
+                placeholder="••••••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="btn btn-primary"
+              style={{ width: '100%', marginTop: '8px' }}
+              disabled={loading}
+            >
+              {loading ? 'Verifying Authoritative Credentials...' : 'Sign In & Authorize'}
+            </button>
+
+            <div style={{ marginTop: '14px', textAlign: 'center' }}>
+              <span className="text-caption">
+                Credential issues? Contact your{' '}
+                <span style={{ color: 'var(--color-text-secondary)', textDecoration: 'underline', cursor: 'pointer' }}>
+                  Precinct Systems Administrator
+                </span>
+              </span>
+            </div>
+          </form>
+
+          {/* Official Pre-Registered Identities Drawer (Section 6.4) */}
+          <div style={{ marginTop: '20px', paddingTop: '14px', borderTop: '1px solid var(--color-border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="text-label" style={{ fontSize: '11px', color: 'var(--color-text-primary)' }}>
+                Pre-Registered Official Personas
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowTestDrawer(!showTestDrawer)}
+              >
+                {showTestDrawer ? 'Hide Personas' : 'Show Personas'}
+              </button>
+            </div>
+
+            {showTestDrawer && (
+              <div style={{ marginTop: '12px' }}>
+                <p className="text-caption" style={{ marginBottom: '8px' }}>
+                  Select an official role to populate authoritative credentials:
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+                  {testCredentials.map((acc) => (
+                    <div
+                      key={acc.email}
+                      onClick={() => handleSelectTestAccount(acc)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 'var(--radius)',
+                        border: '1px solid var(--color-border)',
+                        background: 'var(--color-surface-subtle)',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                          {acc.designation}
+                        </div>
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
+                          {acc.service_id} · {acc.email}
+                        </div>
+                      </div>
+                      <span className="status-chip status-chip-neutral" style={{ fontSize: '9px', padding: '1px 5px' }}>
+                        {acc.role_label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
       </div>
     </div>
   );
