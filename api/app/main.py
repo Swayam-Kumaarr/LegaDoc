@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import (
-    auth, orgs, cases, evidence_requests, documents, bail, trial, audit, admin, reports, demo,
+    auth, orgs, documents, audit, admin, reports, demo,
 )
 
 app = FastAPI(
@@ -31,11 +31,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(orgs.router)
-app.include_router(cases.router)
-app.include_router(evidence_requests.router)
 app.include_router(documents.router)
-app.include_router(bail.router)
-app.include_router(trial.router)
 app.include_router(audit.router)
 app.include_router(admin.router)
 app.include_router(reports.router)
