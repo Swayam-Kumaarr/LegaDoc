@@ -25,26 +25,6 @@ export default function PoliceInvestigation() {
   const [diaryNote, setDiaryNote] = useState('');
   const [diaryStatus, setDiaryStatus] = useState(null);
 
-  // Sample Cases
-  const sampleCases = [
-    {
-      id: 'b1a2c3d4-0001-4000-8000-000000000001',
-      case_number: 'CYB-2026-482910',
-      crime_type: 'Cybercrime',
-      investigation_status: 'FIR_Registered',
-      created_at: '2026-09-02T10:30:00Z',
-      blockchain_status: 'confirmed'
-    },
-    {
-      id: 'b1a2c3d4-0002-4000-8000-000000000002',
-      case_number: 'NDP-2026-119482',
-      crime_type: 'NDPS',
-      investigation_status: 'Under_Investigation',
-      created_at: '2026-09-01T14:15:00Z',
-      blockchain_status: 'confirmed'
-    }
-  ];
-
   const fetchCases = async () => {
     setLoadingCases(true);
     try {
@@ -53,12 +33,13 @@ export default function PoliceInvestigation() {
         setCases(data);
         setSelectedCaseId(data[0].id);
       } else {
-        setCases(sampleCases);
-        setSelectedCaseId(sampleCases[0].id);
+        setCases([]);
+        setSelectedCaseId(null);
       }
-    } catch (_) {
-      setCases(sampleCases);
-      setSelectedCaseId(sampleCases[0].id);
+    } catch (err) {
+      console.error('Failed to fetch cases:', err);
+      setCases([]);
+      setSelectedCaseId(null);
     } finally {
       setLoadingCases(false);
     }
@@ -82,17 +63,7 @@ export default function PoliceInvestigation() {
       setComplaintText('');
       fetchCases();
     } catch (err) {
-      const mockCase = {
-        id: `mock-${Date.now()}`,
-        case_number: `${crimeType.slice(0, 3).toUpperCase()}-2026-${Math.floor(100000 + Math.random() * 900000)}`,
-        crime_type: crimeType,
-        investigation_status: 'FIR_Registered',
-        created_at: new Date().toISOString(),
-        blockchain_status: 'confirmed'
-      };
-      setCases([mockCase, ...cases]);
-      setFirStatus({ type: 'success', msg: `FIR registered: Case ${mockCase.case_number} (Fabric Track A enqueued)` });
-      setComplaintText('');
+      setFirStatus({ type: 'error', msg: err.message || 'Failed to register FIR. Verify duty officer role permissions.' });
     }
   };
 
@@ -100,7 +71,7 @@ export default function PoliceInvestigation() {
     e.preventDefault();
     if (!uploadFile || !selectedCaseId) return;
 
-    setUploadStatus({ type: 'pending', msg: 'Executing parallel tracks: Track A (SHA-256 Hashing) and Track B (OCR Redaction)...' });
+    setUploadStatus({ type: 'pending', msg: 'Uploading and enqueuing dual tracks: Track A (SHA-256 Hashing) and Track B (OCR Redaction)...' });
 
     const formData = new FormData();
     formData.append('case_id', selectedCaseId);
@@ -110,28 +81,38 @@ export default function PoliceInvestigation() {
     try {
       const doc = await apiUpload('/documents', formData);
       setUploadedDoc(doc);
-      setUploadStatus({ type: 'success', msg: `Document uploaded. Hash: ${doc.doc_hash?.slice(0, 16)}... Status: ${doc.status}` });
+      setUploadStatus({
+        type: 'success',
+        msg: `Document uploaded. Hash: ${doc.doc_hash?.slice(0, 16)}... Status: ${doc.status}`
+      });
       setUploadFile(null);
     } catch (err) {
-      const mockUploaded = {
-        id: 'doc-' + Math.random().toString(36).substring(2, 9),
-        doc_type: docType,
-        version: 1,
-        doc_hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-        status: 'ready',
-        chain_status: 'confirmed',
-        text: `[Redacted · Victim Name] reported an incident on 2026-09-02 at [Redacted · Location]. Seized serial number [Redacted · Identifier].`
-      };
-      setUploadedDoc(mockUploaded);
-      setUploadStatus({ type: 'success', msg: `Upload processed. SHA-256: ${mockUploaded.doc_hash.slice(0, 16)}... Confirmed on ledger.` });
+      setUploadStatus({
+        type: 'error',
+        msg: err.message || 'Upload failed. Ensure valid case ID and authorized officer credentials.'
+      });
     }
   };
 
-  const handleAddDiaryEntry = (e) => {
+  const handleAddDiaryEntry = async (e) => {
     e.preventDefault();
-    if (!diaryNote) return;
-    setDiaryStatus({ type: 'success', msg: 'Case Diary entry appended to tamper-evident ledger (Section 172 CrPC).' });
-    setDiaryNote('');
+    if (!diaryNote || !selectedCaseId) return;
+    setDiaryStatus({ type: 'pending', msg: 'Appending case diary entry and routing through AI Parser...' });
+    try {
+      const entry = await apiClient(`/cases/${selectedCaseId}/case-diary`, {
+        body: { text: diaryNote }
+      });
+      setDiaryStatus({
+        type: 'success',
+        msg: `Case Diary entry appended (ID: ${entry.id || 'Saved'}). Auto-tagged by AI Parser under Section 172 CrPC.`
+      });
+      setDiaryNote('');
+    } catch (err) {
+      setDiaryStatus({
+        type: 'error',
+        msg: err.message || 'Failed to append case diary entry. Ensure case is assigned to current IO.'
+      });
+    }
   };
 
   return (

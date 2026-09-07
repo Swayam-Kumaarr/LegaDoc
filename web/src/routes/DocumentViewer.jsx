@@ -58,12 +58,29 @@ export default function DocumentViewer() {
     };
   }, [docId]);
 
-  const handleApplyCorrection = (e) => {
+  const handleApplyCorrection = async (e) => {
     e.preventDefault();
-    setCorrectionAlert({
-      type: 'success',
-      msg: `Officer Correction Submitted: Tagged [${entityType}] at positions [${spanStart}:${spanEnd}]. Audit trail updated.`
-    });
+    if (!docId) return;
+    try {
+      await apiClient(`/documents/${docId}/redact-tag`, {
+        body: {
+          entity_type: entityType,
+          span_start: parseInt(spanStart, 10),
+          span_end: parseInt(spanEnd, 10),
+        }
+      });
+      setCorrectionAlert({
+        type: 'success',
+        msg: `Officer Correction Submitted: Tagged [${entityType}] at positions [${spanStart}:${spanEnd}]. Audit trail and hash chain updated.`
+      });
+      const updated = await apiClient(`/documents/${docId}`);
+      if (updated) setDocumentData(updated);
+    } catch (err) {
+      setCorrectionAlert({
+        type: 'error',
+        msg: err.message || 'Failed to submit correction tag. Verify officer role authorization.'
+      });
+    }
   };
 
   if (loading) {
@@ -74,7 +91,13 @@ export default function DocumentViewer() {
 
   // Render text replacing [Redacted · Entity] with strict Section 6.5 RedactedBlock
   const renderSanitizedContent = (text) => {
-    if (!text) return null;
+    if (!text) {
+      return (
+        <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
+          Document text is currently being processed by OCR & AI Parser, or is a binary exhibit awaiting extraction.
+        </div>
+      );
+    }
     const regex = /\[Redacted\s*[·—\-:]\s*([^\]]+)\]/gi;
     const parts = [];
     let lastIndex = 0;

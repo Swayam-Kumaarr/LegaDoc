@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -8,54 +8,68 @@ export default function ChargeSheetFiling() {
   const { id: caseId } = useParams();
   const { user } = useAuth();
 
+  const [currentCase, setCurrentCase] = useState(null);
+  const [caseDocs, setCaseDocs] = useState([]);
+  const [loadingCase, setLoadingCase] = useState(false);
   const [prosecutorNotes, setProsecutorNotes] = useState('');
   const [filingStatus, setFilingStatus] = useState(null);
   const [missingRequirements, setMissingRequirements] = useState(null);
   const [isAttempting, setIsAttempting] = useState(false);
 
-  const [requirementsState, setRequirementsState] = useState([
-    { id: 'req-1', name: 'FIR Copy with Crime Section Classification', ready: true, docType: 'FIR' },
-    { id: 'req-2', name: 'Scene of Crime / Seizure Panchnama', ready: true, docType: 'Panchnama' },
-    { id: 'req-3', name: 'Forensic Lab (FSL) Chemical Purity Certificate', ready: false, docType: 'Forensic_Report' },
-    { id: 'req-4', name: 'Witness Statements (Section 161 CrPC)', ready: true, docType: 'Witness_Statement' },
-    { id: 'req-5', name: 'Accused Arrest & Custody Memo', ready: true, docType: 'Arrest_Memo' },
-  ]);
+  useEffect(() => {
+    if (!caseId) return;
+    setLoadingCase(true);
+    Promise.all([
+      apiClient(`/cases/${caseId}`).catch(() => null),
+      apiClient(`/documents?case_id=${caseId}`).catch(() => [])
+    ]).then(([c, docs]) => {
+      if (c) setCurrentCase(c);
+      if (docs) setCaseDocs(docs);
+    }).finally(() => {
+      setLoadingCase(false);
+    });
+  }, [caseId]);
 
   const handleAttemptFiling = async (e) => {
     e.preventDefault();
+    if (!caseId) {
+      setFilingStatus({
+        type: 'error',
+        msg: 'No case ID specified. Please access this page from a specific case.'
+      });
+      return;
+    }
+
     setIsAttempting(true);
     setFilingStatus(null);
     setMissingRequirements(null);
 
     try {
-      await apiClient(`/cases/${caseId || 'sample-case'}/file-charge-sheet`, {
-        body: { notes: prosecutorNotes }
+      const updatedCase = await apiClient(`/cases/${caseId}/file-charge-sheet`, {
+        method: 'POST'
       });
+      setCurrentCase(updatedCase);
       setFilingStatus({
         type: 'success',
-        msg: 'Charge sheet admitted. All statutory requirements under Section 173 CrPC verified. Transmitted to Magistrate Court.'
+        msg: 'Charge sheet admitted. All statutory requirements under Section 173 CrPC / BNSS verified. Transmitted to Magistrate Court docket.'
       });
     } catch (err) {
-      const missing = requirementsState.filter(r => !r.ready);
-      if (missing.length > 0) {
-        setMissingRequirements(missing);
+      const missing = err.data?.detail?.missing_items;
+      if (missing && Array.isArray(missing)) {
+        setMissingRequirements(missing.map((item, idx) => ({ id: `req-${idx}`, name: item })));
         setFilingStatus({
           type: 'error',
-          msg: 'HTTP 409 Conflict: Charge sheet cannot be filed. Mandatory stage requirements remain incomplete.'
+          msg: `HTTP 409 Conflict: ${err.data?.detail?.message || 'Charge sheet cannot be filed. Mandatory stage requirements remain incomplete.'}`
         });
       } else {
         setFilingStatus({
-          type: 'success',
-          msg: 'Charge sheet successfully admitted to court docket.'
+          type: 'error',
+          msg: err.message || 'Charge sheet filing failed. Please check server logs.'
         });
       }
     } finally {
       setIsAttempting(false);
     }
-  };
-
-  const toggleRequirement = (id) => {
-    setRequirementsState(requirementsState.map(r => r.id === id ? { ...r, ready: !r.ready } : r));
   };
 
   return (
@@ -109,41 +123,64 @@ export default function ChargeSheetFiling() {
           </div>
         )}
 
+        {currentCase && (
+          <div className="card" style={{ marginBottom: '16px', background: 'var(--surface-sunken)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <strong style={{ fontSize: '15px' }}>Case {currentCase.case_number || currentCase.id?.slice(0, 8)}</strong>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  Case Number: <span className="mono-text">{currentCase.case_number}</span> | Crime Type: <strong>{currentCase.crime_type}</strong> | Jurisdiction: {currentCase.court_level || 'Magistrate Court'}
+                </div>
+              </div>
+              <StatusChip
+                status={currentCase.investigation_status === 'Charge_Sheet_Filed' ? 'confirmed' : 'pending'}
+                label={currentCase.investigation_status}
+              />
+            </div>
+          </div>
+        )}
+
         <div className="grid-2">
-          {/* Checklist */}
+          {/* Live Evidentiary Dossier */}
           <div className="card">
-            <h2 className="card-title">Mandatory Stage Requirements Checklist</h2>
+            <h2 className="card-title">Case Evidentiary Dossier</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '12px' }}>
-              Click any item below to simulate fulfilling or unfulfilling a dependency.
+              Documents and evidence records attached to this case ledger:
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {requirementsState.map(req => (
-                <div
-                  key={req.id}
-                  onClick={() => toggleRequirement(req.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    background: 'var(--surface-sunken)',
-                    borderRadius: '4px',
-                    border: '1px solid var(--border-default)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 500, fontSize: '13px' }}>{req.name}</div>
-                    <span className="mono-text" style={{ fontSize: '11px' }}>{req.docType}</span>
+            {loadingCase ? (
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Loading case dossier...</p>
+            ) : caseDocs.length === 0 ? (
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                No documents currently attached to this case. Mandatory stage requirements will fail AND-join validation.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {caseDocs.map(doc => (
+                  <div
+                    key={doc.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      background: 'var(--surface-sunken)',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-default)',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 500, fontSize: '13px' }}>{doc.file_name}</div>
+                      <span className="mono-text" style={{ fontSize: '11px' }}>{doc.doc_type || 'Unclassified'}</span>
+                    </div>
+                    <StatusChip
+                      status={doc.ocr_status === 'completed' ? 'confirmed' : 'pending'}
+                      label={doc.ocr_status || 'uploaded'}
+                    />
                   </div>
-                  <StatusChip
-                    status={req.ready ? 'confirmed' : 'pending'}
-                    label={req.ready ? 'Attached & Verified' : 'Missing Dependency'}
-                  />
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Form */}
@@ -170,9 +207,13 @@ export default function ChargeSheetFiling() {
                 type="submit"
                 className="btn btn-primary"
                 style={{ width: '100%' }}
-                disabled={isAttempting}
+                disabled={isAttempting || currentCase?.investigation_status === 'Charge_Sheet_Filed'}
               >
-                {isAttempting ? 'Verifying Stage Requirements...' : 'File Charge Sheet'}
+                {isAttempting
+                  ? 'Verifying Stage Requirements...'
+                  : currentCase?.investigation_status === 'Charge_Sheet_Filed'
+                  ? 'Charge Sheet Already Filed'
+                  : 'File Charge Sheet'}
               </button>
             </form>
           </div>

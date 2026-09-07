@@ -1,51 +1,48 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { apiClient } from '../api/client';
 import StatusChip from '../components/StatusChip';
 
 export default function NeedsReviewQueue() {
   const { user } = useAuth();
-
-  const [queueItems, setQueueItems] = useState([
-    {
-      id: 'DOC-REV-101',
-      case_id: 'b1a2c3d4-0001-4000-8000-000000000001',
-      case_number: 'CYB-2026-482910',
-      doc_type: 'Witness Statement',
-      uploaded_by: 'Officer Ramesh (IO)',
-      failed_step: 'AI Confidence Below Threshold',
-      confidence_score: 0.62,
-      flagged_entity: 'PERSON (Suspect Co-Conspirator)',
-      age_hours: 58,
-      status: 'NEEDS_REVIEW'
-    },
-    {
-      id: 'DOC-REV-102',
-      case_id: 'b1a2c3d4-0002-4000-8000-000000000002',
-      case_number: 'NDP-2026-119482',
-      doc_type: 'Panchnama',
-      uploaded_by: 'Duty Officer Verma',
-      failed_step: 'OCR Handwritten Ambiguity',
-      confidence_score: 0.54,
-      flagged_entity: 'PHONE_NUMBER / AADHAAR',
-      age_hours: 29,
-      status: 'NEEDS_REVIEW'
-    },
-    {
-      id: 'DOC-REV-103',
-      case_id: 'b1a2c3d4-0001-4000-8000-000000000001',
-      case_number: 'CYB-2026-482910',
-      doc_type: 'Bank Statement',
-      uploaded_by: 'HDFC Nodal Authority',
-      failed_step: 'Complex Tabular PII',
-      confidence_score: 0.71,
-      flagged_entity: 'ACCOUNT_NUMBER',
-      age_hours: 11,
-      status: 'NEEDS_REVIEW'
-    }
-  ]);
-
+  const [queueItems, setQueueItems] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState('all');
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadQueue() {
+      try {
+        const data = await apiClient('/documents/review-queue?status=needs_review');
+        if (isMounted && Array.isArray(data)) {
+          const mapped = data.map(doc => {
+            const created = new Date(doc.created_at || Date.now());
+            const ageHours = Math.max(1, Math.round((Date.now() - created.getTime()) / (1000 * 60 * 60)));
+            return {
+              id: doc.id,
+              case_id: doc.case_id,
+              case_number: `Case ${doc.case_id?.slice(0, 8)}...`,
+              doc_type: doc.doc_type || 'Document',
+              uploaded_by: doc.uploaded_by ? `Officer ${doc.uploaded_by.slice(0, 8)}` : 'Investigating Officer',
+              failed_step: doc.ocr_engine ? `OCR (${doc.ocr_engine})` : 'AI Parser Review Trigger',
+              confidence_score: 0.65,
+              flagged_entity: 'PII / Sensitive Spans',
+              age_hours: ageHours,
+              status: doc.status || 'needs_review'
+            };
+          });
+          setQueueItems(mapped);
+        }
+      } catch (err) {
+        console.error('Failed to load review queue:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    loadQueue();
+    return () => { isMounted = false; };
+  }, []);
 
   const filteredItems = queueItems.filter(item => {
     if (filterType === 'stuck_over_24h') return item.age_hours >= 24;
@@ -56,6 +53,8 @@ export default function NeedsReviewQueue() {
   const handleQuickDismiss = (docId) => {
     setQueueItems(queueItems.filter(i => i.id !== docId));
   };
+
+  const oldestHours = queueItems.length > 0 ? Math.max(...queueItems.map(i => i.age_hours)) : 0;
 
   return (
     <div>
@@ -75,7 +74,7 @@ export default function NeedsReviewQueue() {
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <StatusChip status="pending" label={`Queue Depth: ${queueItems.length}`} />
-            <StatusChip status="critical" label={`Oldest: ${Math.max(...queueItems.map(i => i.age_hours))}h SLA`} />
+            <StatusChip status="critical" label={`Oldest: ${oldestHours}h SLA`} />
           </div>
         </div>
 
@@ -93,7 +92,7 @@ export default function NeedsReviewQueue() {
           </div>
           <div className="stat-widget">
             <span className="stat-value" style={{ color: 'var(--status-pending-text)' }}>
-              {Math.max(...queueItems.map(i => i.age_hours))} hrs
+              {oldestHours} hrs
             </span>
             <span className="stat-label">Oldest Pending Item</span>
             <span className="stat-sub">SLA Target: under 24 hrs</span>

@@ -1,59 +1,82 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiClient, apiUpload } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import StatusChip from '../components/StatusChip';
 
 export default function ExternalAuthority() {
   const { user } = useAuth();
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedReq, setSelectedReq] = useState(null);
   const [reportTitle, setReportTitle] = useState('');
   const [reportNotes, setReportNotes] = useState('');
   const [attachment, setAttachment] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [sortOrder, setSortOrder] = useState('oldest');
 
-  const initialRequests = [
-    {
-      id: 'REQ-FSL-2026-001',
-      case_number: 'CYB-2026-482910',
-      requesting_officer: 'IO S. Rao (Cyber Cell)',
-      request_type: 'Bank Account Transaction Statement (KYC & Trail)',
-      target_subject: 'Accused Account ending 9182',
-      requested_at: '2026-08-28T09:30:00Z',
-      urgency: 'HIGH',
-      status: 'PENDING_FULFILLMENT',
-      days_open: 6
-    },
-    {
-      id: 'REQ-FSL-2026-002',
-      case_number: 'NDP-2026-119482',
-      requesting_officer: 'IO P. Sharma (Narcotics Branch)',
-      request_type: 'Chemical Forensic Purity Test Report',
-      target_subject: 'Sample Seal #FSL-NDP-40192',
-      requested_at: '2026-08-31T14:20:00Z',
-      urgency: 'MEDIUM',
-      status: 'PENDING_FULFILLMENT',
-      days_open: 3
-    }
-  ];
+  const fetchRequests = () => {
+    setLoading(true);
+    apiClient('/evidence-requests')
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setRequests(data);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load evidence requests:', err);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
 
-  const sortedRequests = [...initialRequests].sort((a, b) => {
-    if (sortOrder === 'oldest') {
-      return new Date(a.requested_at) - new Date(b.requested_at);
-    }
-    return new Date(b.requested_at) - new Date(a.requested_at);
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
+  const sortedRequests = [...requests].sort((a, b) => {
+    const dateA = new Date(a.created_at);
+    const dateB = new Date(b.created_at);
+    return sortOrder === 'oldest' ? dateA - dateB : dateB - dateA;
   });
 
-  const handleSubmitReport = (e) => {
+  const handleSubmitReport = async (e) => {
     e.preventDefault();
     if (!selectedReq) return;
+    if (!attachment) {
+      setStatusMessage({
+        type: 'error',
+        msg: 'Please select a document file to attach.'
+      });
+      return;
+    }
 
-    setStatusMessage({
-      type: 'success',
-      msg: `Official report submitted against Requisition ${selectedReq.id}. Document signed and hashed directly to the Case ${selectedReq.case_number} Fabric chain of custody.`
-    });
-    setReportTitle('');
-    setReportNotes('');
-    setAttachment(null);
+    setIsSubmitting(true);
+    setStatusMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', attachment);
+      await apiUpload(`/evidence-requests/${selectedReq.id}/submit`, formData);
+
+      setStatusMessage({
+        type: 'success',
+        msg: `Official report submitted against Requisition ${selectedReq.id}. Document signed and hashed directly to the Case ${selectedReq.case_id} ledger.`
+      });
+      setReportTitle('');
+      setReportNotes('');
+      setAttachment(null);
+      setSelectedReq(null);
+      fetchRequests();
+    } catch (err) {
+      setStatusMessage({
+        type: 'error',
+        msg: err.message || 'Failed to submit official report to backend.'
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -73,7 +96,7 @@ export default function ExternalAuthority() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <StatusChip status="neutral" label="Organization: State Forensic Science Laboratory" />
+            <StatusChip status="neutral" label={`Role: ${user?.role || 'Authority Staff'}`} />
             <StatusChip status="confirmed" label="Scoped Gateway: Active" />
           </div>
         </div>
@@ -85,7 +108,7 @@ export default function ExternalAuthority() {
         </div>
 
         {statusMessage && (
-          <div className={`alert ${statusMessage.type === 'success' ? 'alert-success' : 'alert-warning'}`}>
+          <div className={`alert ${statusMessage.type === 'success' ? 'alert-success' : 'alert-error'}`}>
             {statusMessage.msg}
           </div>
         )}
@@ -99,7 +122,7 @@ export default function ExternalAuthority() {
                   Requisition Inbox
                 </h2>
                 <span className="table-caption" style={{ marginBottom: 0 }}>
-                  {sortedRequests.length} pending evidentiary requisitions.
+                  {sortedRequests.length} evidentiary requisitions assigned.
                 </span>
               </div>
               <select
@@ -113,35 +136,40 @@ export default function ExternalAuthority() {
               </select>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {sortedRequests.map((req) => (
-                <div
-                  key={req.id}
-                  onClick={() => setSelectedReq(req)}
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '4px',
-                    border: `1px solid ${selectedReq?.id === req.id ? 'var(--ink-900)' : 'var(--border-default)'}`,
-                    background: selectedReq?.id === req.id ? 'var(--surface-sunken)' : 'var(--surface-panel)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span className="mono-text" style={{ fontSize: '11px' }}>{req.id}</span>
-                    <StatusChip status="pending" label={`Open ${req.days_open} days`} />
+            {loading ? (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Loading assigned requisitions...</p>
+            ) : sortedRequests.length === 0 ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                No open requisitions currently assigned.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {sortedRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    onClick={() => setSelectedReq(req)}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '4px',
+                      border: `1px solid ${selectedReq?.id === req.id ? 'var(--ink-900)' : 'var(--border-default)'}`,
+                      background: selectedReq?.id === req.id ? 'var(--surface-sunken)' : 'var(--surface-panel)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span className="mono-text" style={{ fontSize: '11px' }}>{req.id?.slice(0, 8)}...</span>
+                      <StatusChip status={req.status === 'completed' ? 'confirmed' : 'pending'} label={req.status} />
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-text-primary)' }}>
+                      {req.doc_type_expected}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                      Case ID: {req.case_id?.slice(0, 8)}... · Created: {new Date(req.created_at).toLocaleDateString()}
+                    </div>
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-text-primary)' }}>
-                    {req.request_type}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                    Requested by: {req.requesting_officer} (Case: {req.case_number})
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-primary)', marginTop: '4px', fontWeight: 500 }}>
-                    Target: {req.target_subject}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Fulfillment Form */}
@@ -155,52 +183,64 @@ export default function ExternalAuthority() {
                     Requisition Target
                   </div>
                   <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>
-                    {selectedReq.request_type}
+                    {selectedReq.doc_type_expected}
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                    Case Docket: {selectedReq.case_number} · Requisition ID: {selectedReq.id}
+                    Case ID: {selectedReq.case_id} · Requisition ID: {selectedReq.id}
+                  </div>
+                  <div style={{ marginTop: '6px' }}>
+                    <StatusChip status={selectedReq.status === 'completed' ? 'confirmed' : 'pending'} label={`Status: ${selectedReq.status}`} />
                   </div>
                 </div>
 
-                <form onSubmit={handleSubmitReport}>
-                  <div className="form-group">
-                    <label className="form-label">Report Reference / Lab Docket Number</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. FSL-DL-2026-REPORT-941"
-                      value={reportTitle}
-                      onChange={(e) => setReportTitle(e.target.value)}
-                      required
-                    />
+                {selectedReq.status === 'completed' ? (
+                  <div className="alert alert-success">
+                    This requisition has already been fulfilled and sealed on the ledger.
                   </div>
+                ) : (
+                  <form onSubmit={handleSubmitReport}>
+                    <div className="form-group">
+                      <label className="form-label">Report Reference / Lab Docket Number</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. FSL-DL-2026-REPORT-941"
+                        value={reportTitle}
+                        onChange={(e) => setReportTitle(e.target.value)}
+                      />
+                    </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Official Findings Summary (Section 293 CrPC)</label>
-                    <textarea
-                      className="form-textarea"
-                      placeholder="Provide certified findings and methodology..."
-                      value={reportNotes}
-                      onChange={(e) => setReportNotes(e.target.value)}
-                      required
-                      rows={3}
-                    />
-                  </div>
+                    <div className="form-group">
+                      <label className="form-label">Official Findings Summary (Section 293 CrPC)</label>
+                      <textarea
+                        className="form-textarea"
+                        placeholder="Provide certified findings and methodology..."
+                        value={reportNotes}
+                        onChange={(e) => setReportNotes(e.target.value)}
+                        rows={3}
+                      />
+                    </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Signed Official PDF Report</label>
-                    <input
-                      type="file"
-                      className="form-input"
-                      onChange={(e) => setAttachment(e.target.files[0])}
-                      required
-                    />
-                  </div>
+                    <div className="form-group">
+                      <label className="form-label">Signed Official Report Document (PDF/TIFF/JPEG)</label>
+                      <input
+                        type="file"
+                        className="form-input"
+                        onChange={(e) => setAttachment(e.target.files[0])}
+                        required
+                      />
+                    </div>
 
-                  <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
-                    Submit Report & Commit to Chain of Custody
-                  </button>
-                </form>
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      style={{ width: '100%' }}
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? 'Submitting & Streaming to Vault...' : 'Submit Report & Commit to Chain of Custody'}
+                    </button>
+                  </form>
+                )}
               </div>
             ) : (
               <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>

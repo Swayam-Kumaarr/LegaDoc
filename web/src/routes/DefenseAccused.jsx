@@ -1,53 +1,112 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiClient } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import StatusChip from '../components/StatusChip';
 
 export default function DefenseAccused() {
   const { user } = useAuth();
-  const [caseNumber, setCaseNumber] = useState('CYB-2026-482910');
-  const [accusedName, setAccusedName] = useState('Vikram Sharma');
+  const [cases, setCases] = useState([]);
+  const [selectedCaseId, setSelectedCaseId] = useState('');
+  const [accusedName, setAccusedName] = useState('');
   const [bailGrounds, setBailGrounds] = useState('');
   const [suretyName, setSuretyName] = useState('');
   const [suretyAmount, setSuretyAmount] = useState('50000');
   const [suretyProof, setSuretyProof] = useState(null);
   const [submissionAlert, setSubmissionAlert] = useState(null);
+  const [isSubmittingBail, setIsSubmittingBail] = useState(false);
+  const [isSubmittingSurety, setIsSubmittingSurety] = useState(false);
+  const [mySubmissions, setMySubmissions] = useState([]);
 
-  const [mySubmissions, setMySubmissions] = useState([
-    {
-      id: 'PET-2026-091',
-      type: 'Regular Bail Application (Section 437/439 CrPC)',
-      case_number: 'CYB-2026-482910',
-      filed_on: '2026-09-02',
-      status: 'HEARING_SCHEDULED',
-      next_action: 'Hearing scheduled before Court No. 3 on 10 September 2026'
-    }
-  ]);
+  useEffect(() => {
+    apiClient('/cases')
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setCases(data);
+          setSelectedCaseId(data[0].id);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load cases:', err);
+      });
+  }, []);
 
-  const handleBailApplication = (e) => {
+  const handleBailApplication = async (e) => {
     e.preventDefault();
-    const newSub = {
-      id: `PET-2026-${Math.floor(100 + Math.random() * 900)}`,
-      type: 'Bail Petition',
-      case_number: caseNumber,
-      filed_on: new Date().toISOString().split('T')[0],
-      status: 'SUBMITTED_TO_COURT',
-      next_action: 'Awaiting Court Docketing'
-    };
-    setMySubmissions([newSub, ...mySubmissions]);
-    setSubmissionAlert({
-      type: 'success',
-      msg: `Bail petition filed for Case ${caseNumber}. Filing receipt generated.`
-    });
-    setBailGrounds('');
+    if (!selectedCaseId) {
+      setSubmissionAlert({
+        type: 'error',
+        msg: 'Please select a valid case to file the petition.'
+      });
+      return;
+    }
+
+    setIsSubmittingBail(true);
+    setSubmissionAlert(null);
+
+    try {
+      const res = await apiClient(`/cases/${selectedCaseId}/bail/application`, {
+        method: 'POST',
+      });
+
+      const newSub = {
+        id: res.id ? res.id.slice(0, 8) : `BAIL-${Date.now()}`,
+        type: 'Regular Bail Petition — Section 437/439 CrPC',
+        case_id: selectedCaseId,
+        filed_on: new Date().toISOString().split('T')[0],
+        status: res.stage || 'Application_Filed',
+        next_action: 'Awaiting judicial review and hearing notice from Bench'
+      };
+      setMySubmissions([newSub, ...mySubmissions]);
+      setSubmissionAlert({
+        type: 'success',
+        msg: `Bail petition filed successfully for Case ID ${selectedCaseId}. Statutory filing receipt generated.`
+      });
+      setBailGrounds('');
+    } catch (err) {
+      setSubmissionAlert({
+        type: 'error',
+        msg: err.message || 'Failed to file bail application. Ensure accused is in "Arrested" status.'
+      });
+    } finally {
+      setIsSubmittingBail(false);
+    }
   };
 
-  const handleSuretySubmission = (e) => {
+  const handleSuretySubmission = async (e) => {
     e.preventDefault();
-    setSubmissionAlert({
-      type: 'success',
-      msg: `Surety Bond undertaking of INR ${suretyAmount} by ${suretyName} submitted for court verification.`
-    });
-    setSuretyName('');
+    if (!selectedCaseId) {
+      setSubmissionAlert({
+        type: 'error',
+        msg: 'Please select a valid case to register surety.'
+      });
+      return;
+    }
+
+    setIsSubmittingSurety(true);
+    setSubmissionAlert(null);
+
+    try {
+      const res = await apiClient(`/cases/${selectedCaseId}/bail/surety`, {
+        method: 'POST',
+        body: {
+          surety_name: suretyName,
+          bond_amount: parseFloat(suretyAmount) || 50000,
+        }
+      });
+
+      setSubmissionAlert({
+        type: 'success',
+        msg: `Surety Bond undertaking of INR ${suretyAmount} by ${suretyName} submitted and committed to ledger. Stage: ${res.stage || 'Surety_Registered'}.`
+      });
+      setSuretyName('');
+    } catch (err) {
+      setSubmissionAlert({
+        type: 'error',
+        msg: err.message || 'Failed to register surety. Ensure bail has been granted ("Order_Issued").'
+      });
+    } finally {
+      setIsSubmittingSurety(false);
+    }
   };
 
   return (
@@ -67,7 +126,7 @@ export default function DefenseAccused() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <StatusChip status="neutral" label="Role: Defense Counsel" />
+            <StatusChip status="neutral" label={`Role: ${user?.role || 'Defense Counsel'}`} />
             <StatusChip status="neutral" label="Access: Submission-Only" />
           </div>
         </div>
@@ -78,7 +137,7 @@ export default function DefenseAccused() {
         </div>
 
         {submissionAlert && (
-          <div className={`alert ${submissionAlert.type === 'success' ? 'alert-success' : 'alert-warning'}`}>
+          <div className={`alert ${submissionAlert.type === 'success' ? 'alert-success' : 'alert-error'}`}>
             {submissionAlert.msg}
           </div>
         )}
@@ -93,14 +152,30 @@ export default function DefenseAccused() {
 
             <form onSubmit={handleBailApplication}>
               <div className="form-group">
-                <label className="form-label">Case Identifier / FIR Reference</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={caseNumber}
-                  onChange={(e) => setCaseNumber(e.target.value)}
-                  required
-                />
+                <label className="form-label">Case Identifier / Docket</label>
+                {cases.length > 0 ? (
+                  <select
+                    className="form-select"
+                    value={selectedCaseId}
+                    onChange={(e) => setSelectedCaseId(e.target.value)}
+                    required
+                  >
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.case_number || c.fir_number || c.id?.slice(0, 8)} — {c.crime_type} (Bail: {c.bail_status || 'None'})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Enter UUID of case"
+                    value={selectedCaseId}
+                    onChange={(e) => setSelectedCaseId(e.target.value)}
+                    required
+                  />
+                )}
               </div>
 
               <div className="form-group">
@@ -109,8 +184,6 @@ export default function DefenseAccused() {
                   <option value="regular">Regular Bail Petition — Section 437/439 CrPC (Sec 480/483 BNSS)</option>
                   <option value="anticipatory">Anticipatory Bail Application — Section 438 CrPC (Sec 482 BNSS)</option>
                   <option value="interim">Interim Medical / Humanitarian Bail Application</option>
-                  <option value="ndps">Special Bail Petition under NDPS Act § 37 (Commercial Contraband)</option>
-                  <option value="pmla">Special Bail Petition under PMLA § 45 (Economic Offenses)</option>
                 </select>
               </div>
 
@@ -119,6 +192,7 @@ export default function DefenseAccused() {
                 <input
                   type="text"
                   className="form-input"
+                  placeholder="Full legal name of accused"
                   value={accusedName}
                   onChange={(e) => setAccusedName(e.target.value)}
                   required
@@ -129,7 +203,7 @@ export default function DefenseAccused() {
                 <label className="form-label">Legal Grounds & Medical / Humanitarian Plea</label>
                 <textarea
                   className="form-textarea"
-                  placeholder="State the legal merits, lack of flight risk, cooperation with investigation, or medical grounds..."
+                  placeholder="State legal merits, lack of flight risk, cooperation with investigation, or medical grounds..."
                   value={bailGrounds}
                   onChange={(e) => setBailGrounds(e.target.value)}
                   required
@@ -137,8 +211,13 @@ export default function DefenseAccused() {
                 />
               </div>
 
-              <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
-                Submit Petition to Bench
+              <button
+                type="submit"
+                className="btn btn-primary"
+                style={{ width: '100%' }}
+                disabled={isSubmittingBail}
+              >
+                {isSubmittingBail ? 'Submitting to Court Registry...' : 'Submit Petition to Bench'}
               </button>
             </form>
           </div>
@@ -151,6 +230,33 @@ export default function DefenseAccused() {
             </p>
 
             <form onSubmit={handleSuretySubmission}>
+              <div className="form-group">
+                <label className="form-label">Case Identifier / Docket</label>
+                {cases.length > 0 ? (
+                  <select
+                    className="form-select"
+                    value={selectedCaseId}
+                    onChange={(e) => setSelectedCaseId(e.target.value)}
+                    required
+                  >
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.case_number || c.fir_number || c.id?.slice(0, 8)} — {c.crime_type} (Bail: {c.bail_status || 'None'})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Enter UUID of case"
+                    value={selectedCaseId}
+                    onChange={(e) => setSelectedCaseId(e.target.value)}
+                    required
+                  />
+                )}
+              </div>
+
               <div className="form-group">
                 <label className="form-label">Surety Guarantor Full Name</label>
                 <input
@@ -180,49 +286,55 @@ export default function DefenseAccused() {
                   type="file"
                   className="form-input"
                   onChange={(e) => setSuretyProof(e.target.files[0])}
-                  required
                 />
               </div>
 
-              <button type="submit" className="btn btn-secondary" style={{ width: '100%' }}>
-                Submit Surety Undertaking
+              <button
+                type="submit"
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
+                disabled={isSubmittingSurety}
+              >
+                {isSubmittingSurety ? 'Registering Surety with Court...' : 'Submit Surety Undertaking'}
               </button>
             </form>
           </div>
         </div>
 
         {/* Submissions Docket */}
-        <div className="card" style={{ marginTop: '16px' }}>
-          <span className="table-caption">
-            Electronic receipts of petitions filed from this defense account.
-          </span>
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Receipt ID</th>
-                  <th>Petition Type</th>
-                  <th>Case Docket</th>
-                  <th>Date Filed</th>
-                  <th>Status</th>
-                  <th>Bench Directive</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mySubmissions.map((sub) => (
-                  <tr key={sub.id}>
-                    <td><span className="mono-text">{sub.id}</span></td>
-                    <td style={{ fontWeight: 500 }}>{sub.type}</td>
-                    <td><span className="mono-text">{sub.case_number}</span></td>
-                    <td>{sub.filed_on}</td>
-                    <td><StatusChip status={sub.status} /></td>
-                    <td style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{sub.next_action}</td>
+        {mySubmissions.length > 0 && (
+          <div className="card" style={{ marginTop: '16px' }}>
+            <span className="table-caption">
+              Electronic receipts of petitions filed from this defense session.
+            </span>
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Receipt ID</th>
+                    <th>Petition Type</th>
+                    <th>Case Docket</th>
+                    <th>Date Filed</th>
+                    <th>Status</th>
+                    <th>Bench Directive</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {mySubmissions.map((sub) => (
+                    <tr key={sub.id}>
+                      <td><span className="mono-text">{sub.id}</span></td>
+                      <td style={{ fontWeight: 500 }}>{sub.type}</td>
+                      <td><span className="mono-text">{sub.case_id?.slice(0, 8)}...</span></td>
+                      <td>{sub.filed_on}</td>
+                      <td><StatusChip status={sub.status} /></td>
+                      <td style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{sub.next_action}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
