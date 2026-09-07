@@ -82,6 +82,52 @@ def create_evidence_request(
 
 
 @router.get(
+    "/evidence-requests",
+    response_model=list[schemas.EvidenceRequestInboxItem],
+)
+def list_my_evidence_requests(
+    claims: dict = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
+    """GET /evidence-requests — cross-case inbox. An external authority
+    (FSL/bank/telecom) doesn't know the case UUID for a request routed to
+    them ahead of time; the per-case endpoint below is useless without one.
+    external_authority sees only requests addressed to their own org;
+    config_admin/security_auditor see everything (oversight); every other
+    role is denied — this is not a general case-browsing endpoint."""
+    role = claims.get("role", "")
+
+    # EvidenceRequest has no ORM relationship to Case (only a raw case_id FK),
+    # so pull case_number via an explicit join rather than attribute access.
+    query = db.query(models.EvidenceRequest, models.Case.case_number).join(
+        models.Case, models.Case.id == models.EvidenceRequest.case_id
+    )
+
+    if role == "external_authority":
+        user_org_id = claims.get("org_id")
+        if not user_org_id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization context missing")
+        query = query.filter(models.EvidenceRequest.requested_org_id == UUID(user_org_id))
+    elif role not in ("config_admin", "security_auditor"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Role not permitted to browse the evidence-request inbox")
+
+    rows = query.order_by(models.EvidenceRequest.created_at.asc()).all()
+    return [
+        schemas.EvidenceRequestInboxItem(
+            id=r.id,
+            case_id=r.case_id,
+            case_number=case_number,
+            requested_org_id=r.requested_org_id,
+            doc_type_expected=r.doc_type_expected,
+            status=r.status,
+            created_at=r.created_at,
+            completed_at=r.completed_at,
+        )
+        for r, case_number in rows
+    ]
+
+
+@router.get(
     "/cases/{case_id}/evidence-requests",
     response_model=list[schemas.EvidenceRequestResponse],
 )
@@ -101,7 +147,7 @@ def list_evidence_requests(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
 
     role = claims.get("role", "")
-    if role == "authority_staff":
+    if role == "external_authority":
         user_org_id = claims.get("org_id")
         if not user_org_id:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization context missing")

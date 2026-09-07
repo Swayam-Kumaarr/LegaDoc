@@ -281,8 +281,11 @@ def verify_evidence_request_org_access(
 ) -> models.EvidenceRequest:
     """Validates that external authorities (FSL, Hospital, Bank, etc.) only touch
     evidence requests specifically routed to their organization (Domain 2-4 scoping).
-    Ready for wiring into api/app/routers/evidence_requests.py as endpoints are
-    implemented from their current 501 stubs."""
+    Used by api/app/routers/evidence_requests.py's fulfillment endpoint. The role
+    checked here must match the canonical "external_authority" role registered
+    in seed_data.py — it used to check a stale "authority_staff" string that
+    doesn't exist in the actual role registry, silently 403-ing every real
+    external-authority account that tried to fulfill a request."""
     try:
         req_uuid = request_id if isinstance(request_id, UUID) else UUID(str(request_id))
     except ValueError:
@@ -298,7 +301,7 @@ def verify_evidence_request_org_access(
     if role in ("config_admin", "security_auditor"):
         return req
 
-    if role == "authority_staff":
+    if role == "external_authority":
         if str(req.requested_org_id) != str(user_org_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

@@ -297,6 +297,21 @@ class EvidenceRequestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class EvidenceRequestInboxItem(BaseModel):
+    """Same as EvidenceRequestResponse plus the case_number, for the
+    cross-case inbox view (GET /evidence-requests) — an external authority
+    doesn't know the case UUID up front, only their own organization's
+    queue, so this is the one place case_number is denormalized in."""
+    id: UUID
+    case_id: UUID
+    case_number: str
+    requested_org_id: UUID
+    doc_type_expected: Optional[str] = None
+    status: str
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+
 # ---------- Bail Track (Flow 4) ----------
 class BailOrderRequest(BaseModel):
     granted: bool
