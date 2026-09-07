@@ -26,10 +26,30 @@ export function parseJwt(token) {
   }
 }
 
-// Global error handler for generic messages (Audit Fix #7)
+// Builds an Error that keeps the real backend response attached (status +
+// parsed detail), instead of collapsing every failure into one generic
+// string. Callers that need to react to a specific case — a 409's
+// missing_items list, a 403's reason — read err.status / err.detail. The
+// generic .message stays as a safe default for callers that just want
+// something to display without checking status.
 function handleApiError(response, bodyText) {
   console.error(`API Error: ${response.status} ${response.statusText}`, bodyText);
-  return new Error("An error occurred while communicating with the server. Please verify your credentials or permissions.");
+  let parsedDetail = bodyText;
+  try {
+    const parsed = JSON.parse(bodyText);
+    parsedDetail = parsed.detail !== undefined ? parsed.detail : parsed;
+  } catch {
+    // Not JSON — keep the raw text as the detail.
+  }
+  const detailMessage = typeof parsedDetail === 'string'
+    ? parsedDetail
+    : (parsedDetail && typeof parsedDetail === 'object' && parsedDetail.message)
+      ? parsedDetail.message
+      : 'An error occurred while communicating with the server. Please verify your credentials or permissions.';
+  const err = new Error(detailMessage);
+  err.status = response.status;
+  err.detail = parsedDetail;
+  return err;
 }
 
 export async function apiClient(endpoint, { body, ...customConfig } = {}) {
