@@ -44,6 +44,21 @@ class CeleryQueueClient(QueueClient):
         # every job type was being dropped on the floor at random, which is
         # exactly the kind of bug that looks like "sometimes documents
         # never finish processing" with no obvious pattern.
+        #
+        # A name with no dot has no worker prefix to route by, so the queue
+        # would come out as the whole task name — a queue no container is
+        # listening on. That is the same silent-drop failure described above,
+        # reached a different way: the call succeeds, the broker accepts the
+        # message, and the job is simply never run. Refuse it instead, so a
+        # malformed task name fails at the call site where it can be fixed
+        # rather than becoming another "sometimes documents never finish".
+        if "." not in task_name:
+            raise ValueError(
+                f"Unroutable task name {task_name!r}: expected '<worker>.<task>' "
+                f"(e.g. 'ocr_worker.extract_document'), so the queue can be derived "
+                f"from the worker prefix that each container's -Q flag listens on."
+            )
+
         queue = task_name.split(".", 1)[0]
         self._app.send_task(task_name, kwargs=kwargs, queue=queue)
 
