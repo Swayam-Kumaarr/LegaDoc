@@ -3,17 +3,80 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 
+// A low-opacity background motif combining a courthouse silhouette, the
+// scales of justice, and an Ashoka Chakra ring — original geometry drawn
+// from scratch (not a reproduction of any photograph, artwork, or the
+// State Emblem of India), in the spirit of the faint national-symbol
+// watermarks most Indian government portals (eCourts, DigiLocker, MyGov)
+// place behind their login copy.
+function JusticeEmblemWatermark() {
+  const spokes = Array.from({ length: 24 }, (_, i) => {
+    const angle = (i * 360) / 24;
+    const rad = (angle * Math.PI) / 180;
+    const x1 = 200 + 178 * Math.cos(rad);
+    const y1 = 200 + 178 * Math.sin(rad);
+    const x2 = 200 + 194 * Math.cos(rad);
+    const y2 = 200 + 194 * Math.sin(rad);
+    return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} />;
+  });
+
+  return (
+    <svg
+      className="login-watermark-svg"
+      viewBox="0 0 400 400"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {/* Outer chakra ring, kept faint — a frame, not the focal element */}
+      <g stroke="currentColor" strokeWidth="1.5" fill="none">
+        <circle cx="200" cy="200" r="186" />
+        <circle cx="200" cy="200" r="170" />
+        {spokes}
+      </g>
+
+      {/* Courthouse: dome, entablature, columns, base steps */}
+      <g fill="currentColor">
+        <path d="M108 168 A92 74 0 0 1 292 168 Z" />
+        <circle cx="200" cy="90" r="7" />
+        <rect x="197" y="97" width="6" height="18" />
+        <rect x="112" y="168" width="176" height="14" />
+        {[128, 158, 188, 218, 248, 278].map((x) => (
+          <rect key={x} x={x - 6} y="182" width="12" height="88" />
+        ))}
+        <rect x="100" y="270" width="200" height="16" />
+        <rect x="84" y="286" width="232" height="14" />
+        <rect x="68" y="300" width="264" height="14" />
+      </g>
+
+      {/* Scales of justice, overlapping the courthouse in front — the same
+          compositional idea as the Devi Nyay statue: the scale held up in
+          front of the court building behind it. */}
+      <g fill="currentColor">
+        <rect x="196" y="150" width="8" height="150" />
+        <ellipse cx="200" cy="305" rx="26" ry="7" />
+        <circle cx="200" cy="146" r="8" />
+        <rect x="140" y="176" width="120" height="6" />
+      </g>
+      <g stroke="currentColor" strokeWidth="3" fill="none">
+        <path d="M140 179 L118 224 L162 224 Z" />
+        <path d="M260 179 L238 224 L282 224 Z" />
+        <path d="M110 224 A30 14 0 0 0 170 224" />
+        <path d="M230 224 A30 14 0 0 0 290 224" />
+      </g>
+    </svg>
+  );
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, testCredentials } = useAuth();
+  const { login } = useAuth();
   const { language, setLanguage, t, supportedLanguages } = useI18n();
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [showTestDrawer, setShowTestDrawer] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,16 +93,11 @@ export default function Login() {
     }
   };
 
-  const handleSelectTestAccount = (acc) => {
-    setIdentifier(acc.email);
-    setPassword('GovSecure@2026');
-    setError(null);
-  };
-
   return (
     <div className="login-split-page">
       {/* Left Panel: Deep Navy, Serif Wordmark, Institutional Context (PRD Section 8) */}
       <div className="login-left-panel">
+        <JusticeEmblemWatermark />
         <div className="login-left-branding">
           <div style={{ display: 'inline-block', marginBottom: '16px' }}>
             <span className="gov-emblem-badge">[NATIONAL LAW ENFORCEMENT PORTAL]</span>
@@ -51,24 +109,9 @@ export default function Login() {
           </p>
         </div>
 
-        <div className="login-institutional-docket">
-          <div className="login-docket-row">
-            <span>Statutory Authority</span>
-            <strong>Section 173 CrPC / BNSS 2023</strong>
-          </div>
-          <div className="login-docket-row">
-            <span>Cryptographic Proof Engine</span>
-            <strong>SHA-256 Fabric Ledger</strong>
-          </div>
-          <div className="login-docket-row">
-            <span>Access Control Model</span>
-            <strong>Authoritative RBAC Level-4</strong>
-          </div>
-          <div className="login-docket-row">
-            <span>Verification Standard</span>
-            <strong>Section 65B Indian Evidence Act</strong>
-          </div>
-        </div>
+        <p className="login-legal-notice">
+          Unauthorized access to this system is prohibited under the Information Technology Act, 2000.
+        </p>
       </div>
 
       {/* Right Panel: Clean Government Form on Warm Off-White (PRD Section 8) */}
@@ -158,62 +201,6 @@ export default function Login() {
               </span>
             </div>
           </form>
-
-          {/* Official Pre-Registered Identities Drawer (Section 6.4) */}
-          <div style={{ marginTop: '20px', paddingTop: '14px', borderTop: '1px solid var(--color-border)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="text-label" style={{ fontSize: '11px', color: 'var(--color-text-primary)' }}>
-                Pre-Registered Official Personas
-              </span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setShowTestDrawer(!showTestDrawer)}
-              >
-                {showTestDrawer ? 'Hide Personas' : 'Show Personas'}
-              </button>
-            </div>
-
-            {showTestDrawer && (
-              <div style={{ marginTop: '12px' }}>
-                <p className="text-caption" style={{ marginBottom: '8px' }}>
-                  Select an official role to populate authoritative credentials:
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
-                  {testCredentials.map((acc) => (
-                    <div
-                      key={acc.email}
-                      onClick={() => handleSelectTestAccount(acc)}
-                      style={{
-                        padding: '6px 10px',
-                        borderRadius: 'var(--radius)',
-                        border: '1px solid var(--color-border)',
-                        background: 'var(--color-surface-subtle)',
-                        cursor: 'pointer',
-                        fontSize: '11px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                          {acc.designation}
-                        </div>
-                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
-                          {acc.service_id} · {acc.email}
-                        </div>
-                      </div>
-                      <span className="status-chip status-chip-neutral" style={{ fontSize: '9px', padding: '1px 5px' }}>
-                        {acc.role_label}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
         </div>
       </div>
     </div>
