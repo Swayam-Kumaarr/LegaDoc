@@ -74,7 +74,21 @@ class FabricClient:
 
         org_domain = f"{org}.example.com"
         org_msp = f"{org.capitalize()}MSP"
-        peer_port = "7051" if org == "org1" else "9051"
+
+        # Host:port for the orderer and each org's peer0 — "localhost" is
+        # correct when this runs directly on the same host/network
+        # namespace as the Fabric containers (e.g. the peer CLI run
+        # straight from WSL2, port-published to that host's localhost),
+        # but wrong when this runs inside chain_worker's own container:
+        # there, "localhost" is the container's own loopback, not the
+        # Fabric containers'. Confirmed live: chain_worker joined to the
+        # fabric_test Docker network (see docker-compose.yml) resolves the
+        # peer/orderer containers by their real Docker DNS hostnames
+        # instead — override via these three env vars in that case.
+        self._orderer_address = os.environ.get("FABRIC_ORDERER_ADDRESS", "localhost:7050")
+        self._peer0_org1_address = os.environ.get("FABRIC_PEER0_ORG1_ADDRESS", "localhost:7051")
+        self._peer0_org2_address = os.environ.get("FABRIC_PEER0_ORG2_ADDRESS", "localhost:9051")
+        peer_address = self._peer0_org1_address if org == "org1" else self._peer0_org2_address
 
         self._env = dict(os.environ)
         self._env.update({
@@ -87,7 +101,7 @@ class FabricClient:
             "CORE_PEER_MSPCONFIGPATH": str(
                 self.tn / "organizations/peerOrganizations" / org_domain / "users" / f"Admin@{org_domain}" / "msp"
             ),
-            "CORE_PEER_ADDRESS": f"localhost:{peer_port}",
+            "CORE_PEER_ADDRESS": peer_address,
         })
 
         self._orderer_ca = str(
@@ -129,15 +143,15 @@ class FabricClient:
         args_json = json.dumps({"function": "RecordHash", "Args": [doc_id, doc_hash, org_id]})
         output = self._run([
             "chaincode", "invoke",
-            "-o", "localhost:7050",
+            "-o", self._orderer_address,
             "--ordererTLSHostnameOverride", "orderer.example.com",
             "--tls",
             "--cafile", self._orderer_ca,
             "-C", self.channel_name,
             "-n", self.chaincode_name,
-            "--peerAddresses", "localhost:7051",
+            "--peerAddresses", self._peer0_org1_address,
             "--tlsRootCertFiles", self._org1_tls,
-            "--peerAddresses", "localhost:9051",
+            "--peerAddresses", self._peer0_org2_address,
             "--tlsRootCertFiles", self._org2_tls,
             "-c", args_json,
             "--waitForEvent",
