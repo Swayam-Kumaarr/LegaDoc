@@ -2,6 +2,9 @@ celery==5.4.0
 redis==5.0.8
 sqlalchemy==2.0.35
 psycopg2-binary==2.9.9
+pydantic-settings==2.5.2
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.0
 # presidio-analyzer and spacy: pin exact versions after the first successful
 # install and test — deliberately left unpinned-to-patch here rather than
 # guess a patch number, since getting this wrong silently breaks the build.

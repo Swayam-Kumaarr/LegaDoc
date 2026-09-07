@@ -127,6 +127,45 @@ def list_evidence_requests(
     )
 
 
+@router.get(
+    "/evidence-requests",
+    response_model=list[schemas.EvidenceRequestResponse],
+)
+def list_all_evidence_requests(
+    claims: dict = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
+    """GET /evidence-requests — List requests for the authenticated authority org (or all for court/admins/supervisors)."""
+    role = claims.get("role", "")
+    if role == "authority_staff" or role == "external_authority":
+        user_org_id = claims.get("org_id")
+        if user_org_id:
+            try:
+                org_uuid = UUID(str(user_org_id))
+                return (
+                    db.query(models.EvidenceRequest)
+                    .filter(models.EvidenceRequest.requested_org_id == org_uuid)
+                    .order_by(models.EvidenceRequest.created_at.desc())
+                    .all()
+                )
+            except ValueError:
+                pass
+        return (
+            db.query(models.EvidenceRequest)
+            .order_by(models.EvidenceRequest.created_at.desc())
+            .all()
+        )
+
+    if role in _UNRESTRICTED_CASE_ROLES or role in ("admin", "config_admin", "court", "io", "sho"):
+        return (
+            db.query(models.EvidenceRequest)
+            .order_by(models.EvidenceRequest.created_at.desc())
+            .all()
+        )
+
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied to evidence requests registry")
+
+
 @router.post(
     "/evidence-requests/{request_id}/submit",
     response_model=schemas.EvidenceRequestResponse,

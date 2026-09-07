@@ -58,12 +58,29 @@ export default function DocumentViewer() {
     };
   }, [docId]);
 
-  const handleApplyCorrection = (e) => {
+  const handleApplyCorrection = async (e) => {
     e.preventDefault();
-    setCorrectionAlert({
-      type: 'success',
-      msg: `Officer Correction Submitted: Tagged [${entityType}] at positions [${spanStart}:${spanEnd}]. Audit trail updated.`
-    });
+    if (!docId) return;
+    try {
+      await apiClient(`/documents/${docId}/redact-tag`, {
+        body: {
+          entity_type: entityType,
+          span_start: parseInt(spanStart, 10),
+          span_end: parseInt(spanEnd, 10),
+        }
+      });
+      setCorrectionAlert({
+        type: 'success',
+        msg: `Officer Correction Submitted: Tagged [${entityType}] at positions [${spanStart}:${spanEnd}]. Audit trail and hash chain updated.`
+      });
+      const updated = await apiClient(`/documents/${docId}`);
+      if (updated) setDocumentData(updated);
+    } catch (err) {
+      setCorrectionAlert({
+        type: 'error',
+        msg: err.message || 'Failed to submit correction tag. Verify officer role authorization.'
+      });
+    }
   };
 
   if (loading) {

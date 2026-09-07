@@ -245,3 +245,34 @@ def test_charge_sheet_and_join_gate(client, make_user, make_org, db_session):
     )
     assert cs_success.status_code == 200
     assert cs_success.json()["investigation_status"] == "Charge_Sheet_Filed"
+
+
+def test_list_all_evidence_requests_for_authority_and_admin(client, make_user, make_org):
+    case, io_user, io_token = _register_and_assign_case(client, make_user)
+    fsl_org = make_org(name="Digital Forensics Lab", org_type="fsl")
+
+    client.post(
+        f"/cases/{case['id']}/evidence-requests",
+        json={
+            "requested_org_id": str(fsl_org.id),
+            "doc_type_expected": "Digital Forensic Report",
+        },
+        headers=auth_headers(io_token),
+    )
+
+    fsl_user = make_user("authority_staff", email="fsl_user@lab.org", password="pw", org=fsl_org)
+    fsl_token = login(client, "fsl_user@lab.org", "pw").json()["access_token"]
+
+    resp = client.get("/evidence-requests", headers=auth_headers(fsl_token))
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) >= 1
+    assert items[0]["requested_org_id"] == str(fsl_org.id)
+
+    # Admin also can list
+    admin_user = make_user("config_admin", email="admin_ev@police.gov.in", password="pw")
+    admin_token = login(client, "admin_ev@police.gov.in", "pw").json()["access_token"]
+    resp_admin = client.get("/evidence-requests", headers=auth_headers(admin_token))
+    assert resp_admin.status_code == 200
+    assert len(resp_admin.json()) >= 1
+

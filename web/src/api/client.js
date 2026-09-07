@@ -29,7 +29,20 @@ export function parseJwt(token) {
 // Global error handler for generic messages (Audit Fix #7)
 function handleApiError(response, bodyText) {
   console.error(`API Error: ${response.status} ${response.statusText}`, bodyText);
-  return new Error("An error occurred while communicating with the server. Please verify your credentials or permissions.");
+  let errorData = null;
+  let detailMsg = '';
+  try {
+    errorData = JSON.parse(bodyText);
+    if (typeof errorData.detail === 'string') {
+      detailMsg = errorData.detail;
+    } else if (errorData.detail?.message) {
+      detailMsg = errorData.detail.message;
+    }
+  } catch (_) {}
+  const err = new Error(detailMsg || "An error occurred while communicating with the server. Please verify your credentials or permissions.");
+  err.status = response.status;
+  err.data = errorData;
+  return err;
 }
 
 export async function apiClient(endpoint, { body, ...customConfig } = {}) {
