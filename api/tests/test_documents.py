@@ -785,6 +785,37 @@ def test_upload_with_pdf_launch_or_javascript_exploit_rejected(client, make_user
     assert "malicious PDF action '/JavaScript'" in resp_js.json()["detail"]
 
 
+def test_upload_benign_pdf_with_coincidental_token_bytes_in_a_stream_is_not_rejected(client, make_user, db_session):
+    """Regression test for a real false positive found live: a genuine,
+    entirely benign government FIR PDF (real embedded images/fonts) was
+    rejected as malicious because the raw byte sequence "/JS" happened to
+    occur, purely by coincidence, inside a compressed image stream — no
+    more meaningful there than anywhere else in a large binary blob. A
+    dangerous action is only ever DEFINED in a PDF's plaintext object
+    dictionary syntax, never inside a stream's own opaque payload, so the
+    scanner must not flag matches found only inside stream...endstream."""
+    case, io, io_token = _setup_case_with_io(client, make_user, db_session)
+
+    # The dangerous-looking bytes sit only inside a stream payload — never
+    # in any object's dictionary syntax — exactly like the coincidental
+    # match found in the real FIR PDF.
+    benign_pdf = (
+        b"%PDF-1.4\n"
+        b"1 0 obj\n<< /Type /Catalog >>\nendobj\n"
+        b"2 0 obj\n<< /Length 20 >>\nstream\n"
+        b"random binary /JS /Launch junk"
+        b"\nendstream\nendobj\n"
+        b"%%EOF"
+    )
+    resp = client.post(
+        "/documents",
+        data={"case_id": case["id"], "doc_type": "Witness Statement"},
+        files={"file": ("real_fir_scan.pdf", benign_pdf, "application/pdf")},
+        headers=auth_headers(io_token),
+    )
+    assert resp.status_code == 202, resp.text
+
+
 def test_upload_archive_disguised_as_pdf_rejected(client, make_user, db_session):
     """Polyglot archive defense: Disguised zip file claiming to be PDF is caught by magic bytes and rejected."""
     case, io, io_token = _setup_case_with_io(client, make_user, db_session)
