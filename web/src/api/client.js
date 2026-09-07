@@ -98,7 +98,13 @@ export async function apiClient(endpoint, { body, ...customConfig } = {}) {
       errDetail = await response.text();
     } catch (_) {}
 
-    if (response.status === 401 || response.status === 403) {
+    // Only a 401 means the session itself is invalid — clear it and force
+    // re-login. A 403 means the session is fine but this specific action
+    // isn't permitted for this role; logging the user out on every
+    // permission-denied response (e.g. a duty_officer hitting an
+    // admin-only endpoint) was wiping out a perfectly valid session over
+    // an action that was correctly rejected.
+    if (response.status === 401) {
       window.dispatchEvent(new Event('auth-error'));
     }
     throw handleApiError(response, errDetail);
