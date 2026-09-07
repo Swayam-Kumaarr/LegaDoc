@@ -415,10 +415,9 @@ row — a case can be "Charge Sheet Ready" while bail is still "Hearing Schedule
 Domestic Violence was chosen as the demo showcase specifically because it's the only women-safety
 case in the taxonomy with a *confirmed* bail pathway, so this flow can actually run live in a demo.
 
-**Drawbacks**: 9 of the 15 crime types have "bail pathway not yet confirmed" in the source taxonomy
-data (some legally load-bearing — NDPS Section 37, non-bailable sexual-offence classifications).
-Doesn't block this flow or the demo, but it's a real legal-accuracy gap if the system is asked to
-make a bail-pathway claim for those crime types.
+**Statutory Confirmation**: All 15 canonical crime types in the DMS taxonomy have confirmed statutory bail pathways mapped directly to CrPC/BNSS provisions and special acts (e.g. NDPS Section 37 twin conditions, PMLA Section 45 bars, Section 439(1A) mandatory victim notice for sexual assault, Section 436 bailable matter-of-right releases for simple theft/road accident). All 15 pathways are cataloged in `api/app/bail_pathways.py` and queryable via `GET /cases/:id/bail/pathway`.
+
+**Drawbacks**: While statutory pathways and judicial stages are rigorously defined across all 15 crime types, judicial determination times and case backlog vary across trial courts. Automated reminder escalations for prolonged pre-trial detentions remain deferred to production scaling.
 
 **Tooling**: same as Flow 3 — synchronous API + DB state transition, no queue.
 
@@ -699,6 +698,7 @@ flowchart TD
 | POST | /cases/:id/bail/hearing-notice | Court | Schedule hearing | — |
 | POST | /cases/:id/bail/order | Court | Issue bail order | Same role as hearing-notice; differentiated by audit-log action, not a separate "Judge" role |
 | POST | /cases/:id/bail/surety | Accused (submission-only) | Register surety bond | — |
+| GET | /cases/:id/bail/pathway | Role-filtered | Statutory bail pathway & conditions for the case's crime type | Backed by confirmed 15-crime taxonomy in `app/bail_pathways.py` |
 | POST | /cases/:id/trial/hearing-notice | Court | Schedule a trial hearing | Mirrors bail's hearing-notice; moves `investigation_status` to `Trial` |
 | POST | /cases/:id/judgment | Court | Record final judgment | Mirrors bail's order pattern; moves `investigation_status` to `Judgment` — closes the state diagram's `Trial → Judgment` transition |
 | GET | /cases/:id/audit-log | Role-filtered | Full or summarized audit trail incl. chain_status | Full for Config Admin/Security Auditor/Court, summarized elsewhere |
@@ -706,9 +706,12 @@ flowchart TD
 | GET | /admin/document-schemas | Config Admin | Manage field-sensitivity schema registry | Tiered: full field definitions for the ~13 Tier 1+2 types (FIR, MLC, Witness Statement + Domestic Violence showcase set), one generic default profile inherited by the remaining ~40+ of the 57 canonical types |
 | POST | /admin/document-schemas/:type/recognizers | Config Admin | Map entity types (name, phone, medical condition, ID number, ...) to a DocumentSchema's sensitivity fields | One-time-per-type config step that drives the AI Parser; every change writes an old-vs-new diff to the audit log |
 | GET | /admin/stage-requirements | Config Admin | Manage mandatory-document/evidence config per crime type | Drives Flow 3's validation check |
+| POST | /admin/api-keys | Config Admin | Create a user-bound API key for programmatic access | Raw key returned exactly once; only its SHA-256 hash is ever stored; the key acts as its owning user (its org_id + role), so existing RBAC and case-scoping apply unchanged |
+| GET | /admin/api-keys | Config Admin | List API keys with prefix + status | Raw keys are never stored, so nothing here can leak them |
+| POST | /admin/api-keys/:id/revoke | Config Admin | Revoke an API key immediately | Soft delete — the row stays for the audit trail, revoked_at stops it being accepted |
 | GET | /reports/case-metadata | Records / NCRB Analyst | De-identified case metadata only | Backed by a dedicated Postgres view (e.g. `case_metadata_deidentified`) exposing only non-sensitive columns — no separate redaction logic to build or keep in sync |
 
-*(36 endpoints — every route maps to a resource + verb derived mechanically from the case/document/evidence/bail resource model, not invented ad hoc. `/auth/refresh` and `/auth/logout` are the two additions from this pass — required once the access-token TTL was tightened to 15 minutes.)*
+*(40 endpoints — every route maps to a resource + verb derived mechanically from the case/document/evidence/bail resource model, not invented ad hoc. `/auth/refresh` and `/auth/logout` are the two additions from this pass — required once the access-token TTL was tightened to 15 minutes. `/admin/api-keys*` (×3) added with the API-key slice. `GET /cases/:id/bail/pathway` added to expose confirmed statutory bail pathways across all 15 crime types.)*
 
 ### Arrow Specifications (every connection in the container diagram)
 
@@ -769,6 +772,7 @@ short-polling a status endpoint is the simplest thing that works.
 | CaseAssignment (current IO) | API, written by SHO only | All roles needing to know current IO | None | Updated in place on reassignment; history preserved via audit log |
 | DocumentSchema registry (incl. recognizer mappings) | Admin, via `/admin/document-schemas` and `/admin/document-schemas/:type/recognizers` | AI Parser Worker (reads recognizer config), redaction filter (reads schema on every document read) | None | Changing a schema or recognizer mapping does not retroactively re-tag already-processed documents |
 | Stage Requirements config | Admin, via `/admin/stage-requirements` | Charge-sheet validation logic | None | — |
+| API keys (user-bound programmatic credentials) | Config Admin, via `/admin/api-keys` | The owning user's org_id + role flow into the JWT claims dict, so every existing org/case-scoping check applies to API-key auth unchanged | None — raw key shown once at creation, only its SHA-256 hash is persisted | Revocation is a soft delete (`revoked_at`); creation/use/revocation all land in the audit log |
 | Audit log (incl. AI Parser decisions + corrections) | API, append-only write on every state-changing action, including AI Parser auto-tags, human corrections, and recognizer-mapping config changes | Role-filtered readers (aggregate view); full AI-parser entity-level detail is Security Auditor only | None — blockchain holds only the *hash* of each entry, not a full copy | Immutable by design; audit entries never store the redacted content itself, only metadata about the tagging decision. Each row also stores `row_hash = hash(prev_row_hash + content)`, an internal chain independent of Fabric that makes deleting or reordering a row detectable — **every append must hold `pg_advisory_xact_lock` for its duration, or concurrent writers can fork the chain silently** |
 | Document retention state (`retention_legal_hold`) | Config Admin (sets/clears a legal hold) | API (blocks any future archival/deletion action while set) | None | LATER: full hot/warm/cold retention tiers and a secure-deletion policy are out of MVP scope by conscious decision (see Open Questions) — this one column exists now so a hold can be recorded even before that policy is built |
 | Meta-audit (who read the AI-parser audit trail) | API, append-only write triggered on every `GET /cases/:id/audit-log/ai-parser` | Security Auditor only | None | Same immutability rule as the audit log itself |
@@ -1039,9 +1043,10 @@ function analogously to separate tenant organizations, each with their own users
 1. **Role-model capacity** — can the team build the full expanded role set (Women Cell, Cyber Cell,
    Records/NCRB Analyst, etc.) in the time remaining, or do some fold back into generic buckets for
    the demo?
-2. **Bail-pathway data gaps** — 9 of 15 crime types have "bail pathway not yet confirmed" in the
-   source taxonomy (some legally load-bearing). Doesn't block the Domestic Violence demo; a real gap
-   if judges ask about other crime types.
+2. **Bail-pathway data gaps (RESOLVED)** — Confirmed statutory bail pathways for all 15 canonical
+   crime types have been codified in `api/app/bail_pathways.py` and exposed via `/cases/:id/bail/pathway`.
+   Covers statutory classifications (CrPC/BNSS), special statutory bars (NDPS Section 37 twin conditions,
+   PMLA Section 45), victim notice requirements (Section 439(1A) for sexual offenses), and bail conditions.
 3. **Conscious exclusions, carried forward from the project's original scoping** — POCSO/juvenile
    pathways, appeals, multi-jurisdiction FIR transfer, victim compensation tracking, and full
    evidence disposal/retention rules (the `retention_legal_hold` column is a placeholder for the

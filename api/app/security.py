@@ -11,11 +11,12 @@ import hashlib
 import hmac
 import struct
 import time
+from typing import Optional
 from uuid import UUID, uuid4
 
 import bcrypt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
@@ -23,7 +24,12 @@ from app.config import settings
 from app.database import get_db
 from app import models
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+# auto_error=False on both schemes: get_current_claims branches on whichever
+# credential is actually present (Bearer JWT for humans in the browser, an
+# X-API-Key header for programmatic clients) instead of letting the OAuth2
+# scheme shortcut past the API-key branch with its own 401.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # Plain `bcrypt`, not passlib's CryptContext — passlib's bcrypt backend
 # detection has a real, live incompatibility with recent bcrypt releases
@@ -142,6 +148,15 @@ def dummy_password_check(plain: str) -> None:
     verify_password(plain, DUMMY_HASH)
 
 
+def hash_api_key(plain: str) -> str:
+    """SHA-256 of the raw key — the only form ever persisted. The keys are
+    256-bit random values (see admin.create_api_key), so SHA-256 is the right
+    tool here: fast, collision-resistant, and not subject to bcrypt's 72-byte
+    input truncation. bcrypt stays for passwords, where attackers reuse weak
+    passphrases and need the salt+work-factor."""
+    return hashlib.sha256(plain.encode("utf-8")).hexdigest()
+
+
 def _create_token(user_id: str, org_id: str, role: str, expires_delta: timedelta, token_type: str) -> str:
     now = datetime.now(timezone.utc)
     payload = {
@@ -178,9 +193,60 @@ def decode_token(token: str, expected_type: str = "access") -> dict:
     return payload
 
 
-def get_current_claims(token: str = Depends(oauth2_scheme)) -> dict:
-    """Every protected endpoint depends on this (directly or via require_role)."""
-    return decode_token(token, expected_type="access")
+def _as_utc(dt: datetime) -> datetime:
+    """Normalize a possibly-naive stored datetime to a tz-aware UTC datetime.
+    Both SQLite and Postgres round-trip naive datetimes; timestamps are always
+    written as UTC (see audit.py), so attaching UTC is always correct."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def _api_key_claims(raw_key: str, db: Session) -> dict:
+    """Resolves an X-API-Key header to the same claims dict a JWT would carry.
+    The key acts as its owning user: {sub, org_id, role, type} feed straight
+    into require_role, get_current_user, and the org/case scoping checks with
+    zero router changes. Every failure mode is a generic 401 — never reveal
+    whether the key was unknown, revoked, expired, or its owner vanished."""
+    row = db.query(models.ApiKey).filter(models.ApiKey.key_hash == hash_api_key(raw_key)).first()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+
+    now = datetime.now(timezone.utc)
+    if row.revoked_at is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+    if row.expires_at is not None and _as_utc(row.expires_at) < now:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+
+    user = db.get(models.User, row.user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+
+    row.last_used_at = now
+    db.commit()
+
+    return {
+        "sub": str(user.id),
+        "org_id": str(user.org_id),
+        "role": user.role,
+        "type": "api-key",
+    }
+
+
+def get_current_claims(
+    token: Optional[str] = Depends(oauth2_scheme),
+    api_key: Optional[str] = Depends(api_key_header),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Every protected endpoint depends on this (directly or via require_role).
+
+    Two credentials are accepted, both resolving to the same claims shape:
+    - Authorization: Bearer <JWT>  — human sessions from the auth routers
+    - X-API-Key: <key>            — user-bound programmatic keys (see ApiKey)
+    An X-API-Key takes precedence if both are sent."""
+    if api_key:
+        return _api_key_claims(api_key, db)
+    if token:
+        return decode_token(token, expected_type="access")
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
 
 def get_current_user(claims: dict = Depends(get_current_claims), db: Session = Depends(get_db)) -> models.User:

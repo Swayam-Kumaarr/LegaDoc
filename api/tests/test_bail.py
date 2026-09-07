@@ -142,3 +142,31 @@ def test_bail_role_authorizations(client, make_user):
         headers=auth_headers(tokens["io"]),
     )
     assert io_order.status_code == 403
+
+
+def test_bail_pathway_taxonomy_coverage(client, make_user):
+    """Verifies statutory bail pathway resolution for NDPS and standard cases."""
+    case, tokens = _setup_case_and_users(client, make_user)
+
+    # 1. Domestic Violence pathway check
+    resp = client.get(f"/cases/{case['id']}/bail/pathway", headers=auth_headers(tokens["court"]))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["statutory_pathway"]["bailable_status"] == "Non-Bailable"
+    assert "Domestic Violence" in data["statutory_pathway"]["crime_type"]
+    assert len(data["statutory_pathway"]["statutory_pathway"]) > 0
+
+    # 2. NDPS statutory bar pathway check
+    duty_token = login(client, "duty_bail@police.gov.in", "pw").json()["access_token"]
+    ndps_case = client.post(
+        "/cases",
+        json={"crime_type": "NDPS", "complaint_text": "Commercial contraband seizure"},
+        headers=auth_headers(duty_token),
+    ).json()
+
+    ndps_resp = client.get(f"/cases/{ndps_case['id']}/bail/pathway", headers=auth_headers(tokens["defense"]))
+    assert ndps_resp.status_code == 200
+    ndps_data = ndps_resp.json()
+    assert "Twin Conditions" in ndps_data["statutory_pathway"]["applicable_sections"]
+    assert "Strictly Non-Bailable" in ndps_data["statutory_pathway"]["bailable_status"]
+

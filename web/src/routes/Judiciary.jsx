@@ -27,6 +27,7 @@ export default function Judiciary() {
 
   const [selectedCaseId, setSelectedCaseId] = useState('');
   const [bailRecords, setBailRecords] = useState([]);
+  const [bailPathway, setBailPathway] = useState(null);
   const [bailAlert, setBailAlert] = useState(null);
   const [bailDecision, setBailDecision] = useState(true);
   const [bailConditions, setBailConditions] = useState('');
@@ -76,8 +77,23 @@ export default function Judiciary() {
     }
   };
 
+  const fetchBailPathway = async (caseId) => {
+    if (!caseId) return;
+    try {
+      const data = await apiClient(`/cases/${caseId}/bail/pathway`);
+      setBailPathway(data?.statutory_pathway || null);
+    } catch (err) {
+      setBailPathway(null);
+    }
+  };
+
   useEffect(() => {
-    if (selectedCaseId) fetchBailRecords(selectedCaseId);
+    if (selectedCaseId) {
+      fetchBailRecords(selectedCaseId);
+      fetchBailPathway(selectedCaseId);
+    } else {
+      setBailPathway(null);
+    }
   }, [selectedCaseId]);
 
   const handleScheduleHearing = async () => {
@@ -253,6 +269,62 @@ export default function Judiciary() {
                     Target Docket: <strong>{selectedCase.case_number}</strong> · Current stage:{' '}
                     <strong>{(selectedCase.bail_status || 'No Bail Track').replace(/_/g, ' ')}</strong>
                   </p>
+
+                  {/* Statutory Pathway Guidance Box — fetched live from
+                      GET /cases/:id/bail/pathway, which matches the case's
+                      real crime_type against the 15-crime-type statutory
+                      taxonomy in bail_pathways.py. Falls back to the
+                      "General Cognizable Offense" entry server-side if the
+                      crime type has no dedicated statutory entry. */}
+                  {bailPathway ? (
+                    <div style={{
+                      background: 'var(--surface-sunken)',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: '4px',
+                      padding: '12px',
+                      marginBottom: '16px',
+                      fontSize: '12px',
+                      lineHeight: '1.5'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Statutory Bail Classification ({bailPathway.crime_type}):
+                        </span>
+                        <span style={{
+                          fontWeight: 600,
+                          color: /non-bailable/i.test(bailPathway.bailable_status || '') ? '#b91c1c' : '#0369a1'
+                        }}>
+                          {bailPathway.bailable_status}
+                        </span>
+                      </div>
+                      <div style={{ color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                        <strong>Primary Statute:</strong> {bailPathway.primary_statute}
+                      </div>
+                      <div style={{ color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                        <strong>Applicable Sections:</strong> {bailPathway.applicable_sections}
+                      </div>
+                      <div style={{ color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                        <strong>Jurisdiction:</strong> {bailPathway.jurisdiction_court}
+                      </div>
+                      {Array.isArray(bailPathway.statutory_pathway) && bailPathway.statutory_pathway.length > 0 && (
+                        <div style={{ color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                          <strong>Statutory Pathway:</strong>
+                          <ol style={{ margin: '4px 0 0 18px', padding: 0 }}>
+                            {bailPathway.statutory_pathway.map((step, i) => (
+                              <li key={i}>{step}</li>
+                            ))}
+                          </ol>
+                        </div>
+                      )}
+                      <div style={{ color: 'var(--text-secondary)' }}>
+                        <strong>Special Conditions:</strong> {bailPathway.special_conditions}
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginBottom: '16px' }}>
+                      Loading statutory bail pathway…
+                    </p>
+                  )}
 
                   {bailAlert && (
                     <div className={`alert ${bailAlert.type === 'success' ? 'alert-success' : 'alert-error'}`}>{bailAlert.msg}</div>

@@ -281,3 +281,49 @@ def list_bail_records(
         .order_by(models.BailRecord.created_at.asc())
         .all()
     )
+
+
+@router.get(
+    "/pathway",
+    summary="Fetch statutory bail pathway for a specific case's crime type",
+)
+def get_case_bail_pathway(
+    case_id: str,
+    claims: dict = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
+    """GET /cases/:id/bail/pathway — Returns the confirmed statutory bail pathway
+    for the specific crime type of the case."""
+    try:
+        case_uuid = UUID(case_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
+
+    case = db.get(models.Case, case_uuid)
+    if case is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
+
+    role = claims.get("role", "")
+    if role not in ("defense", "court") and role not in _UNRESTRICTED_CASE_ROLES:
+        assert_case_access(case_uuid, claims, db)
+
+    from app.bail_pathways import BAIL_PATHWAYS_TAXONOMY
+
+    # Normalize crime type lookup
+    crime_key = case.crime_type
+    matched = None
+    for k, v in BAIL_PATHWAYS_TAXONOMY.items():
+        if k.lower() in crime_key.lower() or crime_key.lower() in k.lower():
+            matched = {"crime_type": k, **v}
+            break
+
+    if not matched:
+        matched = {"crime_type": crime_key, **BAIL_PATHWAYS_TAXONOMY["General Cognizable Offense"]}
+
+    return {
+        "case_id": str(case.id),
+        "case_number": case.case_number,
+        "current_bail_status": case.bail_status,
+        "statutory_pathway": matched,
+    }
+

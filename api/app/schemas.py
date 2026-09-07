@@ -217,6 +217,37 @@ class OrganizationCreateRequest(BaseModel):
     org_type: str
 
 
+# ---------- API Keys (user-bound programmatic access) ----------
+class ApiKeyCreateRequest(BaseModel):
+    user_id: UUID  # the user whose org_id/role the key will act as
+    name: str = "api-key"  # human label, e.g. "CCTNS integration"
+    expires_at: Optional[datetime] = None  # null = no expiry
+
+
+class ApiKeyCreatedResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    name: str
+    key: str  # the raw key — returned exactly ONCE, never stored
+    key_prefix: str
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class ApiKeyView(BaseModel):
+    """Admin-facing list item — never contains the raw key or its hash."""
+    id: UUID
+    user_id: UUID
+    user_name: Optional[str] = None
+    user_email: Optional[str] = None
+    name: str
+    key_prefix: str
+    created_at: datetime
+    last_used_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+
+
 # ---------- Administrative Audit Log ----------
 class AdminAuditLogEntry(BaseModel):
     id: UUID

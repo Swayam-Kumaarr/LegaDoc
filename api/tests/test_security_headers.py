@@ -37,3 +37,37 @@ def test_error_responses_still_contain_security_headers(client):
     assert resp.headers["x-frame-options"] == "DENY"
     assert "max-age=31536000" in resp.headers["strict-transport-security"]
     assert "default-src 'none'" in resp.headers["content-security-policy"]
+
+
+def test_cors_preflight_for_allowed_origin(client):
+    """CORS preflight from an authorized frontend origin succeeds."""
+    headers = {
+        "Origin": "http://localhost:5173",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+    }
+    resp = client.options("/auth/login", headers=headers)
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert resp.headers.get("access-control-allow-credentials") == "true"
+
+
+def test_cors_rejects_unauthorized_origin(client):
+    """CORS preflight from an unauthorized origin is not granted allow-origin."""
+    headers = {
+        "Origin": "http://malicious-external-site.com",
+        "Access-Control-Request-Method": "GET",
+    }
+    resp = client.options("/health", headers=headers)
+    assert "access-control-allow-origin" not in resp.headers
+
+
+def test_cors_wildcard_strictly_prohibited():
+    """Wildcard origin '*' is blocked with an explicit security error."""
+    import pytest
+    from app.config import Settings
+
+    s = Settings(CORS_ORIGINS="http://localhost:5173,*")
+    with pytest.raises(ValueError, match="Wildcard origin.*strictly forbidden"):
+        _ = s.cors_origins_list
+

@@ -4,16 +4,6 @@ FROM python:3.11-slim
 
 WORKDIR /worker
 
-# pip install BEFORE the apt-get system-library block below — this is the
-# expensive layer (paddlepaddle/paddleocr, several hundred MB, minutes to
-# reinstall from scratch) and doesn't actually depend on those system
-# libraries being present to install successfully, only to import/run
-# correctly. Keeping it first means iterating on the apt-get package list
-# (a real, ongoing thing — see the comment below) invalidates only the
-# cheap layer after it, not this one.
-COPY workers/ocr_worker/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
 # Both OCR engines need system libraries `python:3.11-slim` doesn't ship —
 # neither actually worked in this image before this fix, both failing in a
 # way that looked like a Python/pip problem but wasn't:
@@ -27,11 +17,26 @@ RUN pip install --no-cache-dir -r requirements.txt
 #     binary that was never apt-installed, so the fallback engine failed
 #     too, with BOTH engines down every real (non-mocked) OCR job silently
 #     degraded to needs_review.
+#   - tesseract-ocr-hin: worker.py runs a bilingual (en+hi) PaddleOCR pass
+#     and falls back to Tesseract for either — without the Hindi language
+#     pack, the Tesseract fallback silently can't read Hindi/Devanagari text.
 #   - libglib2.0-0/libsm6/libxext6/libxrender1: opencv-python-headless's
 #     other common missing-.so list on a slim base — added preemptively.
+# Installed BEFORE pip so the model-preload step below can actually import
+# and run PaddleOCR at build time (it needs these libs to load at all).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 libgl1 tesseract-ocr libglib2.0-0 libsm6 libxext6 libxrender1 \
+    libgomp1 libgl1 tesseract-ocr tesseract-ocr-hin \
+    libglib2.0-0 libsm6 libxext6 libxrender1 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY workers/ocr_worker/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-download and cache PaddleOCR English and Hindi models at build time
+# (Issue #37) — without this, the first real OCR request in a fresh
+# container pays the full model-download cost inline (confirmed live: ~80s
+# on first use) instead of at build time where it belongs.
+RUN python -c "from paddleocr import PaddleOCR; PaddleOCR(use_angle_cls=True, lang='en', show_log=False); PaddleOCR(use_angle_cls=True, lang='hi', show_log=False)"
 
 COPY workers/ocr_worker/worker.py .
 # worker.py imports this as a bare module (`from layout_reconstruction

@@ -275,11 +275,21 @@ export default function PoliceInvestigation() {
                   value={crimeType}
                   onChange={(e) => setCrimeType(e.target.value)}
                 >
-                  <option value="Cybercrime">Cybercrime (IT Act / Financial Fraud)</option>
+                  <option value="Domestic Violence">Domestic Violence (Protection of Women / Sec 498A IPC)</option>
+                  <option value="Cybercrime">Cybercrime (IT Act / Financial Cyberfraud)</option>
                   <option value="NDPS">NDPS (Narcotics & Psychotropic Substances)</option>
-                  <option value="Homicide">Homicide (BNS / IPC 302)</option>
-                  <option value="Financial Fraud">Financial Fraud / PMLA</option>
-                  <option value="Theft">Theft & Burglary</option>
+                  <option value="Homicide">Homicide (BNS / Sec 302 IPC)</option>
+                  <option value="Financial Fraud">Financial Fraud & Money Laundering (PMLA)</option>
+                  <option value="Theft">Theft & Burglary (Sec 379/380 IPC)</option>
+                  <option value="Robbery">Armed Robbery & Dacoity (Sec 392 IPC)</option>
+                  <option value="Sexual Assault">Sexual Assault & Rape (Sec 376 IPC / POCSO)</option>
+                  <option value="Acid Attack">Acid Attack (Sec 326A IPC)</option>
+                  <option value="Road Accident">Road Accident & Rash Driving (Sec 279/304A IPC)</option>
+                  <option value="Public Corruption">Public Corruption & Bribery (PC Act)</option>
+                  <option value="Cyber Identity Theft">Cyber Identity Theft (Sec 66C IT Act)</option>
+                  <option value="Organized Crime">Organized Crime & Extortion (MCOCA / IPC 384)</option>
+                  <option value="Kidnapping">Kidnapping & Abduction (Sec 363/364A IPC)</option>
+                  <option value="General Cognizable Offense">General Cognizable Offense</option>
                 </select>
               </div>
 
