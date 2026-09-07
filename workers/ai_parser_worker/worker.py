@@ -233,6 +233,34 @@ def _resolve_overlapping_spans(spans: List[Dict[str, Any]]) -> List[Dict[str, An
     return resolved
 
 
+_analyzer_engine = None
+
+
+def _get_analyzer_engine():
+    """Lazily builds and caches ONE Presidio AnalyzerEngine, explicitly
+    configured to use en_core_web_sm — the model the Dockerfile actually
+    pre-downloads (`python -m spacy download en_core_web_sm`). A bare
+    AnalyzerEngine() ignores that entirely: Presidio's own default reaches
+    for en_core_web_lg (588MB) regardless of what's already on disk, so
+    every fresh container was quietly trying to download the large model
+    from scratch at the first real request — confirmed live: a single
+    extraction task sat downloading a 587.7MB wheel before it could do
+    anything, the same "en_core_web_lg downloaded instead of _sm" issue
+    already fixed once for the Dockerfile's build step, but never actually
+    wired into the code that decides which model to load at runtime.
+    Cached at module level rather than rebuilt per call — spaCy pipeline
+    construction has real, avoidable cost otherwise."""
+    global _analyzer_engine
+    if _analyzer_engine is None:
+        from presidio_analyzer.nlp_engine import NlpEngineProvider
+        provider = NlpEngineProvider(nlp_configuration={
+            "nlp_engine_name": "spacy",
+            "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+        })
+        _analyzer_engine = AnalyzerEngine(nlp_engine=provider.create_engine())
+    return _analyzer_engine
+
+
 def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List[Dict[str, Any]]:
     """Runs entity detection over raw text:
     1. Runs Presidio Analyzer if available in environment.
@@ -244,7 +272,7 @@ def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List
     # 1. Presidio extraction if engine is present
     if _HAS_PRESIDIO:
         try:
-            analyzer = AnalyzerEngine()
+            analyzer = _get_analyzer_engine()
             results = analyzer.analyze(text=text, language="en")
             for res in results:
                 ent_type = res.entity_type
@@ -492,9 +520,24 @@ def process_extract_credential_fields(credential_document_id: str, db: Optional[
         # LegalPIIRecognizer's Indian-honorific/police-rank patterns are
         # often the only thing that actually fires on this kind of text.
         candidate_name = None
-        person_spans = [s for s in parse_text_for_sensitive_spans(text) if s["entity_type"] == "PERSON"]
+        MIN_PLAUSIBLE_NAME_LEN = 5  # "Xu Li" is short but real; "Ra" or "Fnk" never is
+        person_spans = [
+            s for s in parse_text_for_sensitive_spans(text)
+            if s["entity_type"] == "PERSON" and (s["span_end"] - s["span_start"]) >= MIN_PLAUSIBLE_NAME_LEN
+        ]
         if person_spans:
-            best = max(person_spans, key=lambda s: s["confidence"])
+            # Confirmed live: Presidio's statistical NER (spaCy, now actually
+            # running after the en_core_web_sm fix above) confidently
+            # mis-tagged 2-3 character OCR-garbled fragments as PERSON at a
+            # HIGHER confidence (85) than the deterministic "Name:" regex
+            # match found for the real name one line above it (fixed at 80)
+            # — so sorting by confidence first picked the fragment. The
+            # length filter above removes anything too short to plausibly be
+            # a name in the first place; among what's left, prefer the
+            # longer match, then confidence, since a longer structured-
+            # pattern match is more trustworthy on this kind of labeled-form
+            # text than a marginally higher NER confidence score.
+            best = max(person_spans, key=lambda s: (s["span_end"] - s["span_start"], s["confidence"]))
             raw_match = text[best["span_start"]:best["span_end"]]
             # The capturing regex can run on past a line break onto the next
             # OCR line (e.g. "...Rao\nService ID") — a name never legitimately

@@ -267,6 +267,26 @@ def test_extraction_matches_when_name_and_id_both_line_up(db_session, make_org):
     db_session.refresh(doc)
     assert doc.match_status == "matched"
     assert doc.extracted_fields["id_number"] == "DL-POL-4921"
+
+
+def test_extraction_prefers_the_full_name_over_a_same_confidence_ocr_fragment(db_session, make_org):
+    """Regression test for a real bug found live: PaddleOCR on a genuine
+    test image produced 'Ra nk: Inspector Fnk' from a garbled 'Rank:' line,
+    and the PERSON recognizer's fixed-confidence (80) tie meant the 2-char
+    fragment 'Ra' could out-rank (by pure list order) the correct, clean
+    'Inspector Test Officer' match one line above it. Confidence ties must
+    break by span length, not encounter order."""
+    application = _make_application(db_session, make_org, name="Inspector Test Officer", claimed_id="DL-POL-9999")
+    doc = _make_credential_doc(
+        db_session, application,
+        raw_text="GOVERNMENTOF NCTOF DELHI POLICE\nName: Inspector Test Officer\nService ID: DL-POL-9999 ID.\nRa nk: Inspector Fnk",
+    )
+
+    result = ai_worker.process_extract_credential_fields(str(doc.id), db=db_session)
+    db_session.refresh(doc)
+    assert doc.extracted_fields["name"] != "Ra"
+    assert "Officer" in doc.extracted_fields["name"]
+    assert result == "matched"
     assert doc.status == "ready"
 
 
