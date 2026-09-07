@@ -106,6 +106,35 @@ moment a branch adds or removes tests.
 
 ---
 
+## Windows: always run `docker compose` from inside WSL2
+
+`chain_worker` bind-mounts `${HOME}/fabric-samples` (the `peer` binary and
+crypto material it shells out to) and attaches to the external `fabric_test`
+network. Docker Desktop resolves both correctly only when `docker compose` is
+invoked *from inside WSL2* against the WSL2 filesystem path. Run it from a
+plain Windows terminal (PowerShell, cmd, or a Windows-side Git Bash) instead —
+against a `\\wsl$\<distro>\...` UNC path — and the bind mount silently mounts
+an **empty directory** instead of erroring. The container starts and looks
+healthy; only the first real blockchain write fails, with
+`FabricSubmissionError('peer binary not found at /root/fabric-samples/bin/peer')`,
+retrying every 30s forever. Confirmed live twice in this session — restarting
+`chain_worker` from Windows-side Bash silently broke it both times, with the
+container reporting "Up" the whole time.
+
+Always bring the stack up (or restart `chain_worker` specifically) from
+inside WSL2:
+```bash
+wsl -e bash -c "cd /mnt/c/projects/LegaDoc && docker compose up -d"
+```
+If a document is stuck with `chain_status: failed` and this is why, no
+re-upload is needed — restart `chain_worker` correctly and retry:
+```bash
+curl -X POST http://localhost:8000/documents/<doc_id>/retry-chain-write \
+  -H "Authorization: Bearer <config_admin token>"
+```
+
+---
+
 ## Common Commands
 ```bash
 # Backend test suite
