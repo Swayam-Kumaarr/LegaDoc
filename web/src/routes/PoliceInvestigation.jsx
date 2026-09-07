@@ -76,7 +76,10 @@ export default function PoliceInvestigation() {
           complaint_text: complaintText,
         },
       });
-      setFirStatus({ type: 'success', msg: `FIR registered: Case ${res.case_number} (status: ${res.investigation_status}).` });
+      setFirStatus({
+        type: 'success',
+        msg: `FIR registered: Case ${res.case_number} (status: ${res.investigation_status}). The complaint narrative is stored as the case's first document, queued for redaction and ledger hash commit — no separate upload needed.`,
+      });
       setComplaintText('');
       fetchCases();
     } catch (err) {
@@ -161,17 +164,13 @@ export default function PoliceInvestigation() {
           Sensitive fields (complainant identity, phone numbers, addresses) are redacted at the server boundary before transmission.
         </div>
 
-        {/* Operational Metrics */}
-        <div className="grid-3">
+        {/* Operational Metrics — both are real counts derived from the case
+            list above, not static policy text dressed up as a metric. */}
+        <div className="grid-2">
           <div className="stat-widget">
             <span className="stat-value">{cases.length}</span>
             <span className="stat-label">Assigned Investigation Cases</span>
             <span className="stat-sub">Visible to this account</span>
-          </div>
-          <div className="stat-widget">
-            <span className="stat-value" style={{ color: 'var(--status-success-text)' }}>Fail-Closed</span>
-            <span className="stat-label">AI Redaction Engine Policy</span>
-            <span className="stat-sub">Automated PII masking</span>
           </div>
           <div className="stat-widget">
             <span className="stat-value" style={{ color: 'var(--ink-900)' }}>
@@ -258,7 +257,8 @@ export default function PoliceInvestigation() {
           <div className="card">
             <h2 className="card-title">Register First Information Report (FIR)</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-              Creates a case record. Restricted to the Duty Officer role.
+              Creates the case record and stores this narrative as its first document in the same
+              step — hashed and queued for redaction automatically. Restricted to the Duty Officer role.
             </p>
 
             {firStatus && (
@@ -302,9 +302,10 @@ export default function PoliceInvestigation() {
 
           {/* Upload Evidence Form */}
           <div className="card">
-            <h2 className="card-title">Ingest Evidence / Case Document</h2>
+            <h2 className="card-title">Ingest Additional Evidence</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-              Uploads a document against the selected case; hashing and OCR/redaction run asynchronously.
+              For anything beyond the FIR narrative itself — Panchnama, forensic reports, CCTV/media,
+              witness statements. Hashing and OCR/redaction run asynchronously, same as the FIR document.
             </p>
 
             {uploadStatus && (

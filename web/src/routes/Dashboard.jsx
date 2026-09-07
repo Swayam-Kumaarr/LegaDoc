@@ -151,10 +151,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="domain-notice" style={{ marginTop: '16px' }}>
-          <strong>Statutory Compliance Requirement:</strong> All documentary evidence ingested must have an accompanying
-          Section 65B Electronic Certificate committed to the Hyperledger Fabric ledger prior to final Charge Sheet dispatch.
-        </div>
       </div>
     </div>
   );
