@@ -9,6 +9,7 @@ for every IO, every time.
 
 import random
 import string
+import uuid
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -25,6 +26,7 @@ from app.security import (
     require_role,
     verify_case_access,
 )
+from app.storage import ObjectStorage, get_storage, object_key, sha256_hex
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -44,15 +46,26 @@ def register_fir(
     body: schemas.RegisterFIRRequest,
     claims: dict = Depends(require_role("duty_officer")),
     db: Session = Depends(get_db),
+    storage: ObjectStorage = Depends(get_storage),
+    queue_client: QueueClient = Depends(get_queue),
 ):
-    """POST /cases — Duty Officer. Register FIR, create case. See Flow 1.
+    """POST /cases — Duty Officer. Register FIR, create case, AND ingest the
+    complaint narrative as the case's first Document (doc_type="FIR") in the
+    same request — Track A (hash commit) and Track B (redaction) dispatch
+    exactly like any other document upload (see POST /documents), just
+    skipping OCR: the text is already typed, not scanned, so there's
+    nothing to extract — ai_parser_worker.tag_document is enqueued directly
+    against the raw_text this endpoint already has. See Flow 1.
 
-    Scope note: this baseline creates the Case row and assigns a
-    case_number. It does NOT yet create the linked complaint Document row
-    or enqueue the blockchain hash-write job (arrow #5 in System
-    Connections) — those need Object Storage and a live queue, neither of
-    which this environment has running. Wire them in once MinIO/Redis are
-    actually available; the Case row itself is real and durable now.
+    This used to only create the bare Case row: "does NOT yet create the
+    linked complaint Document row... those need Object Storage and a live
+    queue, neither of which this environment has running." MinIO and Redis
+    have been up and working the whole time this session — nobody had
+    circled back. The real consequence: every complaint narrative ever
+    typed into the FIR form was silently discarded server-side. It was
+    never stored, never redacted, never hash-chained, and the "Ingest
+    Evidence" step was a fully disconnected second action an officer had
+    to separately remember to do for the exact same text.
     """
     case = models.Case(
         case_number=_generate_case_number(body.crime_type),
@@ -60,8 +73,51 @@ def register_fir(
         investigation_status="FIR_Registered",
     )
     db.add(case)
+    db.flush()  # assigns case.id without committing, so it can key the document below
+
+    user = db.get(models.User, UUID(claims["sub"]))
+    org_id = user.org_id if user else case.id
+
+    doc_id = uuid.uuid4()
+    text_bytes = body.complaint_text.encode("utf-8")
+    doc_hash = sha256_hex(text_bytes)
+    key = object_key(org_id, case.id, doc_id, 1)
+    storage.put(key, text_bytes, content_type="text/plain")
+
+    document = models.Document(
+        id=doc_id,
+        case_id=case.id,
+        doc_type="FIR",
+        version=1,
+        storage_path=key,
+        raw_text=body.complaint_text,
+        doc_hash=doc_hash,
+        status="processing",
+        chain_status="pending",
+        uploaded_by=UUID(claims["sub"]),
+    )
+    db.add(document)
     db.commit()
     db.refresh(case)
+    db.refresh(document)
+
+    idempotency_key = f"{document.id}:v{document.version}"
+    # Track A — hash commit, same as any other document upload.
+    queue_client.enqueue("chain_worker.write_hash", document_id=str(document.id), idempotency_key=idempotency_key)
+    # Track B — redaction. No OCR dispatch: raw_text is already set above,
+    # so tag_document has everything it needs without an extraction step.
+    queue_client.enqueue("ai_parser_worker.tag_document", document_id=str(document.id))
+
+    write_audit_log(
+        db,
+        action="fir_registered",
+        case_id=case.id,
+        actor_user_id=UUID(claims["sub"]),
+        target_type="case",
+        target_id=case.id,
+        metadata={"crime_type": body.crime_type, "document_id": str(document.id), "doc_hash": doc_hash},
+    )
+
     return case
 
 

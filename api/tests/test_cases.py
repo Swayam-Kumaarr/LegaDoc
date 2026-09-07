@@ -35,6 +35,39 @@ def test_duty_officer_can_register_a_fir(client, make_user):
     assert case["case_number"].startswith("THE-")
 
 
+def test_register_fir_creates_and_dispatches_the_complaint_document(client, make_user, db_session, fake_queue):
+    """The complaint narrative used to be validated and then silently
+    discarded — never stored, never redacted, never hash-chained, and
+    "Ingest Evidence" was a fully disconnected second step an officer had
+    to separately remember to do for the exact same text. FIR registration
+    must now create a real Document, store it, and dispatch both tracks —
+    Track A (hash) same as any upload, Track B (redaction) skipping OCR
+    since the text is already known."""
+    make_user("duty_officer", email="duty2@example.com", password="pw")
+    token = login(client, "duty2@example.com", "pw").json()["access_token"]
+
+    case = _register_fir(client, token, crime_type="Cybercrime")
+
+    doc = (
+        db_session.query(models.Document)
+        .filter(models.Document.case_id == UUID(case["id"]), models.Document.doc_type == "FIR")
+        .first()
+    )
+    assert doc is not None
+    assert doc.raw_text == "Something was stolen."
+    assert doc.doc_hash is not None
+    assert doc.status == "processing"
+    assert doc.chain_status == "pending"
+
+    task_names = {job["task_name"] for job in fake_queue.enqueued}
+    assert "chain_worker.write_hash" in task_names
+    assert "ai_parser_worker.tag_document" in task_names
+    assert "ocr_worker.extract_document" not in task_names  # no OCR — text was typed, not scanned
+
+    ai_job = next(j for j in fake_queue.enqueued if j["task_name"] == "ai_parser_worker.tag_document")
+    assert ai_job["kwargs"]["document_id"] == str(doc.id)
+
+
 def test_only_duty_officer_can_register_a_fir(client, make_user):
     make_user("io", email="io@example.com", password="pw")
     token = login(client, "io@example.com", "pw").json()["access_token"]
@@ -582,9 +615,14 @@ def test_list_case_documents_returns_metadata_without_raw_text(client, make_user
     list_resp = client.get(f"/cases/{case['id']}/documents", headers=auth_headers(io_token))
     assert list_resp.status_code == 200
     docs = list_resp.json()
-    assert len(docs) == 1
-    assert docs[0]["doc_type"] == "FIR"
-    assert "raw_text" not in docs[0]
+    # 2, not 1: register_fir itself now creates the complaint-narrative
+    # Document (version 1) in addition to the one explicitly uploaded above
+    # (version 2, same doc_type) — see test_register_fir_creates_and_
+    # dispatches_the_complaint_document in test_cases.py for that behavior
+    # directly.
+    assert len(docs) == 2
+    assert all(d["doc_type"] == "FIR" for d in docs)
+    assert all("raw_text" not in d for d in docs)
 
 
 def test_list_case_documents_denies_unassigned_io(client, make_user):

@@ -212,11 +212,17 @@ def test_charge_sheet_and_join_gate(client, make_user, make_org, db_session):
 
     bank_org = make_org(name="Bank", org_type="bank")
 
-    # Seed mandatory stage requirement for Financial Fraud
+    # Seed mandatory stage requirements for Financial Fraud. Deliberately
+    # NOT "FIR" here: register_fir now creates the case's FIR Document as
+    # part of registration itself (see cases.py), so an "FIR" document
+    # requirement would already be satisfied the moment _register_and_
+    # assign_case runs, above — that's correct, intended behavior, just not
+    # what this test is trying to exercise. Panchnama is never auto-created,
+    # so it still stands in as a genuinely-missing requirement.
     sr1 = models.StageRequirement(
         crime_type="Financial Fraud",
         requirement_type="document",
-        requirement_key="FIR",
+        requirement_key="Panchnama",
         mandatory=True,
     )
     sr2 = models.StageRequirement(
@@ -236,15 +242,15 @@ def test_charge_sheet_and_join_gate(client, make_user, make_org, db_session):
     assert cs_fail.status_code == 409
     detail = cs_fail.json()["detail"]
     assert "missing_items" in detail
-    assert any("FIR" in item for item in detail["missing_items"])
+    assert any("Panchnama" in item for item in detail["missing_items"])
     assert any("Bank Statement" in item for item in detail["missing_items"])
 
-    # 1. Upload FIR document
+    # 1. Upload Panchnama document
     fake_pdf = b"%PDF-1.4 official complaint document"
     client.post(
         "/documents",
-        data={"case_id": case["id"], "doc_type": "FIR"},
-        files={"file": ("fir.pdf", io.BytesIO(fake_pdf), "application/pdf")},
+        data={"case_id": case["id"], "doc_type": "Panchnama"},
+        files={"file": ("panchnama.pdf", io.BytesIO(fake_pdf), "application/pdf")},
         headers=auth_headers(io_token),
     )
 
