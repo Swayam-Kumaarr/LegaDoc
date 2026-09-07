@@ -46,10 +46,6 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/1"
 
-    # Hyperledger Fabric (Chain Worker reads these, not the API directly)
-    FABRIC_CONNECTION_PROFILE: str = "/fabric-network/connection-profile.json"
-    FABRIC_MSP_ID: str = "PoliceMSP"
-
     class Config:
         env_file = ".env"
 
