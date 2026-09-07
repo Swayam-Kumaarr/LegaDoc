@@ -15,6 +15,7 @@ from app.queue import QueueClient, get_queue
 from app.routers.documents import _next_version
 from app.security import (
     _UNRESTRICTED_CASE_ROLES,
+    EXTERNAL_AUTHORITY_ROLE,
     assert_case_access,
     get_current_claims,
     require_role,
@@ -81,6 +82,13 @@ def create_evidence_request(
     return req
 
 
+# Roles with cross-case oversight of the requisition registry. Deliberately
+# not _UNRESTRICTED_CASE_ROLES: that set answers "which cases may this role
+# open?", and reusing it here would mean any future addition to it silently
+# gained the whole Section 91 registry as well.
+_REQUISITION_OVERSIGHT_ROLES = {"config_admin", "security_auditor", "court", "prosecutor", "sho"}
+
+
 @router.get(
     "/evidence-requests",
     response_model=list[schemas.EvidenceRequestInboxItem],
@@ -92,9 +100,13 @@ def list_my_evidence_requests(
     """GET /evidence-requests — cross-case inbox. An external authority
     (FSL/bank/telecom) doesn't know the case UUID for a request routed to
     them ahead of time; the per-case endpoint below is useless without one.
-    external_authority sees only requests addressed to their own org;
-    config_admin/security_auditor see everything (oversight); every other
-    role is denied — this is not a general case-browsing endpoint."""
+
+    - External Authority: only requests routed to their own organization.
+    - Oversight roles (config_admin/security_auditor/court/prosecutor/sho):
+      the whole registry.
+    - IO: only requests on cases they are actually assigned to.
+    - Everyone else: denied — this is not a general case-browsing endpoint.
+    """
     role = claims.get("role", "")
 
     # EvidenceRequest has no ORM relationship to Case (only a raw case_id FK),
@@ -103,12 +115,27 @@ def list_my_evidence_requests(
         models.Case, models.Case.id == models.EvidenceRequest.case_id
     )
 
-    if role == "external_authority":
+    if role == EXTERNAL_AUTHORITY_ROLE:
         user_org_id = claims.get("org_id")
-        if not user_org_id:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization context missing")
-        query = query.filter(models.EvidenceRequest.requested_org_id == UUID(user_org_id))
-    elif role not in ("config_admin", "security_auditor"):
+        # No org claim, or an unparseable one, is a denial. Falling through
+        # to "return everything" when the org can't be resolved would hand
+        # one bank or lab every other organization's requisitions — a
+        # boundary that cannot be evaluated must be closed, not skipped.
+        try:
+            org_uuid = UUID(str(user_org_id))
+        except (TypeError, ValueError):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization context missing or invalid")
+        query = query.filter(models.EvidenceRequest.requested_org_id == org_uuid)
+    elif role in _REQUISITION_OVERSIGHT_ROLES:
+        pass  # unrestricted — see the whole registry
+    elif role == "io":
+        # Assignment-scoped, exactly as assert_case_access treats an IO
+        # everywhere else. Returning the full registry here would have
+        # handed every IO the requisitions of every case they are not on.
+        query = query.join(
+            models.CaseAssignment, models.CaseAssignment.case_id == models.EvidenceRequest.case_id
+        ).filter(models.CaseAssignment.io_user_id == UUID(claims["sub"]))
+    else:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Role not permitted to browse the evidence-request inbox")
 
     rows = query.order_by(models.EvidenceRequest.created_at.asc()).all()
@@ -147,7 +174,7 @@ def list_evidence_requests(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
 
     role = claims.get("role", "")
-    if role == "external_authority":
+    if role == EXTERNAL_AUTHORITY_ROLE:
         user_org_id = claims.get("org_id")
         if not user_org_id:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization context missing")

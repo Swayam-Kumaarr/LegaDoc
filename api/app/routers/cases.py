@@ -21,6 +21,9 @@ from app.audit import write_audit_log
 from app.database import get_db
 from app.queue import QueueClient, get_queue
 from app.security import (
+    _POLICE_SPECIALIST_ROLES,
+    _UNRESTRICTED_CASE_ROLES,
+    EXTERNAL_AUTHORITY_ROLE,
     assert_case_access,
     get_current_claims,
     require_role,
@@ -126,23 +129,81 @@ def list_cases(claims: dict = Depends(get_current_claims), db: Session = Depends
     """GET /cases — Any authenticated role. List cases, filtered by role/org
     visibility. Paginated, filterable by crime_type/status.
 
-    Baseline scoping: Config Admin/Security Auditor/Court/Prosecutor/Duty
-    Officer/SHO see every case (matches the Access Model — these roles need
-    cross-case visibility to do their job). An IO sees only cases they're
-    assigned to, same rule as verify_case_access. Pagination and
-    crime_type/status filtering are not implemented yet — this returns
-    everything the role is allowed to see, unpaginated.
+    Every branch mirrors what assert_case_access would decide for the same
+    role, so this list never shows a row the caller cannot then open. A list
+    whose rows mostly 403 is worse than a short list: it misrepresents the
+    caller's remit and turns an authorization boundary into dead links.
+
+    Oversight roles see everything. An IO and the police specialist units see
+    their assigned cases, a Duty Officer the FIRs it registered, and an
+    External Authority the cases it holds a Section 91 requisition on. Every
+    other role gets an empty list — see the default branch.
+
+    Pagination and crime_type/status filtering are not implemented yet — this
+    returns everything the role is allowed to see, unpaginated.
     """
     role = claims.get("role")
-    if role == "io":
+
+    if role in _UNRESTRICTED_CASE_ROLES:
+        return db.query(models.Case).all()
+
+    if role in (_POLICE_SPECIALIST_ROLES | {"io"}):
+        # Assignment-scoped, matching assert_case_access. duty_officer is
+        # handled separately below and is excluded from this set there.
+        if role != "duty_officer":
+            user_id = UUID(claims["sub"])
+            return (
+                db.query(models.Case)
+                .join(models.CaseAssignment, models.CaseAssignment.case_id == models.Case.id)
+                .filter(models.CaseAssignment.io_user_id == user_id)
+                .all()
+            )
+
+    if role == "duty_officer":
         user_id = UUID(claims["sub"])
         return (
             db.query(models.Case)
-            .join(models.CaseAssignment, models.CaseAssignment.case_id == models.Case.id)
-            .filter(models.CaseAssignment.io_user_id == user_id)
+            .join(models.AuditLog, models.AuditLog.case_id == models.Case.id)
+            .filter(
+                models.AuditLog.actor_user_id == user_id,
+                models.AuditLog.action == "fir_registered",
+            )
+            .distinct()
             .all()
         )
-    return db.query(models.Case).all()
+
+    if role == EXTERNAL_AUTHORITY_ROLE:
+        # The only case link an external organization has is a requisition
+        # routed to it. Anything beyond that is somebody else's investigation:
+        # the authority portal's own banner promises "no access to the broader
+        # case docket", and returning the full registry contradicted it.
+        org_id = claims.get("org_id")
+        try:
+            org_uuid = UUID(str(org_id))
+        except (TypeError, ValueError):
+            return []
+        return (
+            db.query(models.Case)
+            .join(models.EvidenceRequest, models.EvidenceRequest.case_id == models.Case.id)
+            .filter(models.EvidenceRequest.requested_org_id == org_uuid)
+            .distinct()
+            .all()
+        )
+
+    # Default-deny for every remaining role — currently Defense and the
+    # NCRB analyst. Both previously received the entire case registry, which
+    # is how a defense advocate could enumerate every case in the state,
+    # domestic-violence matters included.
+    #
+    # An empty list rather than a 403 because this is a collection endpoint
+    # and "no cases are linked to you" is the truthful answer, not an error.
+    #
+    # Neither role can be scoped properly yet: nothing in the schema links a
+    # Defense advocate to the case they are engaged on (BailRecord records no
+    # actor), so a real engagement link is schema work, not a filter. The NCRB
+    # analyst's aggregate view is /reports/case-metadata, which is the
+    # endpoint that role should be using.
+    return []
 
 
 @router.get("/{case_id}", response_model=schemas.CaseResponse)

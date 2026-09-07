@@ -68,6 +68,32 @@ def test_register_fir_creates_and_dispatches_the_complaint_document(client, make
     assert ai_job["kwargs"]["document_id"] == str(doc.id)
 
 
+def test_duty_officer_scoped_to_the_firs_it_registered(client, make_user):
+    """A Duty Officer may reopen the FIRs it registered and nothing else —
+    the fir_registered audit row is what grants this (see security.py's
+    assert_case_access and cases.list_cases). Before this, duty_officer was
+    either in _UNRESTRICTED_CASE_ROLES (every station intake officer could
+    read every case in the system) or excluded from access to its own just-
+    filed FIR entirely; neither is correct."""
+    make_user("duty_officer", email="duty_scope_a@example.com", password="pw")
+    token_a = login(client, "duty_scope_a@example.com", "pw").json()["access_token"]
+    own_case = _register_fir(client, token_a, crime_type="Theft")
+
+    make_user("duty_officer", email="duty_scope_b@example.com", password="pw")
+    token_b = login(client, "duty_scope_b@example.com", "pw").json()["access_token"]
+    other_case = _register_fir(client, token_b, crime_type="Robbery")
+
+    # Sees its own FIR, not the other officer's.
+    listed = client.get("/cases", headers=auth_headers(token_a)).json()
+    listed_ids = {c["id"] for c in listed}
+    assert own_case["id"] in listed_ids
+    assert other_case["id"] not in listed_ids
+
+    # Can open its own case detail; 403 on the other officer's.
+    assert client.get(f"/cases/{own_case['id']}", headers=auth_headers(token_a)).status_code == 200
+    assert client.get(f"/cases/{other_case['id']}", headers=auth_headers(token_a)).status_code == 403
+
+
 def test_only_duty_officer_can_register_a_fir(client, make_user):
     make_user("io", email="io@example.com", password="pw")
     token = login(client, "io@example.com", "pw").json()["access_token"]
