@@ -69,6 +69,146 @@ try:
 except ImportError:
     _HAS_TESSERACT = False
 
+try:
+    import fitz  # PyMuPDF
+    _HAS_PYMUPDF = True
+except ImportError:
+    _HAS_PYMUPDF = False
+
+MAX_PDF_PAGES = 20  # a runaway page count shouldn't silently hang a worker on one upload
+
+
+def _is_pdf(data: bytes) -> bool:
+    return bool(data) and data[:5] == b"%PDF-"
+
+
+def pdf_bytes_to_page_images(pdf_bytes: bytes, dpi: int = 200) -> List[bytes]:
+    """Rasterizes each page of a PDF to PNG bytes via PyMuPDF — no external
+    binary dependency (unlike pdf2image, which needs poppler installed
+    separately), just a pip package. Confirmed live: a real submitted FIR
+    PDF previously went straight through cv2.imdecode (which silently
+    returns None on non-raster bytes, so preprocessing was skipped
+    unnoticed) and then failed both OCR engines outright, since neither
+    PaddleOCR nor Tesseract reads a raw PDF as an image — every real PDF
+    upload was quietly failing OCR entirely, not just running degraded."""
+    if not _HAS_PYMUPDF:
+        raise RuntimeError("PyMuPDF not installed — cannot rasterize PDF pages for OCR")
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        images = []
+        for i, page in enumerate(doc):
+            if i >= MAX_PDF_PAGES:
+                logger.warning(f"PDF has more than {MAX_PDF_PAGES} pages — truncating OCR to the first {MAX_PDF_PAGES}")
+                break
+            pix = page.get_pixmap(dpi=dpi)
+            images.append(pix.tobytes("png"))
+        return images
+    finally:
+        doc.close()
+
+
+MIN_NATIVE_TEXT_CHARS = 20  # below this, treat the PDF as image-only and OCR it instead
+
+
+def _extract_pdf_native_text(pdf_bytes: bytes) -> Optional[str]:
+    """Many real government e-filing PDFs (confirmed live against an actual
+    submitted FIR export) already carry a real embedded text layer — they
+    were generated from a form/HTML print, not scanned from paper. Reading
+    that directly is both faster and far more accurate than rasterizing to
+    an image and OCRing it, so try this first and only fall back to OCR
+    for genuinely image-only (scanned) PDFs. Returns None if there's no
+    usable text layer."""
+    if not _HAS_PYMUPDF:
+        return None
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        try:
+            pages = [doc[i].get_text() for i in range(min(doc.page_count, MAX_PDF_PAGES))]
+        finally:
+            doc.close()
+    except Exception as exc:
+        logger.warning(f"PDF native text extraction failed, will fall back to OCR: {exc}")
+        return None
+
+    combined = "\n\n--- Page Break ---\n\n".join(p.strip() for p in pages if p and p.strip())
+    return combined if len(combined) >= MIN_NATIVE_TEXT_CHARS else None
+
+
+def run_ocr_on_document_bytes(data: bytes, log_label: str) -> Dict[str, Any]:
+    """Single entrypoint for turning a document's raw file bytes (image OR
+    PDF, one page or many) into reconstructed text — used by both
+    process_extract_document (case evidence) and
+    process_extract_credential_document (onboarding proof documents), so
+    the PDF-handling, preprocessing, and dual-engine fallback logic exists
+    exactly once. For a PDF with a real text layer, that's read directly
+    (see _extract_pdf_native_text) — no OCR needed or run. For a PDF
+    without one (a genuine paper scan) or a bare image, each page runs
+    through the same single-image OCR pipeline independently and results
+    are joined with a page-break marker — merging raw OCR boxes across
+    pages before layout reconstruction would let page 2's row-0
+    coordinates collide with page 1's, corrupting the row clustering that
+    reconstructs reading order.
+    Returns {"reconstructed_text", "engine_used", "row_count", "token_count",
+    "template", "fields", "page_count"}.
+    """
+    if _is_pdf(data):
+        native_text = _extract_pdf_native_text(data)
+        if native_text is not None:
+            doc = fitz.open(stream=data, filetype="pdf")
+            page_count = doc.page_count
+            doc.close()
+            return {
+                "reconstructed_text": native_text,
+                "engine_used": "pdf_native_text",
+                "row_count": native_text.count("\n") + 1,
+                "token_count": len(native_text.split()),
+                "template": "pdf_native_text",
+                "fields": {},
+                "page_count": page_count,
+            }
+
+    page_images = pdf_bytes_to_page_images(data) if _is_pdf(data) else [data]
+
+    page_texts: List[str] = []
+    row_count = 0
+    token_count = 0
+    first_layout: Optional[Dict[str, Any]] = None
+    engine_used = "paddleocr"
+
+    for page_bytes in page_images:
+        processed_bytes = preprocess_image_bytes(page_bytes)
+        try:
+            raw_boxes = run_paddle_ocr(processed_bytes)
+            page_engine = "paddleocr"
+        except Exception as paddle_err:
+            logger.warning(f"PaddleOCR failed for {log_label}, attempting Tesseract fallback: {paddle_err}")
+            try:
+                raw_boxes = run_tesseract_fallback(processed_bytes)
+                page_engine = "tesseract_fallback"
+            except Exception as tess_err:
+                logger.error(f"Both OCR engines failed on a page of {log_label}: {tess_err}")
+                continue  # skip this page rather than failing the whole document
+        if page_engine == "tesseract_fallback":
+            engine_used = "tesseract_fallback"  # any page needing fallback marks the whole document
+
+        layout = process_ocr_boxes_to_layout(raw_boxes)
+        if first_layout is None:
+            first_layout = layout
+        row_count += layout["row_count"]
+        token_count += layout["token_count"]
+        if layout["reconstructed_text"] and layout["reconstructed_text"].strip():
+            page_texts.append(layout["reconstructed_text"])
+
+    return {
+        "reconstructed_text": "\n\n--- Page Break ---\n\n".join(page_texts),
+        "engine_used": engine_used,
+        "row_count": row_count,
+        "token_count": token_count,
+        "template": first_layout["template"] if first_layout else "unknown",
+        "fields": first_layout["fields"] if first_layout else {},
+        "page_count": len(page_images),
+    }
+
 
 def preprocess_image_bytes(image_bytes: bytes) -> bytes:
     """Enhances scanned document image for OCR:
@@ -204,35 +344,26 @@ def process_extract_document(
         if document is None:
             raise ValueError(f"Document {document_id} not found")
 
-        raw_boxes = []
-        engine_used = "paddleocr"
-
         if mock_boxes is not None:
-            raw_boxes = mock_boxes
-            engine_used = "paddleocr"
+            layout = process_ocr_boxes_to_layout(mock_boxes)
+            ocr_result = {
+                "reconstructed_text": layout["reconstructed_text"],
+                "engine_used": "paddleocr",
+                "row_count": layout["row_count"],
+                "token_count": layout["token_count"],
+                "template": layout["template"],
+                "fields": layout["fields"],
+                "page_count": 1,
+            }
         else:
             file_bytes = obj_storage.get(document.storage_path)
             if not file_bytes:
                 raise ValueError(f"Empty storage payload at {document.storage_path}")
+            ocr_result = run_ocr_on_document_bytes(file_bytes, log_label=f"doc {document_id}")
 
-            processed_bytes = preprocess_image_bytes(file_bytes)
+        engine_used = ocr_result["engine_used"]
+        reconstructed_text = ocr_result["reconstructed_text"]
 
-            try:
-                raw_boxes = run_paddle_ocr(processed_bytes)
-                engine_used = "paddleocr"
-            except Exception as paddle_err:
-                logger.warning(f"PaddleOCR failed for doc {document_id}, attempting Tesseract fallback: {paddle_err}")
-                try:
-                    raw_boxes = run_tesseract_fallback(processed_bytes)
-                    engine_used = "tesseract_fallback"
-                except Exception as tess_err:
-                    logger.error(f"Both OCR engines failed for doc {document_id}: {tess_err}")
-                    raise RuntimeError(f"All OCR engines failed: {tess_err}")
-
-        # Execute layout reconstruction and field extraction
-        layout = process_ocr_boxes_to_layout(raw_boxes)
-
-        reconstructed_text = layout["reconstructed_text"]
         if not reconstructed_text or not reconstructed_text.strip():
             # Fail closed on empty OCR extraction
             document.status = "needs_review"
@@ -255,10 +386,11 @@ def process_extract_document(
             target_id=document.id,
             metadata={
                 "ocr_engine": engine_used,
-                "template": layout["template"],
-                "row_count": layout["row_count"],
-                "token_count": layout["token_count"],
-                "extracted_fields": layout["fields"],
+                "template": ocr_result["template"],
+                "row_count": ocr_result["row_count"],
+                "token_count": ocr_result["token_count"],
+                "extracted_fields": ocr_result["fields"],
+                "page_count": ocr_result["page_count"],
             },
         )
 
@@ -281,8 +413,8 @@ def process_extract_document(
             "status": "success",
             "document_id": str(document.id),
             "ocr_engine": engine_used,
-            "template": layout["template"],
-            "fields": layout["fields"],
+            "template": ocr_result["template"],
+            "fields": ocr_result["fields"],
             "raw_text": document.raw_text,
         }
 
@@ -329,23 +461,21 @@ def process_extract_credential_document(
         if document is None:
             raise ValueError(f"CredentialDocument {document_id} not found")
 
-        raw_boxes = []
         if mock_boxes is not None:
-            raw_boxes = mock_boxes
+            layout = process_ocr_boxes_to_layout(mock_boxes)
+            ocr_result = {
+                "reconstructed_text": layout["reconstructed_text"],
+                "row_count": layout["row_count"],
+                "token_count": layout["token_count"],
+                "page_count": 1,
+            }
         else:
             file_bytes = obj_storage.get(document.storage_path)
             if not file_bytes:
                 raise ValueError(f"Empty storage payload at {document.storage_path}")
+            ocr_result = run_ocr_on_document_bytes(file_bytes, log_label=f"credential doc {document_id}")
 
-            processed_bytes = preprocess_image_bytes(file_bytes)
-            try:
-                raw_boxes = run_paddle_ocr(processed_bytes)
-            except Exception as paddle_err:
-                logger.warning(f"PaddleOCR failed for credential doc {document_id}, attempting Tesseract fallback: {paddle_err}")
-                raw_boxes = run_tesseract_fallback(processed_bytes)
-
-        layout = process_ocr_boxes_to_layout(raw_boxes)
-        reconstructed_text = layout["reconstructed_text"]
+        reconstructed_text = ocr_result["reconstructed_text"]
 
         if not reconstructed_text or not reconstructed_text.strip():
             document.status = "needs_review"
@@ -362,7 +492,7 @@ def process_extract_credential_document(
             actor_user_id=document.uploaded_by,
             target_type="credential_document",
             target_id=document.id,
-            metadata={"row_count": layout["row_count"], "token_count": layout["token_count"]},
+            metadata={"row_count": ocr_result["row_count"], "token_count": ocr_result["token_count"], "page_count": ocr_result["page_count"]},
         )
 
         try:
