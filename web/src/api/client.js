@@ -1,4 +1,10 @@
-const API_BASE = 'http://localhost:8000';
+// Same-origin by default: '/api' is proxied to the FastAPI service by the dev
+// server (see web/vite.config.js) or by whatever fronts the app in a real
+// deployment. This must not be an absolute http://localhost URL — that
+// resolves on the *viewer's* machine, so the app breaks for anyone not
+// running the API themselves (a tunnelled demo, a teammate, a phone on the
+// LAN). Set VITE_API_BASE only when the API genuinely lives on another origin.
+const API_BASE = import.meta.env?.VITE_API_BASE ?? '/api';
 
 let inMemoryToken = null;
 

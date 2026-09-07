@@ -139,6 +139,11 @@ services:
       - "5173:5173"
     volumes:
       - ./web/src:/app/src
+      # vite.config.js carries the /api proxy and allowedHosts settings. Without
+      # this mount it stays baked into the image, so changing it silently has no
+      # effect until a full rebuild — which is exactly the kind of surprise you
+      # do not want while getting a demo online.
+      - ./web/vite.config.js:/app/vite.config.js
     command: npm run dev -- --host
 
 volumes:
