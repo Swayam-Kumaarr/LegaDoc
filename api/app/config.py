@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # Object storage (MinIO / S3-compatible, or disk-backed local for bare-metal dev)
     OBJECT_STORAGE_BACKEND: str = "local"
     OBJECT_STORAGE_ENDPOINT: str = "http://minio:9000"
+    # Presigned download URLs (get_presigned_url) are handed to the BROWSER,
+    # not another container — signing them against OBJECT_STORAGE_ENDPOINT's
+    # Docker-internal "minio" hostname produces a link the browser can never
+    # resolve. Confirmed live: "Download Original File" 404s outright. This
+    # is the host baked into that URL instead; every other operation
+    # (put/get/head, server-to-server) keeps using OBJECT_STORAGE_ENDPOINT.
+    OBJECT_STORAGE_PUBLIC_ENDPOINT: str = "http://localhost:9000"
     OBJECT_STORAGE_ACCESS_KEY: str = "minioadmin"
     OBJECT_STORAGE_SECRET_KEY: str = "minioadmin"
     OBJECT_STORAGE_BUCKET: str = "legadoc-documents"
