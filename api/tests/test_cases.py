@@ -557,3 +557,44 @@ def test_unauthorized_roles_cannot_reassign_io(client, make_user):
             headers=auth_headers(tok),
         )
         assert r.status_code == 403, f"Role {role} should have been rejected with 403, got {r.status_code}"
+
+
+def test_list_case_documents_returns_metadata_without_raw_text(client, make_user):
+    duty = make_user("duty_officer", email="duty_docs@example.com", password="pw")
+    io = make_user("io", email="io_docs@example.com", password="pw", org=duty.organization)
+    sho = make_user("sho", email="sho_docs@example.com", password="pw", org=duty.organization)
+
+    duty_token = login(client, "duty_docs@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+
+    sho_token = login(client, "sho_docs@example.com", "pw").json()["access_token"]
+    client.post(f"/cases/{case['id']}/assign-io", json={"io_user_id": str(io.id)}, headers=auth_headers(sho_token))
+
+    io_token = login(client, "io_docs@example.com", "pw").json()["access_token"]
+    upload_resp = client.post(
+        "/documents",
+        data={"case_id": case["id"], "doc_type": "FIR"},
+        files={"file": ("fir.pdf", b"%PDF-1.4 dummy fir content", "application/pdf")},
+        headers=auth_headers(io_token),
+    )
+    assert upload_resp.status_code == 202, upload_resp.text
+
+    list_resp = client.get(f"/cases/{case['id']}/documents", headers=auth_headers(io_token))
+    assert list_resp.status_code == 200
+    docs = list_resp.json()
+    assert len(docs) == 1
+    assert docs[0]["doc_type"] == "FIR"
+    assert "raw_text" not in docs[0]
+
+
+def test_list_case_documents_denies_unassigned_io(client, make_user):
+    duty = make_user("duty_officer", email="duty_docs2@example.com", password="pw")
+    io = make_user("io", email="io_docs2@example.com", password="pw", org=duty.organization)
+    other_io = make_user("io", email="other_docs2@example.com", password="pw", org=duty.organization)
+
+    duty_token = login(client, "duty_docs2@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+
+    other_token = login(client, "other_docs2@example.com", "pw").json()["access_token"]
+    resp = client.get(f"/cases/{case['id']}/documents", headers=auth_headers(other_token))
+    assert resp.status_code == 403

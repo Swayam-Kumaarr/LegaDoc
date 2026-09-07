@@ -410,3 +410,35 @@ def file_charge_sheet(
     )
 
     return case
+
+
+@router.get("/{case_id}/documents", response_model=list[schemas.DocumentReviewItem])
+def list_case_documents(
+    case_id: str,
+    claims: dict = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
+    """GET /cases/:id/documents — Role-filtered (same rule as GET /cases/:id).
+    Lists every document version uploaded against this case — metadata only
+    (doc_type, version, hash, status, chain_status), same DocumentReviewItem
+    shape as the needs-review queue, for the same reason: raw_text is never
+    bulk-listed, only ever returned one document at a time via
+    GET /documents/:id, which applies the real redaction-view rules.
+    """
+    try:
+        case_uuid = UUID(case_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
+
+    case = db.get(models.Case, case_uuid)
+    if case is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
+
+    assert_case_access(case_uuid, claims, db)
+
+    return (
+        db.query(models.Document)
+        .filter(models.Document.case_id == case_uuid)
+        .order_by(models.Document.created_at.desc())
+        .all()
+    )
