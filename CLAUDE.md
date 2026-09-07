@@ -75,7 +75,10 @@ role to the case set silently granted it every witness name, phone number and
 address in the system, with nothing at the call site to review.
 
 A **Duty Officer** may read the FIRs it registered and nothing else. That link is
-the `register_fir` audit-log row, since `Case` has no org or registrant column.
+the `fir_registered` audit-log row, since `Case` has no org or registrant column.
+Match that string exactly — `assert_case_access` and `list_cases` both filter on
+it, so a near-miss like `register_fir` silently returns no cases rather than
+failing loudly.
 It is deliberately not a `CaseAssignment` row: that table means "the current IO
 for this case", and `reassign_io` deletes every row for a case when the IO
 changes. Duty Officer reads those documents **redacted**.
@@ -99,6 +102,15 @@ never a fallback to returning everything.
 - **Never run unapproved database migrations.** Inspect the SQL first.
 - **One fix at a time:** complete it, verify it, confirm it.
 - **Run the suite before committing:** `docker exec legadoc-api-1 pytest`
+- **Rebuild an image after changing its `requirements.txt` or `package.json`.**
+  Containers keep the dependencies baked in at build time, and both failure
+  modes here are silent: a stale `ocr_worker` has no `pymupdf`, so
+  `_HAS_PYMUPDF` is False and PDF evidence is skipped without an error; a stale
+  `web` ran Vite 5.4 against a `package.json` asking for 8.x, so `vite.config.js`
+  options were ignored with no warning.
+  ```bash
+  docker compose build api ocr_worker ai_parser_worker web && docker compose up -d
+  ```
 
 `main` currently has **189 tests, all passing**. Treat that as the baseline and
 confirm it locally rather than trusting a number in a doc — it will drift the
