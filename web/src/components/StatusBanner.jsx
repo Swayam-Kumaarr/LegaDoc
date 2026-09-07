@@ -42,15 +42,14 @@ export default function StatusBanner() {
   if (status === 'degraded') {
     return (
       <div className="gov-status-banner gov-status-banner-degraded">
-        <span>System Status: Some services are responding slowly ({latency}ms). Operating in degraded mode.</span>
-        <span>Local Read Cache Engaged</span>
+        <span>System Status: The backend is responding slowly ({latency}ms). Pages may take longer to load.</span>
       </div>
     );
   }
 
   return (
     <div className="gov-status-banner gov-status-banner-down">
-      <span>System Status: API Gateway unreachable. Operating in offline verification mode.</span>
+      <span>System Status: Backend unreachable. Nothing on this screen will load or save until the connection is restored.</span>
       <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => window.location.reload()}>
         Retry Connection
       </span>

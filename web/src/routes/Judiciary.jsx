@@ -1,66 +1,162 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { apiClient } from '../api/client';
 import StatusChip from '../components/StatusChip';
 import HashCell from '../components/HashCell';
+
+function formatError(err) {
+  const detail = err?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object') {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      // fall through
+    }
+  }
+  return err?.message || 'Request failed.';
+}
 
 export default function Judiciary() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('bail'); // 'bail' | 'trial' | 'audit'
 
-  const [selectedCase, setSelectedCase] = useState('CYB-2026-482910');
-  const [hearingDate, setHearingDate] = useState('2026-09-10T11:00');
-  const [bailDecision, setBailDecision] = useState('GRANTED');
-  const [bailConditions, setBailConditions] = useState('Personal bond of INR 50,000 with one local surety. Surrender passport to court registry.');
-  const [actionAlert, setActionAlert] = useState(null);
+  const [cases, setCases] = useState([]);
+  const [loadingCases, setLoadingCases] = useState(false);
+  const [casesError, setCasesError] = useState(null);
 
-  const bailApplications = [
-    {
-      id: 'BAIL-2026-001',
-      case_number: 'CYB-2026-482910',
-      accused: 'Vikram Sharma',
-      sections: 'IT Act Sec 66D, IPC 420',
-      filed_date: '2026-09-02',
-      status: 'Hearing Scheduled',
-      medical_summary: 'Hypertension reported (verified by Civil Hospital)'
-    },
-    {
-      id: 'BAIL-2026-002',
-      case_number: 'NDP-2026-119482',
-      accused: 'Rahul M. Verma',
-      sections: 'NDPS Act Sec 20(b)(ii)(B)',
-      filed_date: '2026-09-01',
-      status: 'Pending Review',
-      medical_summary: 'No special medical grounds submitted'
+  const [selectedCaseId, setSelectedCaseId] = useState('');
+  const [bailRecords, setBailRecords] = useState([]);
+  const [bailAlert, setBailAlert] = useState(null);
+  const [bailDecision, setBailDecision] = useState(true);
+  const [bailConditions, setBailConditions] = useState('');
+
+  const [trialCaseId, setTrialCaseId] = useState('');
+  const [trialAlert, setTrialAlert] = useState(null);
+  const [verdict, setVerdict] = useState('acquitted');
+  const [verdictSummary, setVerdictSummary] = useState('');
+
+  const [auditCaseId, setAuditCaseId] = useState('');
+  const [auditLog, setAuditLog] = useState(null);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+  const [auditError, setAuditError] = useState(null);
+
+  const fetchCases = async () => {
+    setLoadingCases(true);
+    setCasesError(null);
+    try {
+      const data = await apiClient('/cases');
+      const list = Array.isArray(data) ? data : [];
+      setCases(list);
+      setSelectedCaseId((prev) => (list.some((c) => c.id === prev) ? prev : (list[0]?.id || '')));
+      setTrialCaseId((prev) => (list.some((c) => c.id === prev) ? prev : (list[0]?.id || '')));
+      setAuditCaseId((prev) => (list.some((c) => c.id === prev) ? prev : (list[0]?.id || '')));
+    } catch (err) {
+      setCases([]);
+      setCasesError(formatError(err));
+    } finally {
+      setLoadingCases(false);
     }
-  ];
-
-  const trialHearings = [
-    {
-      id: 'TR-2026-001',
-      case_number: 'FIN-2026-881923',
-      stage: 'Framing of Charges',
-      prosecutor: 'Adv. R. S. Iyer (Public Prosecutor)',
-      defense_counsel: 'Adv. M. K. Sen',
-      next_hearing: '2026-09-15',
-      charge_sheet_status: 'Validated Against Stage Requirements'
-    }
-  ];
-
-  const handleIssueBailOrder = (e) => {
-    e.preventDefault();
-    setActionAlert({
-      type: 'success',
-      msg: `Judicial Bail Order (${bailDecision}) recorded on Hyperledger Fabric ledger for Case ${selectedCase}. Immutable timestamp attached.`
-    });
   };
 
-  const handleScheduleHearing = (e) => {
-    e.preventDefault();
-    setActionAlert({
-      type: 'success',
-      msg: `Hearing notice published for ${selectedCase} on ${hearingDate}. Summons transmitted to IO and Defense.`
-    });
+  useEffect(() => {
+    fetchCases();
+  }, []);
+
+  const selectedCase = cases.find((c) => c.id === selectedCaseId) || null;
+  const trialCase = cases.find((c) => c.id === trialCaseId) || null;
+
+  const fetchBailRecords = async (caseId) => {
+    if (!caseId) return;
+    try {
+      const records = await apiClient(`/cases/${caseId}/bail`);
+      setBailRecords(Array.isArray(records) ? records : []);
+    } catch (err) {
+      setBailRecords([]);
+    }
   };
+
+  useEffect(() => {
+    if (selectedCaseId) fetchBailRecords(selectedCaseId);
+  }, [selectedCaseId]);
+
+  const handleScheduleHearing = async () => {
+    if (!selectedCaseId) return;
+    setBailAlert(null);
+    try {
+      await apiClient(`/cases/${selectedCaseId}/bail/hearing-notice`, { method: 'POST' });
+      setBailAlert({ type: 'success', msg: 'Bail hearing scheduled.' });
+      fetchCases();
+      fetchBailRecords(selectedCaseId);
+    } catch (err) {
+      setBailAlert({ type: 'error', msg: `Could not schedule hearing: ${formatError(err)}` });
+    }
+  };
+
+  const handleIssueBailOrder = async (e) => {
+    e.preventDefault();
+    if (!selectedCaseId) return;
+    setBailAlert(null);
+    try {
+      const record = await apiClient(`/cases/${selectedCaseId}/bail/order`, {
+        body: { granted: bailDecision, conditions: bailConditions || null },
+      });
+      setBailAlert({ type: 'success', msg: `Bail order recorded (stage: ${record.stage}).` });
+      setBailConditions('');
+      fetchCases();
+      fetchBailRecords(selectedCaseId);
+    } catch (err) {
+      setBailAlert({ type: 'error', msg: `Could not issue bail order: ${formatError(err)}` });
+    }
+  };
+
+  const handleScheduleTrialHearing = async () => {
+    if (!trialCaseId) return;
+    setTrialAlert(null);
+    try {
+      await apiClient(`/cases/${trialCaseId}/trial/hearing-notice`, { method: 'POST' });
+      setTrialAlert({ type: 'success', msg: 'Trial hearing scheduled.' });
+      fetchCases();
+    } catch (err) {
+      setTrialAlert({ type: 'error', msg: `Could not schedule trial hearing: ${formatError(err)}` });
+    }
+  };
+
+  const handleRecordJudgment = async (e) => {
+    e.preventDefault();
+    if (!trialCaseId) return;
+    setTrialAlert(null);
+    try {
+      const updated = await apiClient(`/cases/${trialCaseId}/judgment`, {
+        body: { verdict, summary: verdictSummary || null },
+      });
+      setTrialAlert({ type: 'success', msg: `Judgment recorded: case status is now ${updated.investigation_status}.` });
+      setVerdictSummary('');
+      fetchCases();
+    } catch (err) {
+      setTrialAlert({ type: 'error', msg: `Could not record judgment: ${formatError(err)}` });
+    }
+  };
+
+  const fetchAuditLog = async (caseId) => {
+    if (!caseId) return;
+    setLoadingAudit(true);
+    setAuditError(null);
+    try {
+      const data = await apiClient(`/cases/${caseId}/audit-log`);
+      setAuditLog(data);
+    } catch (err) {
+      setAuditLog(null);
+      setAuditError(formatError(err));
+    } finally {
+      setLoadingAudit(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'audit' && auditCaseId) fetchAuditLog(auditCaseId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, auditCaseId]);
 
   return (
     <div>
@@ -75,167 +171,237 @@ export default function Judiciary() {
           <div>
             <h1 className="page-title">Judicial Bench & Magistrate Portal</h1>
             <p className="page-desc">
-              Bail hearings, stage requirement compliance checks, judicial charge sheet review, and unredacted evidentiary inspection.
+              Bail hearings, trial proceedings, and full unredacted audit-trail inspection.
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <StatusChip status="neutral" label="Role: Court / Magistrate" />
-            <StatusChip status="success" label="Privilege: Unredacted Judicial Review" />
+            <StatusChip status="neutral" label={`Role: ${user?.role ? user.role.replace(/_/g, ' ').toUpperCase() : 'COURT'}`} />
           </div>
         </div>
 
         <div className="domain-notice">
           <strong>Judicial Authority Note (Flows 4 & 5):</strong> The court bench receives the complete evidentiary file
-          including unredacted sensitive markers, chain-of-custody verification hashes, and full AI Parser audit logs.
+          including unredacted sensitive markers and full audit trail — enforced server-side per role, not by this page.
         </div>
+
+        {casesError && (
+          <div className="alert alert-error">Could not load cases: {casesError}</div>
+        )}
 
         {/* Tabs */}
         <div className="gov-tabs">
-          <button
-            className={`gov-tab-btn ${activeTab === 'bail' ? 'active' : ''}`}
-            onClick={() => setActiveTab('bail')}
-          >
+          <button className={`gov-tab-btn ${activeTab === 'bail' ? 'active' : ''}`} onClick={() => setActiveTab('bail')}>
             Bail Docket & Orders
           </button>
-          <button
-            className={`gov-tab-btn ${activeTab === 'trial' ? 'active' : ''}`}
-            onClick={() => setActiveTab('trial')}
-          >
-            Trial Proceedings & Charge Sheets
+          <button className={`gov-tab-btn ${activeTab === 'trial' ? 'active' : ''}`} onClick={() => setActiveTab('trial')}>
+            Trial Proceedings
           </button>
-          <button
-            className={`gov-tab-btn ${activeTab === 'audit' ? 'active' : ''}`}
-            onClick={() => setActiveTab('audit')}
-          >
+          <button className={`gov-tab-btn ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}>
             Full Ledger Audit Trail
           </button>
         </div>
-
-        {actionAlert && (
-          <div className={`alert ${actionAlert.type === 'success' ? 'alert-success' : 'alert-warning'}`}>
-            {actionAlert.msg}
-          </div>
-        )}
 
         {/* Tab 1: Bail */}
         {activeTab === 'bail' && (
           <div className="grid-2">
             <div className="card">
               <span className="table-caption">
-                {bailApplications.length} active bail applications pending determination.
+                {loadingCases ? 'Loading...' : `${cases.length} case${cases.length === 1 ? '' : 's'} visible to this bench.`}
               </span>
-              <div className="table-container">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Case Number</th>
-                      <th>Accused</th>
-                      <th>Sections</th>
-                      <th>Status</th>
-                      <th>Select</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bailApplications.map((b) => (
-                      <tr key={b.id}>
-                        <td><span className="mono-text">{b.case_number}</span></td>
-                        <td style={{ fontWeight: 500 }}>{b.accused}</td>
-                        <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{b.sections}</td>
-                        <td><StatusChip status={b.status} /></td>
-                        <td>
-                          <button
-                            className="btn btn-secondary"
-                            style={{ height: '28px', fontSize: '12px', padding: '0 8px' }}
-                            onClick={() => setSelectedCase(b.case_number)}
-                          >
-                            Select
-                          </button>
-                        </td>
+              {cases.length === 0 && !loadingCases && (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '8px' }}>No cases yet.</p>
+              )}
+              {cases.length > 0 && (
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Case Number</th>
+                        <th>Crime Type</th>
+                        <th>Bail Status</th>
+                        <th>Select</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {cases.map((c) => (
+                        <tr key={c.id}>
+                          <td><span className="mono-text">{c.case_number}</span></td>
+                          <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{c.crime_type}</td>
+                          <td><StatusChip status={c.bail_status || 'neutral'} label={(c.bail_status || 'No Bail Track').replace(/_/g, ' ')} /></td>
+                          <td>
+                            <button
+                              className="btn btn-secondary"
+                              style={{ height: '28px', fontSize: '12px', padding: '0 8px' }}
+                              onClick={() => setSelectedCaseId(c.id)}
+                            >
+                              {selectedCaseId === c.id ? 'Selected' : 'Select'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             <div className="card">
-              <h2 className="card-title">Issue Judicial Bail Order</h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-                Target Docket: <strong>{selectedCase}</strong>. All determinations are signed and committed to the ledger.
-              </p>
+              <h2 className="card-title">Bail Track</h2>
+              {selectedCase ? (
+                <>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '12px' }}>
+                    Target Docket: <strong>{selectedCase.case_number}</strong> · Current stage:{' '}
+                    <strong>{(selectedCase.bail_status || 'No Bail Track').replace(/_/g, ' ')}</strong>
+                  </p>
 
-              <form onSubmit={handleIssueBailOrder}>
-                <div className="form-group">
-                  <label className="form-label">Judicial Determination</label>
-                  <select
-                    className="form-select"
-                    value={bailDecision}
-                    onChange={(e) => setBailDecision(e.target.value)}
-                  >
-                    <option value="GRANTED">Bail Granted (Regular Bail)</option>
-                    <option value="INTERIM">Interim Bail Pending Verification</option>
-                    <option value="REJECTED">Bail Rejected (Risk of Flight / Tampering)</option>
-                  </select>
-                </div>
+                  {bailAlert && (
+                    <div className={`alert ${bailAlert.type === 'success' ? 'alert-success' : 'alert-error'}`}>{bailAlert.msg}</div>
+                  )}
 
-                <div className="form-group">
-                  <label className="form-label">Bail Conditions & Directions</label>
-                  <textarea
-                    className="form-textarea"
-                    value={bailConditions}
-                    onChange={(e) => setBailConditions(e.target.value)}
-                    rows={3}
-                  />
-                </div>
+                  {bailRecords.length > 0 && (
+                    <div style={{ marginBottom: '14px', fontSize: '12px' }}>
+                      <div style={{ fontWeight: 600, marginBottom: '4px' }}>Stage History</div>
+                      {bailRecords.map((r) => (
+                        <div key={r.id} style={{ color: 'var(--text-secondary)' }}>
+                          {new Date(r.created_at).toLocaleString()} — {r.stage.replace(/_/g, ' ')}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                    Pronounce Order
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={handleScheduleHearing}
-                  >
-                    Schedule Hearing
-                  </button>
-                </div>
-              </form>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleScheduleHearing}
+                      disabled={selectedCase.bail_status !== 'Application_Filed'}
+                    >
+                      Schedule Hearing
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleIssueBailOrder}>
+                    <div className="form-group">
+                      <label className="form-label">Judicial Determination</label>
+                      <select
+                        className="form-select"
+                        value={bailDecision ? 'GRANTED' : 'REJECTED'}
+                        onChange={(e) => setBailDecision(e.target.value === 'GRANTED')}
+                      >
+                        <option value="GRANTED">Bail Granted</option>
+                        <option value="REJECTED">Bail Rejected</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Bail Conditions & Directions</label>
+                      <textarea
+                        className="form-textarea"
+                        value={bailConditions}
+                        onChange={(e) => setBailConditions(e.target.value)}
+                        rows={3}
+                        placeholder="e.g. Personal bond of INR 50,000 with one local surety."
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      style={{ width: '100%' }}
+                      disabled={selectedCase.bail_status !== 'Hearing_Scheduled'}
+                    >
+                      Pronounce Order
+                    </button>
+                    {selectedCase.bail_status !== 'Hearing_Scheduled' && (
+                      <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                        A hearing must be scheduled (application filed by defense first) before an order can be issued.
+                      </p>
+                    )}
+                  </form>
+                </>
+              ) : (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Select a case from the list to manage its bail track.</p>
+              )}
             </div>
           </div>
         )}
 
         {/* Tab 2: Trial */}
         {activeTab === 'trial' && (
-          <div className="card">
-            <span className="table-caption">
-              Trial bench hearings and Section 173 CrPC compliance reviews.
-            </span>
-            <div className="table-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Case Identifier</th>
-                    <th>Current Trial Stage</th>
-                    <th>Public Prosecutor</th>
-                    <th>Defense Counsel</th>
-                    <th>Next Hearing Date</th>
-                    <th>Compliance Check</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trialHearings.map((t) => (
-                    <tr key={t.id}>
-                      <td><span className="mono-text">{t.case_number}</span></td>
-                      <td style={{ fontWeight: 500 }}>{t.stage}</td>
-                      <td>{t.prosecutor}</td>
-                      <td>{t.defense_counsel}</td>
-                      <td>{t.next_hearing}</td>
-                      <td><StatusChip status="confirmed" label="Stage Validated" /></td>
-                    </tr>
+          <div className="grid-2">
+            <div className="card">
+              <span className="table-caption">Cases eligible for trial proceedings (Charge Sheet filed or later).</span>
+              <div className="form-group" style={{ marginTop: '10px' }}>
+                <label className="form-label">Select Case</label>
+                <select className="form-select" value={trialCaseId} onChange={(e) => setTrialCaseId(e.target.value)}>
+                  {cases.length === 0 && <option value="">No cases available</option>}
+                  {cases.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.case_number} — {c.investigation_status?.replace(/_/g, ' ')}
+                    </option>
                   ))}
-                </tbody>
-              </table>
+                </select>
+              </div>
+              {trialCase && (
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Current investigation status: <strong>{trialCase.investigation_status?.replace(/_/g, ' ')}</strong>
+                </p>
+              )}
+            </div>
+
+            <div className="card">
+              <h2 className="card-title">Trial Actions</h2>
+              {trialAlert && (
+                <div className={`alert ${trialAlert.type === 'success' ? 'alert-success' : 'alert-error'}`}>{trialAlert.msg}</div>
+              )}
+
+              {trialCase ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ width: '100%', marginBottom: '16px' }}
+                    onClick={handleScheduleTrialHearing}
+                    disabled={trialCase.investigation_status !== 'Charge_Sheet_Filed'}
+                  >
+                    Schedule Trial Hearing
+                  </button>
+
+                  <form onSubmit={handleRecordJudgment}>
+                    <div className="form-group">
+                      <label className="form-label">Verdict</label>
+                      <select className="form-select" value={verdict} onChange={(e) => setVerdict(e.target.value)}>
+                        <option value="acquitted">Acquitted</option>
+                        <option value="convicted">Convicted</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Judgment Summary</label>
+                      <textarea
+                        className="form-textarea"
+                        rows={3}
+                        value={verdictSummary}
+                        onChange={(e) => setVerdictSummary(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      style={{ width: '100%' }}
+                      disabled={trialCase.investigation_status !== 'Trial'}
+                    >
+                      Record Judgment
+                    </button>
+                    {trialCase.investigation_status !== 'Trial' && (
+                      <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                        A trial hearing must be scheduled first (case must be in 'Trial' stage).
+                      </p>
+                    )}
+                  </form>
+                </>
+              ) : (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Select a case to manage trial proceedings.</p>
+              )}
             </div>
           </div>
         )}
@@ -243,49 +409,63 @@ export default function Judiciary() {
         {/* Tab 3: Full Audit */}
         {activeTab === 'audit' && (
           <div className="card">
-            <span className="table-caption">
-              Full unredacted judicial audit trail verified against Hyperledger Fabric channel quorum.
-            </span>
-            <div className="table-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Timestamp (IST)</th>
-                    <th>Actor / Authority</th>
-                    <th>Action Executed</th>
-                    <th>Target Resource</th>
-                    <th>Cryptographic Digest</th>
-                    <th>Ledger Consensus</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>2026-09-02 10:30:14</td>
-                    <td>Duty Officer (Kumar · PS Central)</td>
-                    <td style={{ fontWeight: 500 }}>Case Inception & Genesis FIR Registration</td>
-                    <td><span className="mono-text">CYB-2026-482910</span></td>
-                    <td><HashCell hash="8a92b41c0981928475aeb90141eab14902148110912781290384aa8192837491" /></td>
-                    <td><StatusChip status="confirmed" label="Chain Verified" /></td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>2026-09-02 10:32:05</td>
-                    <td>AI Pipeline (PaddleOCR Worker)</td>
-                    <td style={{ fontWeight: 500 }}>Automated Redaction & Span Inspection</td>
-                    <td><span className="mono-text">DOC-CYB-2026-001</span></td>
-                    <td><HashCell hash="71e409aa81928374910283740192847192837482910284718f92a11b6c73e048" /></td>
-                    <td><StatusChip status="neutral" label="4 Spans Redacted" /></td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>2026-09-02 11:15:30</td>
-                    <td>Investigating Officer (IO S. Rao)</td>
-                    <td style={{ fontWeight: 500 }}>Section 91 CrPC Evidentiary Requisition</td>
-                    <td><span className="mono-text">HDFC-NODAL-REQ-01</span></td>
-                    <td><HashCell hash="fe22890141eab14902148110912781290384aa81928374918f92a11b6c73e048" /></td>
-                    <td><StatusChip status="confirmed" label="Chain Verified" /></td>
-                  </tr>
-                </tbody>
-              </table>
+            <div className="form-group" style={{ maxWidth: '360px' }}>
+              <label className="form-label">Select Case</label>
+              <select className="form-select" value={auditCaseId} onChange={(e) => setAuditCaseId(e.target.value)}>
+                {cases.length === 0 && <option value="">No cases available</option>}
+                {cases.map((c) => (
+                  <option key={c.id} value={c.id}>{c.case_number}</option>
+                ))}
+              </select>
             </div>
+
+            {auditError && <div className="alert alert-error">{auditError}</div>}
+            {loadingAudit && <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Loading audit trail...</p>}
+
+            {auditLog && auditLog.view_type === 'summary' && (
+              <div className="alert alert-warning">
+                This role receives a summarized view for this case, not the full unredacted trail
+                (chain intact: {auditLog.chain_intact ? 'yes' : 'NO — integrity check failed'}).
+              </div>
+            )}
+
+            {auditLog && auditLog.view_type === 'full' && (
+              <>
+                <span className="table-caption">
+                  {auditLog.total_entries} audit entries · Chain intact: {auditLog.chain_intact ? 'Yes' : 'NO — INTEGRITY FAILURE'}
+                </span>
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Timestamp</th>
+                        <th>Actor</th>
+                        <th>Action</th>
+                        <th>Target</th>
+                        <th>Row Hash</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLog.entries.length === 0 ? (
+                        <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '20px' }}>No audit entries yet.</td></tr>
+                      ) : (
+                        auditLog.entries.map((entry) => (
+                          <tr key={entry.id}>
+                            <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                              {new Date(entry.created_at).toLocaleString()}
+                            </td>
+                            <td>{entry.actor_name || entry.actor_email || 'System'}</td>
+                            <td style={{ fontWeight: 500 }}>{entry.action.replace(/_/g, ' ')}</td>
+                            <td><span className="mono-text">{entry.target_type || '—'}</span></td>
+                            <td><HashCell hash={entry.row_hash} /></td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
