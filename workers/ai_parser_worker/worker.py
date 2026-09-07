@@ -42,9 +42,80 @@ CONFIDENCE_REVIEW_THRESHOLD = 70  # 0-100; below this, auto-flag even on "succes
 # Optional Presidio Analyzer import
 try:
     from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
+    from presidio_analyzer.nlp_engine import NlpEngineProvider
     _HAS_PRESIDIO = True
 except ImportError:
     _HAS_PRESIDIO = False
+
+# The spaCy model this worker is built around. The Dockerfile installs exactly
+# this one (~15MB). A bare AnalyzerEngine() ignores it and defaults to
+# en_core_web_lg (~588MB), which is not in the image — so Presidio downloads it
+# over the network on first use and then loads it, which pip-installs at
+# runtime and gets the container OOM-killed (exit 137). Naming the model keeps
+# the worker on what was actually built into it.
+SPACY_MODEL = "en_core_web_sm"
+
+
+# Presidio ships recognizers for many jurisdictions and enables all of them
+# when `entities` is not passed. On Indian legal text that produced confident
+# nonsense — a recorded timestamp matched UK_NHS, and "Sec" and "CrPC" matched
+# ORGANIZATION.
+#
+# ORGANIZATION and DATE_TIME are deliberately absent. Masking a statute
+# reference or a seizure date does not protect anyone and actively destroys the
+# document: "[REDACTED:ORGANIZATION] 161 [REDACTED:ORGANIZATION]" is not a
+# usable record of a statement recorded under Sec 161 CrPC, and a panchnama
+# whose date is masked is worth little as evidence.
+#
+# Indian identifiers (Aadhaar, PAN, and the rest) are not in this list because
+# Presidio has no recognizer for them — LegalPIIRecognizer below handles those
+# natively, and its spans are merged in separately.
+PRESIDIO_ENTITIES = [
+    "PERSON",
+    "PHONE_NUMBER",
+    "EMAIL_ADDRESS",
+    "LOCATION",
+    "CREDIT_CARD",
+    "IBAN_CODE",
+    "IP_ADDRESS",
+]
+
+# Presidio scores 0.0-1.0. Below this a match is weak enough that masking it
+# costs more in destroyed text than it saves in protected PII; the native
+# recognizer carries the identifiers we actually care about at full confidence.
+PRESIDIO_SCORE_THRESHOLD = 0.5
+
+# Built once, not per document. AnalyzerEngine loads a spaCy pipeline on
+# construction, so instantiating it inside the per-document path made every
+# document pay the model load again.
+_analyzer_engine = None
+
+
+def _get_analyzer():
+    """Lazily builds the shared AnalyzerEngine. Returns None if Presidio is
+    unavailable or fails to initialise, so callers fall back to the native
+    recognizer instead of losing the whole parse."""
+    global _analyzer_engine
+    if not _HAS_PRESIDIO:
+        return None
+    if _analyzer_engine is None:
+        try:
+            provider = NlpEngineProvider(nlp_configuration={
+                "nlp_engine_name": "spacy",
+                "models": [{"lang_code": "en", "model_name": SPACY_MODEL}],
+            })
+            _analyzer_engine = AnalyzerEngine(
+                nlp_engine=provider.create_engine(),
+                supported_languages=["en"],
+            )
+        except Exception as exc:
+            # Deliberately no fallback to a bare AnalyzerEngine(): that is the
+            # path that reaches for en_core_web_lg and OOM-kills the worker.
+            # Returning None drops to the native recognizer, which still
+            # catches the Indian identifiers that matter most here.
+            logger.warning(f"Presidio AnalyzerEngine initialisation failed: {exc}")
+            return None
+    return _analyzer_engine
 
 
 class LegalPIIRecognizer:
@@ -195,11 +266,18 @@ def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List
     """
     all_spans: List[Dict[str, Any]] = []
 
-    # 1. Presidio extraction if engine is present
-    if _HAS_PRESIDIO:
+    # 1. Presidio extraction if engine is present. Restricted to
+    # PRESIDIO_ENTITIES — left unrestricted it enables every jurisdiction's
+    # recognizers at once and mislabels ordinary legal text.
+    analyzer = _get_analyzer()
+    if analyzer is not None:
         try:
-            analyzer = AnalyzerEngine()
-            results = analyzer.analyze(text=text, language="en")
+            results = analyzer.analyze(
+                text=text,
+                language="en",
+                entities=PRESIDIO_ENTITIES,
+                score_threshold=PRESIDIO_SCORE_THRESHOLD,
+            )
             for res in results:
                 ent_type = res.entity_type
                 if ent_type == "US_PHONE_NUMBER":
