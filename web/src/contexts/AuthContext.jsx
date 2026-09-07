@@ -3,6 +3,13 @@ import { apiClient, setAuthToken, parseJwt } from '../api/client';
 
 const AuthContext = createContext();
 
+// Opt-in only, and never on by default. The offline path in `login` below
+// issues a session without verifying a password, so it is a demo affordance
+// for presenting with no backend — not a resilience feature. Set
+// VITE_OFFLINE_DEMO_MODE=true in a local .env to enable it; leave it unset
+// everywhere else.
+const OFFLINE_DEMO_MODE = import.meta.env?.VITE_OFFLINE_DEMO_MODE === 'true';
+
 export const OFFICIAL_TEST_CREDENTIALS = [
   {
     role_code: 'config_admin',
@@ -161,7 +168,25 @@ export function AuthProvider({ children }) {
       }
       throw new Error("Invalid authentication response");
     } catch (error) {
-      // If API server is unreachable (offline demo mode), resolve against authoritative test identities
+      // Offline demo mode. Two gates, both required — without either, this
+      // block is an authentication bypass, not a fallback:
+      //
+      // 1. OFFLINE_DEMO_MODE must be explicitly opted into at build time. It
+      //    is off by default, so no real deployment can reach this path.
+      // 2. The failure must be a genuine transport failure. apiClient only
+      //    attaches `.status` to errors built from an HTTP response
+      //    (handleApiError); a fetch that never got a response throws a plain
+      //    Error with no status. Without this check a 401 "Invalid email or
+      //    password" also lands here — which meant any wrong password was
+      //    silently upgraded into a session for whichever persona was typed.
+      //
+      // This path never verifies a password and grants a caller-chosen role,
+      // so it must stay unreachable outside a deliberate offline demo build.
+      const isTransportFailure = error?.status === undefined;
+      if (!OFFLINE_DEMO_MODE || !isTransportFailure) {
+        return { success: false, error: error.message || 'Authentication failed' };
+      }
+
       const matched = OFFICIAL_TEST_CREDENTIALS.find(
         (c) => c.email.toLowerCase() === email.toLowerCase() || c.service_id.toLowerCase() === email.toLowerCase()
       );
