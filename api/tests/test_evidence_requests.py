@@ -68,7 +68,7 @@ def test_unassigned_io_cannot_create_evidence_request(client, make_user, make_or
     assert "Not assigned" in resp.text
 
 
-def test_authority_staff_scoping_and_cross_tenant_block(client, make_user, make_org):
+def test_external_authority_scoping_and_cross_tenant_block(client, make_user, make_org):
     case, io_user, io_token = _register_and_assign_case(client, make_user)
     fsl_org = make_org(name="Digital Forensics Lab", org_type="fsl")
     bank_org = make_org(name="State Bank", org_type="bank")
@@ -81,8 +81,8 @@ def test_authority_staff_scoping_and_cross_tenant_block(client, make_user, make_
     ).json()
     req_id = ev_resp["id"]
 
-    fsl_user = make_user("authority_staff", email="fsl_analyst@fsl.gov.in", password="pw", org=fsl_org)
-    bank_user = make_user("authority_staff", email="bank_mgr@bank.com", password="pw", org=bank_org)
+    fsl_user = make_user("external_authority", email="fsl_analyst@fsl.gov.in", password="pw", org=fsl_org)
+    bank_user = make_user("external_authority", email="bank_mgr@bank.com", password="pw", org=bank_org)
 
     fsl_token = login(client, "fsl_analyst@fsl.gov.in", "pw").json()["access_token"]
     bank_token = login(client, "bank_mgr@bank.com", "pw").json()["access_token"]
@@ -119,7 +119,7 @@ def test_authority_fulfillment_and_double_submit_prevention(client, make_user, m
     ).json()
     req_id = ev_resp["id"]
 
-    fsl_user = make_user("authority_staff", email="fsl_analyst@fsl.gov.in", password="pw", org=fsl_org)
+    fsl_user = make_user("external_authority", email="fsl_analyst@fsl.gov.in", password="pw", org=fsl_org)
     fsl_token = login(client, "fsl_analyst@fsl.gov.in", "pw").json()["access_token"]
 
     fake_pdf = b"%PDF-1.4 verified digital forensic analysis"
@@ -144,7 +144,7 @@ def test_authority_fulfillment_and_double_submit_prevention(client, make_user, m
 
 
 def test_unauthorized_roles_cannot_fulfill_evidence_request(client, make_user, make_org):
-    """Asserts that roles outside matching authority_staff/admin (e.g. defense) are rejected with 403."""
+    """Asserts that roles outside matching external_authority/admin (e.g. defense) are rejected with 403."""
     case, io_user, io_token = _register_and_assign_case(client, make_user)
     fsl_org = make_org(name="Digital Forensics Lab", org_type="fsl")
 
@@ -230,7 +230,7 @@ def test_charge_sheet_and_join_gate(client, make_user, make_org, db_session):
         headers=auth_headers(io_token),
     ).json()
 
-    bank_user = make_user("authority_staff", email="banker@bank.com", password="pw", org=bank_org)
+    bank_user = make_user("external_authority", email="banker@bank.com", password="pw", org=bank_org)
     bank_token = login(client, "banker@bank.com", "pw").json()["access_token"]
     client.post(
         f"/evidence-requests/{ev_req['id']}/submit",

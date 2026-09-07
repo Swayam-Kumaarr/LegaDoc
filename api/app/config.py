@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # Upload & Ingestion Controls
     MAX_UPLOAD_SIZE_MB: int = 50
-    UPLOAD_ALLOWED_ROLES: str = "io,sho,duty_officer,authority_staff,config_admin"
+    UPLOAD_ALLOWED_ROLES: str = "io,sho,duty_officer,external_authority,config_admin"
 
     # CORS configuration (Issue #43)
     # Comma-separated or list of allowed frontend origins. Never allows wildcard (*).

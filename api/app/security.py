@@ -278,6 +278,15 @@ def require_role(*allowed_roles: str):
 # row for this exact case, or a Court order that touches it.
 _UNRESTRICTED_CASE_ROLES = {"config_admin", "security_auditor", "court", "prosecutor", "sho"}
 
+# The role string for FSL / hospital / bank / telecom / RTO staff who fulfil
+# Section 91 requisitions. Named once, here, because it was previously spelled
+# two different ways: seed_data.py (and the whole frontend) register
+# "external_authority", while the authorization checks tested for
+# "authority_staff" — a string no seeder ever writes and the roles table has
+# no row for. Every real external-authority account therefore fell through to
+# the default-deny branch and could not reach its own requisitions.
+EXTERNAL_AUTHORITY_ROLE = "external_authority"
+
 _POLICE_SPECIALIST_ROLES = {
     "duty_officer",
     "women_cell",
@@ -395,8 +404,12 @@ def verify_evidence_request_org_access(
     if role in ("config_admin", "security_auditor"):
         return req
 
-    if role == "authority_staff":
-        if str(req.requested_org_id) != str(user_org_id):
+    if role == EXTERNAL_AUTHORITY_ROLE:
+        # A missing or unparseable org claim is a denial, never a pass. This
+        # comparison is the whole tenant boundary between one forensic lab or
+        # bank and another, so it must not be reachable with an empty string
+        # on either side.
+        if not user_org_id or str(req.requested_org_id) != str(user_org_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access restricted: this evidence request is routed to a different organization",

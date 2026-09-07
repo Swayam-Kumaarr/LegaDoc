@@ -15,6 +15,7 @@ from app.queue import QueueClient, get_queue
 from app.routers.documents import _next_version
 from app.security import (
     _UNRESTRICTED_CASE_ROLES,
+    EXTERNAL_AUTHORITY_ROLE,
     assert_case_access,
     get_current_claims,
     require_role,
@@ -101,7 +102,7 @@ def list_evidence_requests(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
 
     role = claims.get("role", "")
-    if role == "authority_staff":
+    if role == EXTERNAL_AUTHORITY_ROLE:
         user_org_id = claims.get("org_id")
         if not user_org_id:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization context missing")
@@ -125,6 +126,67 @@ def list_evidence_requests(
         .order_by(models.EvidenceRequest.created_at.desc())
         .all()
     )
+
+
+# Roles with cross-case oversight of the requisition registry. Deliberately
+# not _UNRESTRICTED_CASE_ROLES: that set answers "which cases may this role
+# open?", and reusing it here would mean any future addition to it silently
+# gained the whole Section 91 registry as well.
+_REQUISITION_OVERSIGHT_ROLES = {"config_admin", "security_auditor", "court", "prosecutor", "sho"}
+
+
+@router.get("/evidence-requests", response_model=list[schemas.EvidenceRequestResponse])
+def list_all_evidence_requests(
+    claims: dict = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
+    """GET /evidence-requests — the requisition worklist, scoped to the caller.
+
+    - External Authority: only requests routed to their own organization.
+    - Oversight roles: the whole registry.
+    - IO: only requests on cases they are actually assigned to.
+    - Everyone else: denied.
+    """
+    role = claims.get("role", "")
+
+    if role == EXTERNAL_AUTHORITY_ROLE:
+        user_org_id = claims.get("org_id")
+        # No org claim, or an unparseable one, is a denial. An earlier draft
+        # of this endpoint fell through to returning every requisition in the
+        # system when the org could not be resolved — a tenancy check whose
+        # failure mode handed one bank or lab every other organization's
+        # requisitions. A boundary that cannot be evaluated is closed.
+        try:
+            org_uuid = UUID(str(user_org_id))
+        except (TypeError, ValueError):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization context missing or invalid")
+        return (
+            db.query(models.EvidenceRequest)
+            .filter(models.EvidenceRequest.requested_org_id == org_uuid)
+            .order_by(models.EvidenceRequest.created_at.desc())
+            .all()
+        )
+
+    if role in _REQUISITION_OVERSIGHT_ROLES:
+        return (
+            db.query(models.EvidenceRequest)
+            .order_by(models.EvidenceRequest.created_at.desc())
+            .all()
+        )
+
+    if role == "io":
+        # Assignment-scoped, exactly as assert_case_access treats an IO
+        # everywhere else. Returning the full registry here would have handed
+        # every IO the requisitions of every case they are not on.
+        return (
+            db.query(models.EvidenceRequest)
+            .join(models.CaseAssignment, models.CaseAssignment.case_id == models.EvidenceRequest.case_id)
+            .filter(models.CaseAssignment.io_user_id == UUID(claims["sub"]))
+            .order_by(models.EvidenceRequest.created_at.desc())
+            .all()
+        )
+
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied to evidence requests registry")
 
 
 @router.post(
