@@ -179,7 +179,7 @@ export default function Judiciary() {
                   </span>
                   <span style={{
                     fontWeight: 600,
-                    color: selectedCase.startsWith('NDP') ? '#b91c1c' : '#0369a1'
+                    color: selectedCase.startsWith('NDP') ? 'var(--color-critical)' : 'var(--color-status-pending)'
                   }}>
                     {selectedCase.startsWith('NDP') 
                       ? 'Strictly Non-Bailable (NDPS Act § 37 Twin Conditions Apply)' 

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import StatusChip from '../components/StatusChip';
 import HashCell from '../components/HashCell';
+import ChainOfCustodyVisualizer from '../components/ChainOfCustodyVisualizer';
 
 export default function CaseDetail() {
   const { id } = useParams();
@@ -277,6 +278,12 @@ export default function CaseDetail() {
 
         {/* Tab 5: Audit Trail */}
         {activeTab === 'audit' && (
+          <>
+          <div className="card" style={{ padding: '16px' }}>
+            <h3 className="card-title">Verify Chain of Custody</h3>
+            <ChainOfCustodyVisualizer events={auditEvents} />
+          </div>
+
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-border)' }}>
               <h3 className="card-title" style={{ borderBottom: 'none', paddingBottom: 0, marginBottom: '4px' }}>
@@ -328,6 +335,7 @@ export default function CaseDetail() {
               </table>
             </div>
           </div>
+          </>
         )}
 
       </div>

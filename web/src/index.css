@@ -4,57 +4,90 @@
    ========================================================================== */
 
 :root {
-  /* Core Palette (Section 3.1) */
-  --color-primary: #0B2547;         /* Deep Navy */
-  --color-primary-hover: #12335E;
-  --color-background: #F4F6F9;      /* Warm off-white (never pure white) */
-  --color-surface: #FFFFFF;         /* Cards, tables, modals */
-  --color-surface-subtle: #ECEEF2;   /* Table headers, sunken panels */
-  --color-critical: #A3242F;        /* Muted crimson for critical/error only */
-  --color-critical-bg: rgba(163, 36, 47, 0.12);
-  --color-text-primary: #111827;
-  --color-text-secondary: #5B6472;  /* Slate grey */
-  --color-text-tertiary: #8792A2;
-  --color-border: #D7DCE3;          /* 1px borders */
-  --color-border-strong: #BAC2CC;
+  /* ---- Target 1: Deep Slate / Navy Palette ---- */
+  --panel-bg: #0F172A;        /* Tailwind slate-900: landing left panel, top nav, sidebar */
+  --panel-bg-2: #1E293B;      /* Tailwind slate-800 */
+  --panel-line: #334155;      /* Tailwind slate-700: sleek borders */
+  --ink-hi: #F8FAFC;          /* Tailwind slate-50 */
+  --ink-mid: #94A3B8;         /* Tailwind slate-400 */
+  --ink-low: #64748B;         /* Tailwind slate-500 */
+  --accent: #38BDF8;          /* Ice Blue / Sky 400 */
+  --accent-blue: #2563EB;     /* Royal / Imperial Blue (Tailwind blue-600) */
+  --accent-blue-hover: #1D4ED8; /* Tailwind blue-700 */
+  --accent-dim: #1E3A8A;      /* Deep Navy */
 
-  /* Semantic Status Colors (Section 3.2 - paired with text labels) */
-  --color-status-success: #1E6B3E;  /* Deep green */
-  --color-status-pending: #8A6D1F;  /* Muted amber/gold */
-  --color-status-error: #A3242F;    /* Crimson */
-  --color-status-neutral: #5B6472;  /* Slate grey */
+  /* ---- Target 2: Cool Pale Slate Canvas ---- */
+  --app-bg: #F8FAFC;          /* Tailwind slate-50: body background */
+  --app-panel: #FFFFFF;       /* Target 3: Pure White Cards & Containers */
+  --app-line: #E2E8F0;        /* Target 6: Crisp Cool Slate Borders (slate-200) */
+  --app-ink-hi: #0F172A;      /* Deep Slate text (slate-900) */
+  --app-ink-mid: #475569;     /* Slate-600 */
 
-  /* Typography (Section 4 - Source Serif 4 headers, Public Sans UI, never Inter) */
-  --font-serif: "Source Serif 4", Georgia, serif;
-  --font-sans: "Public Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "IBM Plex Mono", "Courier New", monospace;
+  /* Core Palette */
+  --color-primary: #2563EB;         /* Target 4: Royal/Imperial Blue (blue-600) */
+  --color-primary-hover: #1D4ED8;   /* Target 4: Royal Blue Hover (blue-700) */
+  --color-background: var(--app-bg);        /* Cool Pale Slate #F8FAFC */
+  --color-surface: var(--app-panel);        /* Pure White #FFFFFF */
+  --color-surface-subtle: #F1F5F9;          /* Tailwind slate-100 table headers */
+  --color-critical: #DC2626;                /* Clean red-600 */
+  --color-critical-bg: rgba(220, 38, 38, 0.1);
+  --color-text-primary: var(--app-ink-hi);
+  --color-text-secondary: var(--app-ink-mid);
+  --color-text-tertiary: #94A3B8;
+  --color-border: var(--app-line);          /* Crisp #E2E8F0 */
+  --color-border-strong: #CBD5E1;          /* Tailwind slate-300 */
 
-  /* Geometry & Elevation (Section 5) */
-  --radius: 3px;                    /* Strict 2–4px radius (never pill, never 0) */
-  --shadow-modal: 0 1px 3px rgba(11, 37, 71, 0.12), 0 1px 2px rgba(11, 37, 71, 0.08);
+  /* ---- Compatibility aliases ---- */
+  --bg-surface: var(--color-surface);
+  --surface-panel: var(--color-surface);
+  --surface-sunken: var(--color-surface-subtle);
+  --border-color: var(--color-border);
+  --border-default: var(--color-border);
+  --text-primary: var(--color-text-primary);
+  --text-secondary: var(--color-text-secondary);
+  --text-tertiary: var(--color-text-tertiary);
+  --status-success-text: var(--color-status-success);
+  --status-pending-text: var(--color-status-pending);
+  --status-danger-text: var(--color-status-error);
+  --status-rejected-text: var(--color-status-error);
+
+  /* Semantic Status Colors */
+  --color-status-success: #16A34A;  /* Tailwind green-600 */
+  --color-status-pending: #D97706;  /* Tailwind amber-600 */
+  --color-status-error: #DC2626;    /* Tailwind red-600 */
+  --color-status-neutral: #64748B;  /* Tailwind slate-500 */
+
+  /* Typography */
+  --font-serif: 'IBM Plex Serif', "Source Serif 4", Georgia, serif;
+  --font-sans: 'IBM Plex Sans', "Public Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* Geometry & Elevation */
+  --radius: 3px;
+  --shadow-modal: 0 4px 6px -1px rgba(15, 23, 42, 0.1), 0 2px 4px -2px rgba(15, 23, 42, 0.08);
   --header-height: 54px;
   --sidebar-width: 240px;
 }
 
-/* Dark Mode Tokens (Section 3.3 - >= 4.5:1 contrast ratio) */
+/* Dark Mode Tokens (>= 4.5:1 contrast ratio) */
 [data-theme="dark"] {
-  --color-primary: #7FA8D9;         /* Lightened navy for dark background */
-  --color-primary-hover: #96BBE6;
-  --color-background: #0E1420;      /* Dark navy background */
-  --color-surface: #161D2B;         /* Surface card */
-  --color-surface-subtle: #1C2536;   /* Sunken panels */
-  --color-critical: #D9505C;        /* Lightened crimson */
-  --color-critical-bg: rgba(217, 80, 92, 0.15);
-  --color-text-primary: #E6E9EF;
-  --color-text-secondary: #9AA4B2;
-  --color-text-tertiary: #6E798A;
-  --color-border: #2A3444;
-  --color-border-strong: #3D4B60;
+  --color-primary: #3B82F6;
+  --color-primary-hover: #60A5FA;
+  --color-background: var(--panel-bg);      /* Deep Slate #0F172A */
+  --color-surface: var(--panel-bg-2);       /* Surface card #1E293B */
+  --color-surface-subtle: #0B1120;          /* Sunken panels */
+  --color-critical: #F87171;                /* Lightened crimson */
+  --color-critical-bg: rgba(248, 113, 113, 0.15);
+  --color-text-primary: var(--ink-hi);
+  --color-text-secondary: var(--ink-mid);
+  --color-text-tertiary: var(--ink-low);
+  --color-border: var(--panel-line);        /* #334155 */
+  --color-border-strong: #475569;
 
-  --color-status-success: #34D399;
+  --color-status-success: #4ADE80;
   --color-status-pending: #FBBF24;
   --color-status-error: #F87171;
-  --color-status-neutral: #9AA4B2;
+  --color-status-neutral: var(--ink-mid);
 }
 
 /* Reset & Base */
@@ -204,13 +237,13 @@ body {
 /* Top Institutional Masthead */
 .gov-masthead {
   height: var(--header-height);
-  background-color: #0B2547;
+  background-color: #0F294A; /* Deep Official Navy (Digital India / e-Courts) */
   color: #FFFFFF;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
-  border-bottom: 2px solid #A3242F;
+  border-bottom: 2px solid #3B82F6; /* Target 7: sharp accent blue */
   position: sticky;
   top: 0;
   z-index: 1000;
@@ -220,6 +253,14 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.gov-emblem-img {
+  height: 38px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  border-radius: 2px;
 }
 
 .gov-emblem-badge {
@@ -245,7 +286,7 @@ body {
 .gov-system-subtitle {
   font-family: var(--font-sans);
   font-size: 11px;
-  color: #9AA4B2;
+  color: #CBD5E1;
   display: block;
 }
 
@@ -270,7 +311,7 @@ body {
 
 .gov-user-badge {
   font-size: 10px;
-  color: #9AA4B2;
+  color: #CBD5E1;
   font-family: var(--font-mono);
 }
 
@@ -318,37 +359,108 @@ body {
   min-height: calc(100vh - var(--header-height));
 }
 
-/* Left Sidebar Navigation (Section 5 & 8: Navy in light mode, left-border active accent, no pills) */
+/* Authentic Indian Government Tricolor Stripe */
+.gov-tricolor-stripe {
+  height: 3px;
+  width: 100%;
+  background: linear-gradient(
+    to right,
+    #FF9933 0%,
+    #FF9933 33.33%,
+    #FFFFFF 33.33%,
+    #FFFFFF 66.66%,
+    #138808 66.66%,
+    #138808 100%
+  );
+  position: sticky;
+  top: var(--header-height);
+  z-index: 999;
+}
+
+/* Authentic Indian Government e-Governance / NIC Sidebar */
 .gov-sidebar {
   width: var(--sidebar-width);
-  background-color: #0B2547;
-  color: #FFFFFF;
+  background-color: #1A365D; /* Classic Indian Gov Steel/Cobalt Blue */
+  color: #F8FAFC;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid #132B50;
   position: sticky;
-  top: var(--header-height);
-  height: calc(100vh - var(--header-height));
-  overflow-y: auto;
+  top: calc(var(--header-height) + 3px);
+  height: calc(100vh - var(--header-height) - 3px);
+  overflow: hidden;
 }
 
 [data-theme="dark"] .gov-sidebar {
-  background-color: #161D2B;
-  border-right-color: #2A3444;
+  background-color: #1A365D;
+  border-right-color: #132B50;
+}
+
+/* Secure VPN Node Status (legacy support) */
+.sidebar-vpn-node {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 41, 74, 0.6);
+  flex-shrink: 0;
+}
+
+.vpn-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #10B981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: vpn-pulse 2s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes vpn-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.vpn-text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #93C5FD;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Scrollable Nav Area */
+.sidebar-scrollable-content {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 12px;
 }
 
 .sidebar-section-title {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #7FA8D9;
-  padding: 16px 16px 8px 16px;
+  letter-spacing: 0.08em; /* tracking-wider */
+  color: #93C5FD; /* Soft Sky Blue text-sky-200/blue-200 */
+  padding: 14px 16px 6px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 [data-theme="dark"] .sidebar-section-title {
-  color: #9AA4B2;
+  color: #93C5FD;
+}
+
+.sidebar-group-divider {
+  border-top: 1px solid rgba(255, 255, 255, 0.1); /* border-t border-white/10 */
+  padding-top: 10px;
+  margin-top: 10px;
 }
 
 .sidebar-nav-list {
@@ -361,40 +473,140 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 16px;
+  padding: 8px 16px;
   font-size: 13px;
-  font-weight: 500;
-  color: #D7DCE3;
+  font-weight: 400;
+  color: #E2E8F0; /* Inactive links: text-slate-200 */
   text-decoration: none;
   border-left: 3px solid transparent;
-  transition: background-color 120ms ease-out, border-color 120ms ease-out;
-  border-radius: 0; /* Never pill */
+  transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out;
+  border-radius: 0;
 }
 
 .sidebar-nav-item:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #FFFFFF;
+  background-color: #2A4D7A; /* hover:bg-[#2A4D7A] */
+  color: #FFFFFF; /* hover:text-white */
 }
 
 .sidebar-nav-item.active {
-  background-color: rgba(255, 255, 255, 0.12);
-  color: #FFFFFF;
-  font-weight: 600;
-  border-left-color: #7FA8D9; /* Section 8: Active item marked with left-border accent */
+  background-color: #1D4ED8; /* Solid active blue bg-[#1D4ED8] */
+  color: #FFFFFF; /* text-white */
+  font-weight: 500; /* font-medium */
+  border-left: 3px solid #F59E0B; /* 3px gold border accent */
 }
 
 [data-theme="dark"] .sidebar-nav-item.active {
-  background-color: rgba(255, 255, 255, 0.06);
-  border-left-color: #7FA8D9;
+  background-color: #1D4ED8;
+  color: #FFFFFF;
+  border-left-color: #F59E0B;
+}
+
+/* Quantitative Notification Badges */
+.sidebar-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: auto;
+  line-height: 14px;
+  background-color: #0F294A; /* clean and readable on blue */
+  color: #FFFFFF;
+  border: 1px solid rgba(96, 165, 250, 0.3); /* border-blue-400/30 */
+}
+
+.sidebar-badge-slate,
+.sidebar-badge-amber {
+  background-color: #0F294A;
+  color: #FFFFFF;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+}
+
+/* NIC Footer Card */
+.sidebar-nic-footer {
+  margin-top: auto;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(51, 65, 85, 0.7);
+  background: #080E21;
+  flex-shrink: 0;
+}
+
+.sidebar-nic-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #CBD5E1;
+  letter-spacing: 0.02em;
+  margin-bottom: 2px;
+}
+
+.sidebar-nic-sub {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: #64748B;
+  letter-spacing: 0.03em;
+  line-height: 13px;
 }
 
 /* Content Area */
 .app-content-wrapper {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   background-color: var(--color-background);
+}
+
+/* Sovereign State Emblem Watermark across all authenticated pages */
+.app-bg-watermark {
+  position: fixed;
+  left: calc(50% + 120px);
+  top: 52%;
+  transform: translate(-50%, -50%);
+  width: 500px;
+  max-width: 45vw;
+  pointer-events: none;
+  z-index: 20;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 1024px) {
+  .app-bg-watermark {
+    left: 50%;
+    width: 360px;
+    max-width: 75vw;
+  }
+}
+
+.app-bg-watermark .watermark-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+.app-bg-watermark .watermark-light {
+  display: block;
+  opacity: 0.14;
+  mix-blend-mode: multiply;
+}
+
+.app-bg-watermark .watermark-dark {
+  display: none;
+  opacity: 0.16;
+  mix-blend-mode: screen;
+}
+
+[data-theme="dark"] .app-bg-watermark .watermark-light {
+  display: none;
+}
+
+[data-theme="dark"] .app-bg-watermark .watermark-dark {
+  display: block;
 }
 
 /* Breadcrumb Bar (40px) */
@@ -571,16 +783,28 @@ body {
   transition: background-color 100ms ease-out, border-color 100ms ease-out;
 }
 
-/* Primary Button: Deep Navy fill, white text, no gradient */
+/* Primary Button: Target 4 Royal/Imperial Blue: #2563EB, hover state #1D4ED8 */
 .btn-primary {
-  background-color: #0B2547;
+  background-color: #2563EB;
   color: #FFFFFF;
-  border-color: #0B2547;
+  border-color: #2563EB;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: #12335E;
-  border-color: #12335E;
+  background-color: #1D4ED8;
+  border-color: #1D4ED8;
+  color: #FFFFFF;
+}
+
+[data-theme="dark"] .btn-primary {
+  background-color: #2563EB;
+  color: #FFFFFF;
+  border-color: #2563EB;
+}
+
+[data-theme="dark"] .btn-primary:hover:not(:disabled) {
+  background-color: #1D4ED8;
+  border-color: #1D4ED8;
 }
 
 /* Secondary Button: White fill, 1px navy border, navy text */
@@ -667,50 +891,33 @@ body {
 }
 
 /* ==========================================================================
-   Status Chips (Section 3.2 & 6.3: 12% opacity fill + full opacity text + 1px border)
-   Square corners (2–4px radius), NEVER rounded-full/pill
+   Status Text (Clean, normal unboxed text — no colorful borders or fills)
    ========================================================================== */
 .status-chip, .tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  font-size: 11px;
-  line-height: 15px;
-  font-weight: 600;
-  border-radius: var(--radius); /* Square-cornered chip */
-  border: 1px solid transparent;
+  display: inline-block;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 500;
+  border-radius: 0;
+  border: none;
+  background: transparent;
   white-space: nowrap;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--color-text-primary);
 }
 
-/* Success / Registered / Confirmed / Ready */
-.status-chip-success, .tag-success {
-  background-color: rgba(30, 107, 62, 0.12);
-  color: var(--color-status-success);
-  border-color: var(--color-status-success);
-}
-
-/* Pending / Processing */
-.status-chip-pending, .tag-pending {
-  background-color: rgba(138, 109, 31, 0.12);
-  color: var(--color-status-pending);
-  border-color: var(--color-status-pending);
-}
-
-/* Error / Needs Review / Critical / Rejected */
-.status-chip-error, .tag-danger {
-  background-color: rgba(163, 36, 47, 0.12);
-  color: var(--color-status-error);
-  border-color: var(--color-status-error);
-}
-
-/* Neutral / Not Started */
+/* Clear all colored fills, borders and colored text */
+.status-chip-success, .tag-success,
+.status-chip-pending, .tag-pending,
+.status-chip-error, .tag-danger,
 .status-chip-neutral, .tag-neutral {
-  background-color: rgba(91, 100, 114, 0.12);
-  color: var(--color-status-neutral);
-  border-color: var(--color-status-neutral);
+  background: transparent;
+  background-color: transparent;
+  border: none;
+  border-color: transparent;
+  color: var(--color-text-primary);
 }
 
 /* ==========================================================================
@@ -791,13 +998,13 @@ body {
 }
 
 .form-input:focus, .form-textarea:focus {
-  border-color: #0B2547;
-  box-shadow: 0 0 0 2px rgba(11, 37, 71, 0.15);
+  border-color: #2563EB;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
 }
 
 [data-theme="dark"] .form-input:focus, [data-theme="dark"] .form-textarea:focus {
-  border-color: #7FA8D9;
-  box-shadow: 0 0 0 2px rgba(127, 168, 217, 0.2);
+  border-color: #3B82F6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
 }
 
 .form-textarea {
@@ -829,8 +1036,8 @@ body {
 }
 
 .form-select:focus {
-  border-color: #0B2547;
-  box-shadow: 0 0 0 2px rgba(11, 37, 71, 0.15);
+  border-color: #2563EB;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
 }
 
 [data-theme="dark"] .form-select {
@@ -931,28 +1138,35 @@ body {
   justify-content: space-between;
   align-items: center;
   font-weight: 500;
-  border-bottom: 1px solid var(--color-border);
+  background-color: #FFFBEB; /* bg-amber-50 */
+  color: #78350F; /* text-amber-900 */
+  border-bottom: 1px solid #FDE68A; /* border-b border-amber-200 */
+}
+
+.gov-status-banner a,
+.gov-status-banner span {
+  color: #78350F;
 }
 
 .gov-status-banner-degraded {
-  background-color: rgba(138, 109, 31, 0.15);
-  color: var(--color-status-pending);
-  border-bottom-color: var(--color-status-pending);
+  background-color: #FFFBEB; /* bg-amber-50 */
+  color: #78350F; /* text-amber-900 */
+  border-bottom: 1px solid #FDE68A; /* border-b border-amber-200 */
 }
 
 .gov-status-banner-down {
-  background-color: rgba(163, 36, 47, 0.15);
-  color: var(--color-critical);
-  border-bottom-color: var(--color-critical);
+  background-color: #FFFBEB; /* clean official light-amber alert bar */
+  color: #78350F; /* text-amber-900 */
+  border-bottom: 1px solid #FDE68A; /* border-b border-amber-200 */
 }
 
 /* Institutional Footer */
 .gov-footer {
-  background-color: #0B2547;
-  color: #FFFFFF;
+  background-color: #0F294A; /* Official Gov Deep Navy */
+  color: #CBD5E1;
   padding: 12px 20px;
   font-size: 11px;
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   margin-top: auto;
 }
 
@@ -967,70 +1181,281 @@ body {
 }
 
 /* ==========================================================================
-   Login Split Panel (Section 8: Left panel navy, right panel warm off-white)
+   Login Split Panel & LEFT PANEL (Redesign Specification)
    ========================================================================== */
 .login-split-page {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
   min-height: calc(100vh - var(--header-height));
   background-color: var(--color-background);
 }
 
-.login-left-panel {
-  flex: 1;
-  background-color: #0B2547;
-  color: #FFFFFF;
-  padding: 48px 40px;
+@media (max-width: 920px) {
+  .login-split-page {
+    grid-template-columns: 1fr;
+  }
+  .login-split-page .left {
+    min-height: 62vh;
+  }
+}
+
+/* ================= LEFT PANEL ================= */
+.left {
+  position: relative;
+  background: var(--panel-bg);
+  color: var(--ink-hi);
+  padding: 40px 40px 32px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  overflow-y: auto;
+  border-right: 1px solid var(--panel-line);
 }
 
-.login-left-branding h1 {
+h1.title {
   font-family: var(--font-serif);
-  font-size: 32px;
-  line-height: 38px;
   font-weight: 600;
-  margin-bottom: 12px;
-  color: #FFFFFF;
+  font-size: 38px;
+  line-height: 1.18;
+  letter-spacing: -0.015em;
+  margin-bottom: 16px;
+  color: var(--ink-hi);
 }
 
-.login-left-branding p {
-  font-size: 14px;
-  line-height: 22px;
-  color: #BAC2CC;
-  max-width: 460px;
+p.desc {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--ink-mid);
+  max-width: 50ch;
+  margin-bottom: 28px;
 }
 
-.login-institutional-docket {
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
-  padding-top: 24px;
+/* ---- Counter block (Option 1: Automated Blockchain Court Registry) ---- */
+.counter-block {
+  border-top: 1px solid var(--panel-line);
+  border-bottom: 1px solid var(--panel-line);
+  padding: 22px 0;
+  margin-bottom: 24px;
 }
 
-.login-docket-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #BAC2CC;
-  margin-bottom: 8px;
-}
-
-.login-docket-row strong {
-  color: #FFFFFF;
+.counter-header-label {
   font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  font-weight: 600;
 }
 
-.login-right-panel {
+.counter-label {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--ink-mid);
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.counter-value {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 52px;
+  letter-spacing: -0.02em;
+  color: #FFFFFF;
+  line-height: 1.05;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.counter-proof {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-low);
+  margin-top: 6px;
+  letter-spacing: 0.02em;
+}
+.counter-proof span {
+  color: var(--ink-hi);
+  font-weight: 600;
+}
+
+/* ---- Map block ---- */
+.map-wrap {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 24px;
+  position: relative;
+  min-height: 320px;
+  margin: 12px 0 20px;
+}
+
+.map-caption {
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--ink-low);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.map-caption .live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+svg.india-map {
+  width: 100%;
+  max-width: 380px;
+  height: auto;
+}
+
+.node-pulse {
+  animation: pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; r: 3.4; }
+  50% { opacity: 0.55; r: 4.8; }
+}
+
+.arc-path {
+  stroke-dasharray: 340;
+  stroke-dashoffset: 340;
+  animation: draw 3.2s ease forwards infinite;
+}
+
+@keyframes draw {
+  0% { stroke-dashoffset: 340; opacity: 0; }
+  15% { opacity: 0.85; }
+  55% { stroke-dashoffset: 0; opacity: 0.85; }
+  85% { stroke-dashoffset: 0; opacity: 0; }
+  100% { stroke-dashoffset: 340; opacity: 0; }
+}
+
+/* ---- Lower Authority & Legal Slogan Section ---- */
+.authority-slogan-section {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(51, 65, 85, 0.6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 32rem;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+.authority-slogan-section .space-y-4 > * + * {
+  margin-top: 1rem;
+}
+
+.authority-slogan-section .flex {
+  display: flex;
+}
+
+.authority-slogan-section .flex-col {
+  flex-direction: column;
+}
+
+.authority-slogan-section .items-center {
+  align-items: center;
+}
+
+.authority-slogan-section .gap-3 {
+  gap: 0.75rem;
+}
+
+.authority-slogan-section img {
+  height: 48px;
+  width: auto;
+  filter: brightness(2) invert(1);
+  opacity: 0.8;
+  object-fit: contain;
+}
+
+.authority-slogan-section .border-l {
+  border-left: 1px solid #475569;
+  padding-left: 0.75rem;
+}
+
+.authority-slogan-section .text-slate-200 {
+  color: #E2E8F0;
+}
+
+.authority-slogan-section .text-sky-400 {
+  color: #38BDF8;
+}
+
+.authority-slogan-section .text-amber-200\/90 {
+  color: rgba(253, 230, 138, 0.9);
+}
+
+.authority-slogan-section .text-slate-400 {
+  color: #94A3B8;
+}
+
+.authority-slogan-section .text-slate-300 {
+  color: #CBD5E1;
+}
+
+.authority-slogan-section .bg-slate-800\/80 {
+  background-color: rgba(30, 41, 59, 0.8);
+}
+
+.authority-slogan-section .border-slate-700 {
+  border: 1px solid #334155;
+}
+
+.authority-slogan-section .space-y-1 > * + * {
+  margin-top: 0.25rem;
+}
+
+.authority-slogan-section p {
+  margin: 0;
+}
+
+.authority-slogan-section .flex-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.authority-slogan-section .px-2\.5 {
+  padding-left: 0.625rem;
+  padding-right: 0.625rem;
+}
+
+.authority-slogan-section .py-0\.5 {
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+}
+
+.authority-slogan-section .rounded {
+  border-radius: 4px;
+}
+
+/* ================= RIGHT PANEL ================= */
+.login-right-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 28px;
   background-color: var(--color-background);
 }
 
 .login-card {
-  max-width: 460px;
+  max-width: 440px;
   width: 100%;
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -1039,13 +1464,230 @@ body {
 }
 
 @media (max-width: 900px) {
-  .login-split-page {
-    flex-direction: column;
-  }
-  .login-left-panel {
-    padding: 24px;
-  }
   .gov-sidebar {
     display: none; /* Collapsible on mobile */
   }
 }
+
+/* ==========================================================================
+   Chain of Custody Visualizer
+   Interactive proof of the hash-chain audit log — every color here comes
+   from the existing status/palette tokens, no new colors introduced.
+   ========================================================================== */
+.chain-viz {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background-color: var(--color-surface);
+  padding: 16px;
+}
+
+.chain-viz-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.chain-viz-toolbar-left {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chain-viz-toolbar-right .status-chip {
+  gap: 6px;
+}
+
+.chain-viz-tamper-note {
+  margin-bottom: 14px;
+}
+
+.chain-viz-track {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  padding: 4px 2px 10px 2px;
+}
+
+.chain-viz-block {
+  flex: 0 0 auto;
+  width: 220px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background-color: var(--color-surface-subtle);
+  padding: 10px 12px;
+  transition: border-color 200ms ease-out, background-color 200ms ease-out;
+}
+
+.chain-viz-block-pending {
+  opacity: 0.55;
+}
+
+.chain-viz-block-ok {
+  border-color: var(--color-status-success);
+  background-color: rgba(30, 107, 62, 0.06);
+}
+
+[data-theme="dark"] .chain-viz-block-ok {
+  background-color: rgba(52, 211, 153, 0.08);
+}
+
+.chain-viz-block-broken {
+  border-color: var(--color-critical);
+  background-color: var(--color-critical-bg);
+}
+
+.chain-viz-block-tampered {
+  border-style: dashed;
+  border-color: var(--color-critical);
+}
+
+.chain-viz-block-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.chain-viz-block-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.chain-viz-block-ok .chain-viz-block-num {
+  color: var(--color-status-success);
+}
+
+.chain-viz-block-broken .chain-viz-block-num {
+  color: var(--color-critical);
+}
+
+.chain-viz-block-time {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin-bottom: 6px;
+}
+
+.chain-viz-block-event {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 16px;
+  margin-bottom: 3px;
+}
+
+.chain-viz-block-authority {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+
+.chain-viz-block-hashes {
+  border-top: 1px solid var(--color-border);
+  padding-top: 6px;
+}
+
+.chain-viz-hash-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.chain-viz-hash-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.chain-viz-hash-value {
+  font-size: 10px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--color-text-secondary);
+}
+
+.chain-viz-hash-tampered {
+  color: var(--color-critical);
+  font-weight: 700;
+}
+
+.chain-viz-link {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  color: var(--color-border-strong);
+  transition: color 200ms ease-out;
+}
+
+.chain-viz-link-ok {
+  color: var(--color-status-success);
+}
+
+.chain-viz-link-broken {
+  color: var(--color-critical);
+}
+
+.chain-viz-footnote {
+  margin-top: 10px;
+  max-width: 900px;
+}
+
+/* ==========================================================================
+   Security Clearance Advisory & Trust Footer (Tailwind Utility Compatibility)
+   ========================================================================== */
+.flex { display: flex; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.shrink-0 { flex-shrink: 0; }
+.gap-1 { gap: 4px; }
+.gap-2\.5 { gap: 10px; }
+.p-3 { padding: 12px; }
+.pt-4 { padding-top: 16px; }
+.mt-0\.5 { margin-top: 2px; }
+.mt-6 { margin-top: 24px; }
+.mb-5 { margin-bottom: 20px; }
+.rounded-md { border-radius: 6px; }
+.rounded-full { border-radius: 9999px; }
+.border { border-width: 1px; border-style: solid; }
+.border-t { border-top-width: 1px; border-top-style: solid; }
+.text-left { text-align: left; }
+.text-\[11px\] { font-size: 11px; line-height: 16px; }
+.leading-relaxed { line-height: 1.625; }
+.font-semibold { font-weight: 600; }
+.font-medium { font-weight: 500; }
+.h-4 { height: 16px; }
+.w-4 { width: 16px; }
+.h-1\.5 { height: 6px; }
+.w-1\.5 { width: 6px; }
+
+/* Colors */
+.bg-amber-50 { background-color: #FFFBEB; }
+.border-amber-200 { border-color: #FDE68A; }
+.text-amber-900 { color: #78350F; }
+.text-amber-800 { color: #92400E; }
+.text-amber-700 { color: #B45309; }
+.border-slate-200 { border-color: #E2E8F0; }
+.text-slate-600 { color: #475569; }
+.bg-emerald-500 { background-color: #10B981; }
+
+[data-theme="dark"] .bg-amber-50 { background-color: rgba(245, 158, 11, 0.1); }
+[data-theme="dark"] .border-amber-200 { border-color: rgba(245, 158, 11, 0.3); }
+[data-theme="dark"] .text-amber-900 { color: #FDE68A; }
+[data-theme="dark"] .text-amber-800 { color: #FCD34D; }
+[data-theme="dark"] .text-amber-700 { color: #FBBF24; }
+[data-theme="dark"] .border-slate-200 { border-color: #334155; }
+[data-theme="dark"] .text-slate-600 { color: #94A3B8; }

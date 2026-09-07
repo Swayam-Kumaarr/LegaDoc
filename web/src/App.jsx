@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
+import emblemImg from "./assets/emblem.png";
+import watermarkNavy from "./assets/emblem_watermark_navy.png";
+import watermarkSilver from "./assets/emblem_watermark_silver.png";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
 import { I18nProvider, useI18n } from "./contexts/I18nContext.jsx";
 import StatusBanner from "./components/StatusBanner.jsx";
@@ -69,13 +72,16 @@ function MainLayout() {
 
   return (
     <div className="app-layout">
-      {/* Top Institutional Header (PRD Section 3.1 & 8) */}
+      {/* Top Institutional Header */}
       <header className="gov-masthead">
         <div className="gov-masthead-left">
-          <span className="gov-emblem-badge">[{t('official_system', 'Official System')}]</span>
-          <div>
-            <div className="gov-system-title">{t('gov_title', 'Government of India · Secure Digital DMS')}</div>
-            <span className="gov-system-subtitle">{t('gov_subtitle', 'SIH26190 · Hyperledger Fabric Cryptographic Ledger')}</span>
+          <img
+            src={emblemImg}
+            alt="State Emblem of India"
+            className="gov-emblem-img"
+          />
+          <div className="gov-system-title">
+            {t('gov_title', 'Government of India · Secure Digital DMS')}
           </div>
         </div>
 
@@ -102,7 +108,7 @@ function MainLayout() {
               aria-label="Select Official Interface Language"
             >
               {supportedLanguages.map(l => (
-                <option key={l.code} value={l.code} style={{ background: '#0B2547', color: '#ffffff' }}>
+                <option key={l.code} value={l.code} style={{ background: '#0F294A', color: '#ffffff' }}>
                   {l.native} ({l.label})
                 </option>
               ))}
@@ -145,6 +151,9 @@ function MainLayout() {
         </div>
       </header>
 
+      {/* Authentic Indian Government Tricolor Stripe */}
+      <div className="gov-tricolor-stripe" aria-hidden="true" />
+
       {/* Network / Offline Health Monitor */}
       <StatusBanner />
 
@@ -160,130 +169,157 @@ function MainLayout() {
         <div className="app-body">
           {user && (
             <aside className="gov-sidebar" aria-label="Official Navigation Sidebar">
-              <div className="sidebar-section-title">Navigation Hub</div>
-              <nav className="sidebar-nav-list">
-                <NavLink to="/dashboard" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="7" height="7"></rect>
-                    <rect x="14" y="3" width="7" height="7"></rect>
-                    <rect x="14" y="14" width="7" height="7"></rect>
-                    <rect x="3" y="14" width="7" height="7"></rect>
-                  </svg>
-                  <span>{t('nav_dashboard', 'Dashboard Hub')}</span>
-                </NavLink>
 
-                {/* Police & Investigation Links */}
-                {(isPolice || isAdmin) && (
-                  <>
-                    <div className="sidebar-section-title">Law Enforcement</div>
-                    <NavLink to="/cases" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                      </svg>
-                      <span>{t('nav_cases', 'Case Registry & FIR')}</span>
-                    </NavLink>
-                    <NavLink to="/review-queue" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
-                        <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
-                      </svg>
-                      <span>{t('nav_review_queue', 'Needs-Review Queue')}</span>
-                    </NavLink>
-                  </>
-                )}
+              <div className="sidebar-scrollable-content">
+                <div className="sidebar-section-title">
+                  <span>मुख्य पृष्ठ • DASHBOARD</span>
+                </div>
+                <nav className="sidebar-nav-list">
+                  <NavLink to="/dashboard" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="7" height="7"></rect>
+                      <rect x="14" y="3" width="7" height="7"></rect>
+                      <rect x="14" y="14" width="7" height="7"></rect>
+                      <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    <span>{t('nav_dashboard', 'Dashboard Hub')}</span>
+                  </NavLink>
 
-                {/* Prosecution Links */}
-                {isProsecutor && (
-                  <>
-                    <div className="sidebar-section-title">Prosecution</div>
-                    <NavLink to="/cases" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                      </svg>
-                      <span>{t('nav_cases', 'Prosecutor Case Review')}</span>
-                    </NavLink>
-                  </>
-                )}
+                  {/* Police & Investigation Links */}
+                  {(isPolice || isAdmin) && (
+                    <div className="sidebar-group-divider">
+                      <div className="sidebar-section-title">
+                        <span>विधि प्रवर्तन • POLICE</span>
+                      </div>
+                      <NavLink to="/cases" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                          <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        <span>{t('nav_cases', 'Case Registry & FIR')}</span>
+                        <span className="sidebar-badge sidebar-badge-slate">14</span>
+                      </NavLink>
+                      <NavLink to="/review-queue" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                          <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                        </svg>
+                        <span>{t('nav_review_queue', 'Needs-Review Queue')}</span>
+                        <span className="sidebar-badge sidebar-badge-amber">3</span>
+                      </NavLink>
+                    </div>
+                  )}
 
-                {/* Judicial Bench Links */}
-                {(isCourt || isAdmin || isProsecutor) && (
-                  <>
-                    <div className="sidebar-section-title">Judicial Bench</div>
-                    <NavLink to="/judiciary" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-                        <polyline points="2 17 12 22 22 17"></polyline>
-                        <polyline points="2 12 12 17 22 12"></polyline>
-                      </svg>
-                      <span>{t('nav_judiciary', 'Magistrate Court Portal')}</span>
-                    </NavLink>
-                  </>
-                )}
+                  {/* Prosecution Links */}
+                  {isProsecutor && (
+                    <div className="sidebar-group-divider">
+                      <div className="sidebar-section-title">
+                        <span>अभियोजन • PROSECUTION</span>
+                      </div>
+                      <NavLink to="/cases" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        <span>{t('nav_cases', 'Prosecutor Case Review')}</span>
+                      </NavLink>
+                    </div>
+                  )}
 
-                {/* External Requisitions */}
-                {(isAuthority || isAdmin) && (
-                  <>
-                    <div className="sidebar-section-title">Nodal Authorities</div>
-                    <NavLink to="/authority" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                      </svg>
-                      <span>{t('nav_authority', 'Section 91 Requisitions')}</span>
-                    </NavLink>
-                  </>
-                )}
+                  {/* Judicial Bench Links */}
+                  {(isCourt || isAdmin || isProsecutor) && (
+                    <div className="sidebar-group-divider">
+                      <div className="sidebar-section-title">
+                        <span>न्यायिक पीठ • JUDICIARY</span>
+                      </div>
+                      <NavLink to="/judiciary" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                          <polyline points="2 17 12 22 22 17"></polyline>
+                          <polyline points="2 12 12 17 22 12"></polyline>
+                        </svg>
+                        <span>{t('nav_judiciary', 'Magistrate Court Portal')}</span>
+                      </NavLink>
+                    </div>
+                  )}
 
-                {/* Defense Counsel */}
-                {(isDefense || isAdmin) && (
-                  <>
-                    <div className="sidebar-section-title">Defense Counsel</div>
-                    <NavLink to="/defense" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="9" cy="7" r="4"></circle>
-                      </svg>
-                      <span>{t('nav_defense', 'Defense Counsel Gateway')}</span>
-                    </NavLink>
-                  </>
-                )}
+                  {/* External Requisitions */}
+                  {(isAuthority || isAdmin) && (
+                    <div className="sidebar-group-divider">
+                      <div className="sidebar-section-title">
+                        <span>नोडल प्राधिकरण • AGENCIES</span>
+                      </div>
+                      <NavLink to="/authority" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <line x1="12" y1="8" x2="12" y2="12"></line>
+                          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <span>{t('nav_authority', 'Section 91 Requisitions')}</span>
+                      </NavLink>
+                    </div>
+                  )}
 
-                {/* NCRB Reporting */}
-                {(isNCRB || isAdmin) && (
-                  <>
-                    <div className="sidebar-section-title">Reporting & Intelligence</div>
-                    <NavLink to="/reports" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="18" y1="20" x2="18" y2="10"></line>
-                        <line x1="12" y1="20" x2="12" y2="4"></line>
-                        <line x1="6" y1="20" x2="6" y2="14"></line>
-                      </svg>
-                      <span>{t('nav_reports', 'NCRB Statistical Analytics')}</span>
-                    </NavLink>
-                  </>
-                )}
+                  {/* Defense Counsel */}
+                  {(isDefense || isAdmin) && (
+                    <div className="sidebar-group-divider">
+                      <div className="sidebar-section-title">
+                        <span>विधिक बचाव • COUNSEL</span>
+                      </div>
+                      <NavLink to="/defense" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                          <circle cx="9" cy="7" r="4"></circle>
+                        </svg>
+                        <span>{t('nav_defense', 'Defense Counsel Gateway')}</span>
+                      </NavLink>
+                    </div>
+                  )}
 
-                {/* Platform Governance */}
-                {isAdmin && (
-                  <>
-                    <div className="sidebar-section-title">System Administration</div>
-                    <NavLink to="/admin" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="3"></circle>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                      </svg>
-                      <span>{t('nav_admin', 'RBAC & Audit Governance')}</span>
-                    </NavLink>
-                  </>
-                )}
-              </nav>
+                  {/* NCRB Reporting */}
+                  {(isNCRB || isAdmin) && (
+                    <div className="sidebar-group-divider">
+                      <div className="sidebar-section-title">
+                        <span>सांख्यिकी • INTELLIGENCE</span>
+                      </div>
+                      <NavLink to="/reports" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="20" x2="18" y2="10"></line>
+                          <line x1="12" y1="20" x2="12" y2="4"></line>
+                          <line x1="6" y1="20" x2="6" y2="14"></line>
+                        </svg>
+                        <span>{t('nav_reports', 'NCRB Statistical Analytics')}</span>
+                      </NavLink>
+                    </div>
+                  )}
+
+                  {/* Platform Governance */}
+                  {isAdmin && (
+                    <div className="sidebar-group-divider">
+                      <div className="sidebar-section-title">
+                        <span>प्रणाली प्रबंधन • ADMIN</span>
+                      </div>
+                      <NavLink to="/admin" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="3"></circle>
+                          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                        <span>{t('nav_admin', 'RBAC & Audit Governance')}</span>
+                      </NavLink>
+                    </div>
+                  )}
+                </nav>
+              </div>
+
             </aside>
           )}
 
           <div className="app-content-wrapper">
-            <main style={{ flex: 1 }}>
+            {/* Authentic Sovereign Ashok Stambh Watermark for All Application Pages */}
+            <div className="app-bg-watermark" aria-hidden="true">
+              <img className="watermark-img watermark-light" src={watermarkNavy} alt="" />
+              <img className="watermark-img watermark-dark" src={watermarkSilver} alt="" />
+            </div>
+            <main style={{ flex: 1, position: 'relative', zIndex: 1 }}>
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 
