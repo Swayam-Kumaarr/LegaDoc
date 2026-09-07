@@ -1012,3 +1012,31 @@ def test_legal_hold_unauthorized_role_rejected(client, make_user, db_session):
     assert "Role not permitted" in delete_attempt.json()["detail"]
 
 
+
+
+def test_malformed_document_id_returns_404_not_500(client, make_user):
+    """A non-UUID document_id (typo, probe, stale bookmark) must 404, not
+    surface an unhandled ValueError as a 500 — every document lookup route
+    parses the path param the same way. Each call uses a role that actually
+    clears that route's require_role gate, so the assertion exercises the
+    UUID parsing itself rather than stopping at a 403."""
+    make_user("io", email="io_malformed@example.com", password="pw")
+    io_token = login(client, "io_malformed@example.com", "pw").json()["access_token"]
+    make_user("config_admin", email="admin_malformed@example.com", password="pw")
+    admin_token = login(client, "admin_malformed@example.com", "pw").json()["access_token"]
+
+    garbage_id = "not-a-real-uuid"
+    calls = [
+        ("get", f"/documents/{garbage_id}", io_token, None),
+        ("get", f"/documents/{garbage_id}/versions", io_token, None),
+        ("get", f"/documents/{garbage_id}/chain-status", io_token, None),
+        ("post", f"/documents/{garbage_id}/retry-chain-write", admin_token, None),
+        ("post", f"/documents/{garbage_id}/redact-tag", io_token,
+         {"entity_type": "PERSON", "span_start": 0, "span_end": 1}),
+    ]
+    for method, path, token, body in calls:
+        kwargs = {"headers": auth_headers(token)}
+        if body is not None:
+            kwargs["json"] = body
+        resp = getattr(client, method)(path, **kwargs)
+        assert resp.status_code == 404, f"{method.upper()} {path} returned {resp.status_code}: {resp.text}"

@@ -158,13 +158,18 @@ def list_documents_needing_review(
     status_filter: Optional[str] = Query(default="needs_review", alias="status"),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    claims: dict = Depends(require_role("config_admin", "io")),
+    claims: dict = Depends(require_role("config_admin", "security_auditor", "io")),
     db: Session = Depends(get_db),
 ):
-    """GET /documents?status=needs_review — Config Admin / Investigating
-    Officer. Lists documents flagged for manual review or falling back from OCR/AI-Parser.
+    """GET /documents?status=needs_review — Config Admin / Security Auditor /
+    Investigating Officer. Lists documents flagged for manual review or
+    falling back from OCR/AI-Parser.
     - When called by an IO: scoped strictly to cases assigned to that IO.
-    - When called by Config Admin: across all cases.
+    - When called by Config Admin or Security Auditor: across all cases —
+      both already have unrestricted case access elsewhere (see
+      _UNRESTRICTED_CASE_ROLES); Security Auditor was missing here only,
+      which meant the one role whose entire job is oversight could not see
+      the queue of documents flagged for review.
     - raw_text is structurally excluded from the list schema to prevent bulk PII leaks.
     """
     target_status = status_filter if status_filter is not None else "needs_review"
@@ -200,7 +205,13 @@ def get_document(
     """GET /documents/:id — Role-filtered. Returns the redacted or full view
     per auto-tagged sensitivity spans + role, via app.redaction — never a
     bespoke redacted-vs-full branch written ad hoc in this handler."""
-    document = db.get(models.Document, UUID(document_id))
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        # A non-UUID id (typo, probe) is a 404, not an unhandled ValueError
+        # surfacing as a 500.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+    document = db.get(models.Document, doc_uuid)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
 
@@ -229,7 +240,11 @@ def get_document(
 def get_document_versions(document_id: str, claims: dict = Depends(get_current_claims), db: Session = Depends(get_db)):
     """GET /documents/:id/versions — Role-filtered. Version history.
     Append-only — originals never overwritten."""
-    document = db.get(models.Document, UUID(document_id))
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+    document = db.get(models.Document, doc_uuid)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
 
@@ -247,7 +262,11 @@ def get_document_versions(document_id: str, claims: dict = Depends(get_current_c
 def get_chain_status(document_id: str, claims: dict = Depends(get_current_claims), db: Session = Depends(get_db)):
     """GET /documents/:id/chain-status — Role-filtered. Poll blockchain
     confirmation. Short-poll target for Flow 2."""
-    document = db.get(models.Document, UUID(document_id))
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+    document = db.get(models.Document, doc_uuid)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
 
@@ -271,7 +290,11 @@ def retry_chain_write(
     hashledger.go) plus this same key together prevent a duplicate ledger
     entry. A no-op if the document is already confirmed.
     """
-    document = db.get(models.Document, UUID(document_id))
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+    document = db.get(models.Document, doc_uuid)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
 
@@ -307,7 +330,11 @@ def correct_redaction_tag(
     audit_log entry recording the span that was corrected — never the
     underlying text, same rule as every other tag write in this system.
     """
-    document = db.get(models.Document, UUID(document_id))
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+    document = db.get(models.Document, doc_uuid)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
 
