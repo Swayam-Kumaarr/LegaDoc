@@ -44,7 +44,19 @@ class Settings(BaseSettings):
 
     # CORS configuration (Issue #43)
     # Comma-separated or list of allowed frontend origins. Never allows wildcard (*).
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    #
+    # Both dev ports are listed. Vite serves on 5173 inside the container, but
+    # docker-compose has published it on the host as either 5173 or 5174
+    # depending on the revision, and the two settings drifted apart: an
+    # allowlist naming only 5173 while the host published 5174 meant login
+    # succeeded (its preflight is same-shaped) and then every subsequent
+    # request failed CORS, which reads as "the API is down" rather than as a
+    # configuration mismatch. Covering both ports keeps a compose port change
+    # from silently breaking the app. Still no wildcard.
+    CORS_ORIGINS: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:5174,http://127.0.0.1:5174"
+    )
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -55,7 +67,12 @@ class Settings(BaseSettings):
                 "Wildcard origin ('*') is strictly forbidden when allow_credentials=True. "
                 "Specify exact origins in CORS_ORIGINS."
             )
-        return raw or ["http://localhost:5173", "http://127.0.0.1:5173"]
+        return raw or [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:5174",
+            "http://127.0.0.1:5174",
+        ]
 
 
     # Queue
