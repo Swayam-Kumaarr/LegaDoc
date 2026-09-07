@@ -234,6 +234,37 @@ def _resolve_overlapping_spans(spans: List[Dict[str, Any]]) -> List[Dict[str, An
 
 
 _analyzer_engine = None
+_analyzer_engine_init_failed = False
+
+# Presidio ships recognizers for many jurisdictions and enables all of them
+# when `entities` is not passed to analyze(). On Indian legal text that
+# produced confident nonsense — a recorded timestamp matched UK_NHS, and
+# "Sec"/"CrPC" matched ORGANIZATION.
+#
+# ORGANIZATION and DATE_TIME are deliberately absent. Masking a statute
+# reference or a seizure date does not protect anyone and actively destroys
+# the document: "[REDACTED:ORGANIZATION] 161 [REDACTED:ORGANIZATION]" is not
+# a usable record of a statement recorded under Sec 161 CrPC, and a panchnama
+# whose date is masked is worth little as evidence.
+#
+# Indian identifiers (Aadhaar, PAN, and the rest) are not in this list
+# because Presidio has no recognizer for them — LegalPIIRecognizer below
+# handles those natively, and its spans are merged in separately.
+PRESIDIO_ENTITIES = [
+    "PERSON",
+    "PHONE_NUMBER",
+    "EMAIL_ADDRESS",
+    "LOCATION",
+    "CREDIT_CARD",
+    "IBAN_CODE",
+    "IP_ADDRESS",
+]
+
+# Presidio scores 0.0-1.0. Below this a match is weak enough that masking it
+# costs more in destroyed text than it saves in protected PII; the native
+# recognizer carries the identifiers we actually care about at full
+# confidence regardless of this threshold.
+PRESIDIO_SCORE_THRESHOLD = 0.5
 
 
 def _get_analyzer_engine():
@@ -249,15 +280,33 @@ def _get_analyzer_engine():
     already fixed once for the Dockerfile's build step, but never actually
     wired into the code that decides which model to load at runtime.
     Cached at module level rather than rebuilt per call — spaCy pipeline
-    construction has real, avoidable cost otherwise."""
-    global _analyzer_engine
+    construction has real, avoidable cost otherwise.
+
+    Returns None (rather than raising) if construction fails, so a bad
+    Presidio/spaCy environment degrades to the native LegalPIIRecognizer
+    instead of losing the whole parse — this worker's real job is finding
+    Aadhaar/PAN/CrPC references, which the native recognizer catches with
+    or without Presidio."""
+    global _analyzer_engine, _analyzer_engine_init_failed
+    if _analyzer_engine_init_failed:
+        return None
     if _analyzer_engine is None:
-        from presidio_analyzer.nlp_engine import NlpEngineProvider
-        provider = NlpEngineProvider(nlp_configuration={
-            "nlp_engine_name": "spacy",
-            "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
-        })
-        _analyzer_engine = AnalyzerEngine(nlp_engine=provider.create_engine())
+        try:
+            from presidio_analyzer.nlp_engine import NlpEngineProvider
+            provider = NlpEngineProvider(nlp_configuration={
+                "nlp_engine_name": "spacy",
+                "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+            })
+            _analyzer_engine = AnalyzerEngine(
+                nlp_engine=provider.create_engine(),
+                supported_languages=["en"],
+            )
+        except Exception as exc:
+            # Deliberately no fallback to a bare AnalyzerEngine(): that is
+            # the path that reaches for en_core_web_lg and downloads/OOMs.
+            logger.warning(f"Presidio AnalyzerEngine initialisation failed: {exc}")
+            _analyzer_engine_init_failed = True
+            return None
     return _analyzer_engine
 
 
@@ -269,11 +318,19 @@ def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List
     """
     all_spans: List[Dict[str, Any]] = []
 
-    # 1. Presidio extraction if engine is present
-    if _HAS_PRESIDIO:
+    # 1. Presidio extraction if engine is present. Restricted to
+    # PRESIDIO_ENTITIES and PRESIDIO_SCORE_THRESHOLD — left unrestricted,
+    # Presidio enables every jurisdiction's recognizers at once and
+    # mislabels ordinary Indian legal text (see PRESIDIO_ENTITIES above).
+    analyzer = _get_analyzer_engine() if _HAS_PRESIDIO else None
+    if analyzer is not None:
         try:
-            analyzer = _get_analyzer_engine()
-            results = analyzer.analyze(text=text, language="en")
+            results = analyzer.analyze(
+                text=text,
+                language="en",
+                entities=PRESIDIO_ENTITIES,
+                score_threshold=PRESIDIO_SCORE_THRESHOLD,
+            )
             for res in results:
                 ent_type = res.entity_type
                 if ent_type == "US_PHONE_NUMBER":
