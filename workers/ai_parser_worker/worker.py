@@ -187,6 +187,26 @@ def _resolve_overlapping_spans(spans: List[Dict[str, Any]]) -> List[Dict[str, An
     return resolved
 
 
+_ANALYZER_INSTANCE = None
+
+
+def _get_analyzer():
+    global _ANALYZER_INSTANCE
+    if _ANALYZER_INSTANCE is None and _HAS_PRESIDIO:
+        try:
+            from presidio_analyzer.nlp_engine import NlpEngineProvider
+            config = {
+                "nlp_engine_name": "spacy",
+                "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+            }
+            provider = NlpEngineProvider(nlp_configuration=config)
+            _ANALYZER_INSTANCE = AnalyzerEngine(nlp_engine=provider.create_engine())
+        except Exception as exc:
+            logger.warning(f"Could not initialize Presidio with en_core_web_sm: {exc}")
+            _ANALYZER_INSTANCE = AnalyzerEngine()
+    return _ANALYZER_INSTANCE
+
+
 def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List[Dict[str, Any]]:
     """Runs entity detection over raw text:
     1. Runs Presidio Analyzer if available in environment.
@@ -198,18 +218,19 @@ def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List
     # 1. Presidio extraction if engine is present
     if _HAS_PRESIDIO:
         try:
-            analyzer = AnalyzerEngine()
-            results = analyzer.analyze(text=text, language="en")
-            for res in results:
-                ent_type = res.entity_type
-                if ent_type == "US_PHONE_NUMBER":
-                    ent_type = "PHONE_NUMBER"
-                all_spans.append({
-                    "entity_type": ent_type,
-                    "span_start": res.start,
-                    "span_end": res.end,
-                    "confidence": int(round(res.score * 100)),
-                })
+            analyzer = _get_analyzer()
+            if analyzer:
+                results = analyzer.analyze(text=text, language="en")
+                for res in results:
+                    ent_type = res.entity_type
+                    if ent_type == "US_PHONE_NUMBER":
+                        ent_type = "PHONE_NUMBER"
+                    all_spans.append({
+                        "entity_type": ent_type,
+                        "span_start": res.start,
+                        "span_end": res.end,
+                        "confidence": int(round(res.score * 100)),
+                    })
         except Exception as exc:
             logger.warning(f"Presidio Analyzer execution skipped or failed: {exc}")
 

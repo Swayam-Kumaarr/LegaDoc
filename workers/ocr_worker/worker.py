@@ -42,6 +42,10 @@ app = Celery(
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
 )
+app.conf.task_routes = {
+    "ai_parser_worker.*": {"queue": "ai_parser"},
+    "chain_worker.*": {"queue": "chain"},
+}
 
 # Optional image processing libraries
 try:
@@ -252,6 +256,37 @@ def process_extract_document(
             if not file_bytes:
                 raise ValueError(f"Empty storage payload at {document.storage_path}")
 
+            # Direct passthrough for digital text files (.txt, logs, exports)
+            is_text = False
+            if file_bytes and file_bytes not in (b"dummy_image_data", b"empty_image"):
+                try:
+                    if not file_bytes.startswith((b"\x89PNG", b"\xff\xd8", b"%PDF", b"GIF8", b"RIFF", b"BM")):
+                        decoded_text = file_bytes.decode("utf-8")
+                        if decoded_text and len(decoded_text) > 100 and ("\n" in decoded_text or " " in decoded_text):
+                            is_text = True
+                except UnicodeDecodeError:
+                    is_text = False
+
+            if is_text:
+                document.raw_text = decoded_text
+                document.ocr_engine = "digital_text"
+                document.status = "ready"
+                session.commit()
+                try:
+                    app.send_task(
+                        "ai_parser_worker.tag_document",
+                        args=[str(document.id)],
+                        queue="ai_parser",
+                    )
+                except Exception as enqueue_err:
+                    logger.warning(f"Could not enqueue ai_parser_worker task: {enqueue_err}")
+                return {
+                    "status": "success",
+                    "document_id": str(document.id),
+                    "ocr_engine": "digital_text",
+                    "reconstructed_text": decoded_text,
+                }
+
             processed_bytes = preprocess_image_bytes(file_bytes)
 
             try:
@@ -304,6 +339,7 @@ def process_extract_document(
             app.send_task(
                 "ai_parser_worker.tag_document",
                 args=[str(document.id)],
+                queue="ai_parser",
             )
         except Exception as enqueue_err:
             logger.warning(f"Could not enqueue ai_parser_worker task: {enqueue_err}")

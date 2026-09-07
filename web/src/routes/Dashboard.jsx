@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { apiClient } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import StatusChip from '../components/StatusChip';
@@ -10,59 +11,47 @@ export default function Dashboard() {
 
   const role = user?.role || 'duty_officer';
 
-  // Real domain cases table per PRD Section 8
-  const [assignedCases] = useState([
-    {
-      case_number: 'CYB-2026-482910',
-      id: 'b1a2c3d4-0001-4000-8000-000000000001',
-      crime_type: 'Financial Cyberfraud (Sec 66D IT Act)',
-      stage: 'Investigation & Evidence Ingestion',
-      days_open: 5,
-      status: 'UNDER_INVESTIGATION',
-      status_label: 'Under Investigation',
-      priority: 'CRITICAL'
-    },
-    {
-      case_number: 'NDP-2026-119482',
-      id: 'b1a2c3d4-0002-4000-8000-000000000002',
-      crime_type: 'Commercial Contraband Seizure (NDPS Act)',
-      stage: 'Panchnama Certification & FSL Forwarding',
-      days_open: 12,
-      status: 'CONFIRMED',
-      status_label: 'Chain Confirmed',
-      priority: 'HIGH'
-    },
-    {
-      case_number: 'HOM-2026-004921',
-      id: 'b1a2c3d4-0003-4000-8000-000000000003',
-      crime_type: 'Homicide / Grievous Hurt (Sec 302 IPC)',
-      stage: 'Forensic Autopsy Report Integration',
-      days_open: 28,
-      status: 'NEEDS_REVIEW',
-      status_label: 'Needs Review',
-      priority: 'CRITICAL'
-    },
-    {
-      case_number: 'COR-2026-902144',
-      id: 'b1a2c3d4-0004-4000-8000-000000000004',
-      crime_type: 'Public Procurement Bribery (PC Act)',
-      stage: 'Section 17A Sanction Verification',
-      days_open: 44,
-      status: 'PROCESSING',
-      status_label: 'SLA Pending',
-      priority: 'MEDIUM'
-    },
-    {
-      case_number: 'ROB-2026-339102',
-      id: 'b1a2c3d4-0005-4000-8000-000000000005',
-      crime_type: 'Armed Bank Robbery (Sec 392 IPC)',
-      stage: 'Test Identification Parade & CCTV Review',
-      days_open: 2,
-      status: 'REGISTERED',
-      status_label: 'FIR Registered',
-      priority: 'HIGH'
-    }
-  ]);
+  // Live domain cases fetched from API
+  const [assignedCases, setAssignedCases] = useState([]);
+  const [loadingCases, setLoadingCases] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    apiClient('/cases')
+      .then((data) => {
+        if (!isMounted) return;
+        if (Array.isArray(data) && data.length > 0) {
+          const formatted = data.map((c) => {
+            const created = new Date(c.created_at || Date.now());
+            const daysOpen = Math.max(0, Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24)));
+            const statusVal = c.investigation_status || 'FIR_Registered';
+            return {
+              id: c.id,
+              case_number: c.case_number,
+              crime_type: c.crime_type,
+              stage: statusVal.replace(/_/g, ' '),
+              days_open: daysOpen,
+              status: statusVal === 'FIR_Registered' ? 'REGISTERED' : statusVal,
+              status_label: statusVal.replace(/_/g, ' '),
+            };
+          });
+          setAssignedCases(formatted);
+        } else {
+          setAssignedCases([]);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load dashboard cases:', err);
+        if (isMounted) setAssignedCases([]);
+      })
+      .finally(() => {
+        if (isMounted) setLoadingCases(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Operational metrics (density over whitespace per PRD Section 2)
   const getRoleMetrics = () => {
@@ -109,7 +98,7 @@ export default function Dashboard() {
       case 'sho':
       default:
         return [
-          { label: 'Active Assigned Cases', value: '24', sub: 'Assigned in this precinct' },
+          { label: 'Active Assigned Cases', value: loadingCases ? '...' : String(assignedCases.length), sub: 'Assigned in this precinct' },
           { label: 'Fabric Ledger Integrity', value: '100%', sub: 'SHA-256 hashes validated' },
           { label: 'Oldest Requisition SLA', value: '48h', sub: 'HDFC Bank Nodal Unit' },
           { label: 'Pending Redaction Verifications', value: '3', sub: 'Requires IO confirmation' }
@@ -186,37 +175,56 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {assignedCases.map((c) => (
-                  <tr key={c.case_number}>
-                    <td>
-                      <Link
-                        to={`/cases/${c.id}`}
-                        style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}
-                      >
-                        {c.case_number}
-                      </Link>
+                {loadingCases ? (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--color-text-muted)' }}>
+                      Loading jurisdiction case dockets...
                     </td>
-                    <td>{c.crime_type}</td>
-                    <td>
-                      <span className="text-caption" style={{ color: 'var(--color-text-primary)' }}>
-                        {c.stage}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="mono-text" style={{ fontSize: '11px' }}>
-                        {c.days_open}d
-                      </span>
-                    </td>
-                    <td>
-                      <StatusChip status={c.status} label={c.status_label} />
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <Link to={`/cases/${c.id}`} className="btn btn-secondary btn-sm">
-                        Inspect Docket
+                  </tr>
+                ) : assignedCases.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--color-text-muted)' }}>
+                      <p style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 500 }}>
+                        No active cases registered in this precinct yet.
+                      </p>
+                      <Link to="/cases" className="btn btn-primary btn-sm">
+                        Register First Case / FIR →
                       </Link>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  assignedCases.map((c) => (
+                    <tr key={c.id}>
+                      <td>
+                        <Link
+                          to={`/cases/${c.id}`}
+                          style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}
+                        >
+                          {c.case_number}
+                        </Link>
+                      </td>
+                      <td>{c.crime_type}</td>
+                      <td>
+                        <span className="text-caption" style={{ color: 'var(--color-text-primary)' }}>
+                          {c.stage}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="mono-text" style={{ fontSize: '11px' }}>
+                          {c.days_open}d
+                        </span>
+                      </td>
+                      <td>
+                        <StatusChip status={c.status} label={c.status_label} />
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <Link to={`/cases/${c.id}`} className="btn btn-secondary btn-sm">
+                          Inspect Docket
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

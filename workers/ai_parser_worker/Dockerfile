@@ -5,7 +5,7 @@ FROM python:3.11-slim
 WORKDIR /worker
 
 COPY workers/ai_parser_worker/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
+RUN pip install --default-timeout=1000 --no-cache-dir -r requirements.txt \
     && python -m spacy download en_core_web_sm
 
 COPY workers/ai_parser_worker/worker.py .

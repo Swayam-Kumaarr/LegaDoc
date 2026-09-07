@@ -57,7 +57,7 @@ export default function Judiciary() {
 
     // Load audit logs if on audit tab
     if (activeTab === 'audit') {
-      apiClient(`/audit?case_id=${selectedCase.id}`)
+      apiClient(`/cases/${selectedCase.id}/audit-log`)
         .then(res => setAuditLogs(res))
         .catch(() => setAuditLogs(null));
     }
@@ -78,7 +78,7 @@ export default function Judiciary() {
       });
       setActionAlert({
         type: 'success',
-        msg: `Judicial Bail Order (${res.stage}) recorded on ledger for Case ${selectedCase.fir_number || selectedCase.id.slice(0, 8)}. Immutable timestamp attached.`
+        msg: `Judicial Bail Order (${res.stage}) recorded on ledger for Case ${selectedCase.case_number || selectedCase.fir_number || selectedCase.id.slice(0, 8)}. Immutable timestamp attached.`
       });
       fetchCases();
     } catch (err) {
@@ -99,7 +99,7 @@ export default function Judiciary() {
       });
       setActionAlert({
         type: 'success',
-        msg: `Hearing scheduled (Stage: ${res.stage}) for Case ${selectedCase.fir_number || selectedCase.id.slice(0, 8)}. Summons transmitted to IO and Defense.`
+        msg: `Hearing scheduled (Stage: ${res.stage}) for Case ${selectedCase.case_number || selectedCase.fir_number || selectedCase.id.slice(0, 8)}. Summons transmitted to IO and Defense.`
       });
       fetchCases();
     } catch (err) {
@@ -232,7 +232,7 @@ export default function Judiciary() {
                           background: selectedCase?.id === c.id ? 'var(--surface-sunken)' : 'transparent'
                         }}
                       >
-                        <td><span className="mono-text">{c.fir_number || c.id.slice(0, 8)}</span></td>
+                        <td><span className="mono-text">{c.case_number || c.fir_number || c.id.slice(0, 8)}</span></td>
                         <td style={{ fontSize: '12px' }}>{c.crime_type}</td>
                         <td><StatusChip status={c.bail_status === 'Order_Issued' ? 'confirmed' : 'pending'} label={c.bail_status || 'No Action'} /></td>
                         <td>
@@ -254,7 +254,7 @@ export default function Judiciary() {
             <div className="card">
               <h2 className="card-title">Issue Judicial Bail Order & Statutory Compliance</h2>
               <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '12px' }}>
-                Target Docket: <strong>{selectedCase?.fir_number || selectedCase?.id?.slice(0, 8) || 'None Selected'}</strong>.
+                Target Docket: <strong>{selectedCase?.case_number || selectedCase?.fir_number || selectedCase?.id?.slice(0, 8) || 'None Selected'}</strong>.
               </p>
 
               {/* Statutory Pathway Guidance Box */}
@@ -359,9 +359,9 @@ export default function Judiciary() {
                 <tbody>
                   {cases.map((c) => (
                     <tr key={c.id}>
-                      <td><span className="mono-text">{c.fir_number || c.id.slice(0, 8)}</span></td>
+                      <td><span className="mono-text">{c.case_number || c.fir_number || c.id.slice(0, 8)}</span></td>
                       <td>
-                        <strong>{c.title}</strong>
+                        <strong>{c.case_number || c.title || 'Official Case Record'}</strong>
                         <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{c.crime_type}</div>
                       </td>
                       <td><StatusChip status={c.investigation_status === 'Judgment' ? 'confirmed' : 'pending'} label={c.investigation_status} /></td>
@@ -419,7 +419,7 @@ export default function Judiciary() {
           <div className="card">
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-default)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <strong>Auditing Docket: {selectedCase?.fir_number || selectedCase?.id?.slice(0, 8)}</strong>
+                <strong>Auditing Docket: {selectedCase?.case_number || selectedCase?.fir_number || selectedCase?.id?.slice(0, 8)}</strong>
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                   Integrity: {auditLogs?.chain_intact ? 'VALID & INTACT' : (auditLogs?.chain_status || 'VERIFIED')}
                 </div>

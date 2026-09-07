@@ -276,10 +276,9 @@ def require_role(*allowed_roles: str):
 # Roles that see every case regardless of assignment — see SYSTEM_DESIGN.md's
 # Access Model. Everyone else (IO, specifically) must have a CaseAssignment
 # row for this exact case, or a Court order that touches it.
-_UNRESTRICTED_CASE_ROLES = {"config_admin", "security_auditor", "court", "prosecutor", "sho"}
+_UNRESTRICTED_CASE_ROLES = {"config_admin", "security_auditor", "court", "prosecutor", "sho", "duty_officer"}
 
 _POLICE_SPECIALIST_ROLES = {
-    "duty_officer",
     "women_cell",
     "cyber_cell",
     "narcotics_police",

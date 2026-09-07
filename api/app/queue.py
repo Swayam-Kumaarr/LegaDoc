@@ -28,9 +28,24 @@ class CeleryQueueClient(QueueClient):
 
     def __init__(self):
         self._app = Celery("api_producer", broker=settings.CELERY_BROKER_URL)
+        self._app.conf.task_routes = {
+            "ocr_worker.*": {"queue": "ocr"},
+            "ai_parser_worker.*": {"queue": "ai_parser"},
+            "chain_worker.*": {"queue": "chain"},
+        }
 
     def enqueue(self, task_name: str, **kwargs) -> None:
-        self._app.send_task(task_name, kwargs=kwargs)
+        prefix = task_name.split(".")[0]
+        q_map = {
+            "ocr_worker": "ocr",
+            "ai_parser_worker": "ai_parser",
+            "chain_worker": "chain",
+        }
+        target_q = q_map.get(prefix)
+        if target_q:
+            self._app.send_task(task_name, kwargs=kwargs, queue=target_q)
+        else:
+            self._app.send_task(task_name, kwargs=kwargs)
 
 
 class InMemoryQueueClient(QueueClient):

@@ -31,7 +31,7 @@ export default function CaseDetail() {
       apiClient(`/cases/${id}/evidence-requests`).catch(() => []),
       apiClient(`/cases/${id}/case-diary`).catch(() => []),
       apiClient(`/cases/${id}/bail`).catch(() => []),
-      apiClient(`/audit?case_id=${id}`).catch(() => null),
+      apiClient(`/cases/${id}/audit-log`).catch(() => null),
     ]).then(([c, docs, reqs, diary, bail, audit]) => {
       if (c) {
         setCaseData(c);
@@ -75,7 +75,7 @@ export default function CaseDetail() {
       <div className="gov-breadcrumb-bar">
         <Link to="/cases">Case Registry</Link>
         <span className="gov-breadcrumb-separator">›</span>
-        <span>Case Docket: {caseData.fir_number || caseData.id?.slice(0, 8)}</span>
+        <span>Case Docket: {caseData.case_number || caseData.fir_number || caseData.id?.slice(0, 8)}</span>
       </div>
 
       <div className="page-container">
@@ -83,7 +83,7 @@ export default function CaseDetail() {
         <div className="page-header" style={{ marginBottom: '14px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <h1 className="text-display">Case {caseData.fir_number || caseData.title}</h1>
+              <h1 className="text-display">Case {caseData.case_number || caseData.fir_number || caseData.title || caseData.id?.slice(0, 8)}</h1>
               <StatusChip status={caseData.investigation_status === 'Charge_Sheet_Filed' ? 'confirmed' : 'pending'} label={caseData.investigation_status} />
               <span className="status-chip status-chip-success">Fabric Ledger Confirmed</span>
             </div>
@@ -102,8 +102,8 @@ export default function CaseDetail() {
         <div className="card" style={{ padding: '12px 16px', marginBottom: '16px' }}>
           <div className="grid-2" style={{ margin: 0, gap: '12px' }}>
             <div>
-              <div className="text-label" style={{ marginBottom: '2px' }}>Case Title</div>
-              <div className="text-body" style={{ fontWeight: 600 }}>{caseData.title}</div>
+              <div className="text-label" style={{ marginBottom: '2px' }}>Case Number / Title</div>
+              <div className="text-body" style={{ fontWeight: 600 }}>{caseData.case_number || caseData.title || 'Official Case Record'}</div>
               <div className="text-label" style={{ marginTop: '8px', marginBottom: '2px' }}>Crime Type Classification</div>
               <div className="text-body">{caseData.crime_type}</div>
             </div>
@@ -179,14 +179,17 @@ export default function CaseDetail() {
                   <tbody>
                     {documents.map((d) => (
                       <tr key={d.id}>
-                        <td style={{ fontWeight: 600 }}>{d.file_name}</td>
+                        <td style={{ fontWeight: 600 }}>{d.file_name || d.doc_type}</td>
                         <td>{d.doc_type || 'Unclassified'}</td>
                         <td>v{d.version || 1}</td>
                         <td>
-                          <HashCell hash={d.sha256_hash || ''} />
+                          <HashCell hash={d.doc_hash || d.sha256_hash || ''} />
                         </td>
                         <td>
-                          <StatusChip status={d.ocr_status === 'completed' ? 'confirmed' : (d.ocr_status || 'pending')} />
+                          <StatusChip
+                            status={d.status === 'ready' || d.chain_status === 'confirmed' ? 'confirmed' : (d.status || d.chain_status || 'pending')}
+                            label={d.status ? d.status.replace(/_/g, ' ') : d.chain_status}
+                          />
                         </td>
                         <td>
                           <Link to={`/cases/${caseData.id}/documents/${d.id}`} className="btn btn-secondary btn-sm">

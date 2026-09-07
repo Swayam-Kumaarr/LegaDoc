@@ -60,25 +60,32 @@ services:
     build:
       context: .
       dockerfile: workers/ocr_worker/Dockerfile
+    command: celery -A worker worker -Q ocr --concurrency=2 --loglevel=info
     env_file: .env
     depends_on:
       - redis
       - db
       - minio
+    volumes:
+      - ./workers/ocr_worker/worker.py:/worker/worker.py
 
   ai_parser_worker:
     build:
       context: .
       dockerfile: workers/ai_parser_worker/Dockerfile
+    command: celery -A worker worker -Q ai_parser --concurrency=2 --loglevel=info
     env_file: .env
     depends_on:
       - redis
       - db
+    volumes:
+      - ./workers/ai_parser_worker/worker.py:/worker/worker.py
 
   chain_worker:
     build:
       context: .
       dockerfile: workers/chain_worker/Dockerfile
+    command: celery -A worker worker -Q chain --concurrency=2 --loglevel=info
     env_file: .env
     depends_on:
       - redis
@@ -89,7 +96,7 @@ services:
   web:
     build: ./web
     ports:
-      - "5173:5173"
+      - "5174:5173"
     volumes:
       - ./web/src:/app/src
     command: npm run dev -- --host

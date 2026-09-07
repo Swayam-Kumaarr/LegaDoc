@@ -154,19 +154,30 @@ async def upload_document(
 
 
 @router.get("", response_model=list[schemas.DocumentReviewItem])
-def list_documents_needing_review(
-    status_filter: Optional[str] = Query(default="needs_review", alias="status"),
+def list_documents(
+    case_id: Optional[str] = Query(default=None),
+    status_filter: Optional[str] = Query(default=None, alias="status"),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    claims: dict = Depends(require_role("config_admin", "io")),
+    claims: dict = Depends(get_current_claims),
     db: Session = Depends(get_db),
 ):
-    """GET /documents?status=needs_review — Config Admin / Investigating
-    Officer. Lists documents flagged for manual review or falling back from OCR/AI-Parser.
-    - When called by an IO: scoped strictly to cases assigned to that IO.
-    - When called by Config Admin: across all cases.
-    - raw_text is structurally excluded from the list schema to prevent bulk PII leaks.
+    """GET /documents — Role-filtered.
+    - If case_id is provided: Returns evidentiary documents belonging to that case, validated with assert_case_access.
+    - If case_id is omitted: Operates in Review Queue mode, returning documents matching target status (default needs_review).
     """
+    if case_id:
+        try:
+            case_uuid = UUID(case_id)
+        except ValueError:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
+        assert_case_access(case_uuid, claims, db)
+        query = db.query(models.Document).filter(models.Document.case_id == case_uuid)
+        if status_filter:
+            query = query.filter(models.Document.status == status_filter)
+        return query.order_by(models.Document.created_at.desc()).offset(offset).limit(limit).all()
+
+    # Review Queue Mode
     target_status = status_filter if status_filter is not None else "needs_review"
     if target_status not in ("needs_review", "processing", "ready"):
         raise HTTPException(
@@ -174,9 +185,11 @@ def list_documents_needing_review(
             detail=f"Invalid document status filter '{target_status}'. Must be one of: needs_review, processing, ready",
         )
 
-    query = db.query(models.Document).filter(models.Document.status == target_status)
-
     user_role = claims.get("role")
+    if user_role not in ("config_admin", "security_auditor", "io"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized to access global review queue")
+
+    query = db.query(models.Document).filter(models.Document.status == target_status)
     if user_role == "io":
         user_id = UUID(claims["sub"])
         query = query.join(
@@ -184,10 +197,19 @@ def list_documents_needing_review(
             models.CaseAssignment.case_id == models.Document.case_id,
         ).filter(models.CaseAssignment.io_user_id == user_id)
 
-    # Order FIFO (oldest first) so review backlogs don't starve
-    docs = query.order_by(models.Document.created_at.asc()).offset(offset).limit(limit).all()
+    return query.order_by(models.Document.created_at.asc()).offset(offset).limit(limit).all()
 
-    return docs
+
+@router.get("/review-queue", response_model=list[schemas.DocumentReviewItem])
+def list_review_queue_alias(
+    status_filter: Optional[str] = Query(default="needs_review", alias="status"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    claims: dict = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
+    """GET /documents/review-queue — Route alias for NeedsReviewQueue frontend component."""
+    return list_documents(case_id=None, status_filter=status_filter, limit=limit, offset=offset, claims=claims, db=db)
 
 
 @router.get("/{document_id}", response_model=schemas.DocumentView)
@@ -200,7 +222,12 @@ def get_document(
     """GET /documents/:id — Role-filtered. Returns the redacted or full view
     per auto-tagged sensitivity spans + role, via app.redaction — never a
     bespoke redacted-vs-full branch written ad hoc in this handler."""
-    document = db.get(models.Document, UUID(document_id))
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+
+    document = db.get(models.Document, doc_uuid)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
 
@@ -298,16 +325,19 @@ def retry_chain_write(
 def correct_redaction_tag(
     document_id: str,
     body: schemas.RedactTagRequest,
-    claims: dict = Depends(require_role("io")),
+    claims: dict = Depends(require_role("io", "sho", "duty_officer", "config_admin")),
     db: Session = Depends(get_db),
 ):
-    """POST /documents/:id/redact-tag — Investigating Officer (assigned to
-    this document's case — checked via assert_case_access, role alone isn't
-    enough). Correct/override an AI Parser sensitivity tag. Writes an
-    audit_log entry recording the span that was corrected — never the
-    underlying text, same rule as every other tag write in this system.
+    """POST /documents/:id/redact-tag — Investigating Officer / Station Officer / Admin (validated
+    via assert_case_access, role alone isn't enough). Correct/override an AI Parser sensitivity tag.
+    Writes an audit_log entry recording the span that was corrected — never the underlying text.
     """
-    document = db.get(models.Document, UUID(document_id))
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+
+    document = db.get(models.Document, doc_uuid)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
 

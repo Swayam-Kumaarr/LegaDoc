@@ -23,7 +23,7 @@ export const translations = {
 
     // Navigation
     nav_dashboard: "Dashboard Hub",
-    nav_cases: "Investigation & Cases",
+    nav_cases: "Case Registry & FIR",
     nav_review_queue: "Needs-Review Queue",
     nav_authority: "External Authorities",
     nav_judiciary: "Judicial Bench",
@@ -98,7 +98,7 @@ export const translations = {
 
     // Navigation
     nav_dashboard: "डैशबोर्ड केंद्र",
-    nav_cases: "जांच एवं मामले",
+    nav_cases: "केस रजिस्ट्री एवं प्राथमिकी (FIR)",
     nav_review_queue: "समीक्षा कतार",
     nav_authority: "बाहरी प्राधिकारी",
     nav_judiciary: "न्यायिक पीठ",
@@ -171,7 +171,7 @@ export const translations = {
     offline_mode: "सर्व्हर अनुपलब्ध. ऑफलाइन मोडमध्ये कार्यरत.",
 
     nav_dashboard: "डॅशबोर्ड केंद्र",
-    nav_cases: "तपास व प्रकरणे",
+    nav_cases: "केस नोंदणी व एफआयआर (FIR)",
     nav_review_queue: "पुनरावलोकन रांग",
     nav_authority: "बाह्य प्राधिकरण",
     nav_judiciary: "न्यायिक पीठ",
@@ -240,7 +240,7 @@ export const translations = {
     offline_mode: "இணைப்பு இல்லை. ஆஃப்லைன் சரிபார்ப்பு பயன்முறையில் இயங்குகிறது.",
 
     nav_dashboard: "டாஷ்போர்டு",
-    nav_cases: "விசாரணை & வழக்குகள்",
+    nav_cases: "வழக்கு பதிவேடு & எஃப்ஐஆர் (FIR)",
     nav_review_queue: "மறுஆய்வு வரிசை",
     nav_authority: "வெளிப்புற அதிகாரிகள்",
     nav_judiciary: "நீதித்துறை அமர்வு",
@@ -309,7 +309,7 @@ export const translations = {
     offline_mode: "গেটওয়ে অফলাইন। অফলাইন যাচাইকরণ চলছে।",
 
     nav_dashboard: "ড্যাশবোর্ড হাব",
-    nav_cases: "তদন্ত ও মামলা",
+    nav_cases: "কেস রেজিস্ট্রি এবং এফআইআর (FIR)",
     nav_review_queue: "পর্যালোচনা সারি",
     nav_authority: "বহিরাগত কর্তৃপক্ষ",
     nav_judiciary: "বিচার বিভাগীয় বেঞ্চ",

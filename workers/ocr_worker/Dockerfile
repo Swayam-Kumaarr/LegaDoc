@@ -13,10 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY workers/ocr_worker/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Pre-download and cache PaddleOCR English and Hindi models at build time (Issue #37)
-RUN python -c "from paddleocr import PaddleOCR; PaddleOCR(use_angle_cls=True, lang='en', show_log=False); PaddleOCR(use_angle_cls=True, lang='hi', show_log=False)"
+RUN pip install --default-timeout=1000 --no-cache-dir -r requirements.txt
 
 COPY workers/ocr_worker/worker.py workers/ocr_worker/layout_reconstruction.py ./
 

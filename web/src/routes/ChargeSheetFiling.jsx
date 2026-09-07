@@ -127,9 +127,9 @@ export default function ChargeSheetFiling() {
           <div className="card" style={{ marginBottom: '16px', background: 'var(--surface-sunken)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <strong style={{ fontSize: '15px' }}>{currentCase.title}</strong>
+                <strong style={{ fontSize: '15px' }}>Case {currentCase.case_number || currentCase.id?.slice(0, 8)}</strong>
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  FIR: <span className="mono-text">{currentCase.fir_number}</span> | Crime Type: <strong>{currentCase.crime_type}</strong> | Jurisdiction: {currentCase.jurisdiction}
+                  Case Number: <span className="mono-text">{currentCase.case_number}</span> | Crime Type: <strong>{currentCase.crime_type}</strong> | Jurisdiction: {currentCase.court_level || 'Magistrate Court'}
                 </div>
               </div>
               <StatusChip

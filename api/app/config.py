@@ -44,7 +44,9 @@ class Settings(BaseSettings):
 
     # CORS configuration (Issue #43)
     # Comma-separated or list of allowed frontend origins. Never allows wildcard (*).
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    CORS_ORIGINS: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
+    )
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -55,7 +57,12 @@ class Settings(BaseSettings):
                 "Wildcard origin ('*') is strictly forbidden when allow_credentials=True. "
                 "Specify exact origins in CORS_ORIGINS."
             )
-        return raw or ["http://localhost:5173", "http://127.0.0.1:5173"]
+        return raw or [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:5174",
+            "http://127.0.0.1:5174",
+        ]
 
 
     # Queue

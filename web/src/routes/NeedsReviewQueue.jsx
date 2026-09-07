@@ -54,6 +54,8 @@ export default function NeedsReviewQueue() {
     setQueueItems(queueItems.filter(i => i.id !== docId));
   };
 
+  const oldestHours = queueItems.length > 0 ? Math.max(...queueItems.map(i => i.age_hours)) : 0;
+
   return (
     <div>
       <div className="gov-breadcrumb-bar">
@@ -72,7 +74,7 @@ export default function NeedsReviewQueue() {
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <StatusChip status="pending" label={`Queue Depth: ${queueItems.length}`} />
-            <StatusChip status="critical" label={`Oldest: ${Math.max(...queueItems.map(i => i.age_hours))}h SLA`} />
+            <StatusChip status="critical" label={`Oldest: ${oldestHours}h SLA`} />
           </div>
         </div>
 
@@ -90,7 +92,7 @@ export default function NeedsReviewQueue() {
           </div>
           <div className="stat-widget">
             <span className="stat-value" style={{ color: 'var(--status-pending-text)' }}>
-              {Math.max(...queueItems.map(i => i.age_hours))} hrs
+              {oldestHours} hrs
             </span>
             <span className="stat-label">Oldest Pending Item</span>
             <span className="stat-sub">SLA Target: under 24 hrs</span>

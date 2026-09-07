@@ -162,7 +162,7 @@ export default function DefenseAccused() {
                   >
                     {cases.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.fir_number || c.id?.slice(0, 8)} - {c.title} (Bail: {c.bail_status || 'None'})
+                        {c.case_number || c.fir_number || c.id?.slice(0, 8)} — {c.crime_type} (Bail: {c.bail_status || 'None'})
                       </option>
                     ))}
                   </select>
@@ -241,7 +241,7 @@ export default function DefenseAccused() {
                   >
                     {cases.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.fir_number || c.id?.slice(0, 8)} - {c.title} (Bail: {c.bail_status || 'None'})
+                        {c.case_number || c.fir_number || c.id?.slice(0, 8)} — {c.crime_type} (Bail: {c.bail_status || 'None'})
                       </option>
                     ))}
                   </select>

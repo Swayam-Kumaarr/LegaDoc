@@ -91,7 +91,7 @@ export async function apiClient(endpoint, { body, ...customConfig } = {}) {
       errDetail = await response.text();
     } catch (_) {}
 
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
       window.dispatchEvent(new Event('auth-error'));
     }
     throw handleApiError(response, errDetail);
