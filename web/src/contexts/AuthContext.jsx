@@ -3,81 +3,6 @@ import { apiClient, setAuthToken, parseJwt } from '../api/client';
 
 const AuthContext = createContext();
 
-export const OFFICIAL_TEST_CREDENTIALS = [
-  {
-    role_code: 'config_admin',
-    role_label: 'Platform Administrator',
-    email: 'admin.sharma@legadoc.gov.in',
-    service_id: 'MHA-ADM-001',
-    designation: 'Director (Information Systems)',
-    department: 'Ministry of Home Affairs / NIC',
-    defaultRoute: '/dashboard'
-  },
-  {
-    role_code: 'io',
-    role_label: 'Investigating Officer (IO)',
-    email: 'officer.rao@police.gov.in',
-    service_id: 'DL-POL-4921',
-    designation: 'Inspector of Police (Cyber Cell)',
-    department: 'Delhi Police Cyber Cell',
-    defaultRoute: '/dashboard'
-  },
-  {
-    role_code: 'duty_officer',
-    role_label: 'Duty Officer (Station Intake)',
-    email: 'duty.verma@police.gov.in',
-    service_id: 'DL-POL-1084',
-    designation: 'Sub-Inspector (Intake)',
-    department: 'Delhi Police Central Precinct',
-    defaultRoute: '/dashboard'
-  },
-  {
-    role_code: 'court',
-    role_label: 'Judicial Bench (Magistrate)',
-    email: 'magistrate.iyer@court.gov.in',
-    service_id: 'DEL-JUD-082',
-    designation: 'Chief Judicial Magistrate',
-    department: 'Patiala House District Courts',
-    defaultRoute: '/dashboard'
-  },
-  {
-    role_code: 'prosecutor',
-    role_label: 'Public Prosecutor',
-    email: 'prosecutor.sen@court.gov.in',
-    service_id: 'DL-PROS-044',
-    designation: 'Senior Public Prosecutor',
-    department: 'Directorate of Prosecution',
-    defaultRoute: '/dashboard'
-  },
-  {
-    role_code: 'external_authority',
-    role_label: 'Forensic Lab (FSL)',
-    email: 'fsl.director@fsl.gov.in',
-    service_id: 'CFSL-DIR-91',
-    designation: 'Senior Scientific Officer',
-    department: 'Central Forensic Science Laboratory',
-    defaultRoute: '/dashboard'
-  },
-  {
-    role_code: 'defense',
-    role_label: 'Defense Counsel',
-    email: 'defense.advocate@bar.in',
-    service_id: 'DHC-BAR-5920',
-    designation: 'Advocate-on-Record',
-    department: 'Delhi High Court Bar Association',
-    defaultRoute: '/dashboard'
-  },
-  {
-    role_code: 'records_ncrb_analyst',
-    role_label: 'NCRB Analyst',
-    email: 'analyst.ncrb@nic.in',
-    service_id: 'NCRB-STAT-21',
-    designation: 'Senior Statistical Officer',
-    department: 'National Crime Records Bureau',
-    defaultRoute: '/dashboard'
-  }
-];
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -152,7 +77,8 @@ export function AuthProvider({ children }) {
           org_name: profile.org_name || 'Government Organization',
           org_type: profile.org_type || 'official',
           language_preference: profile.language_preference || 'en',
-          permissions: profile.permissions || []
+          permissions: profile.permissions || [],
+          must_change_password: profile.must_change_password || false
         };
 
         setUser(authoritativeUser);
@@ -161,35 +87,31 @@ export function AuthProvider({ children }) {
       }
       throw new Error("Invalid authentication response");
     } catch (error) {
-      // If API server is unreachable (offline demo mode), resolve against authoritative test identities
-      const matched = OFFICIAL_TEST_CREDENTIALS.find(
-        (c) => c.email.toLowerCase() === email.toLowerCase() || c.service_id.toLowerCase() === email.toLowerCase()
-      );
-      if (matched && password) {
-        const offlineToken = `gov-auth-token-${matched.role_code}`;
-        setAuthToken(offlineToken);
-        sessionStorage.setItem('access_token', offlineToken);
+      // Authentication is decided by the backend only — a network error, a
+      // wrong password (401), or an unreachable API must always fail here.
+      // This used to fall back to a client-side match against a hardcoded
+      // credential list and mint a fake token for ANY non-empty password,
+      // which was a real authentication bypass (any of the well-known demo
+      // emails + garbage password succeeded whenever the backend call
+      // failed for any reason, including a genuine wrong-password 401).
+      return { success: false, error: error.detail || error.message || 'Authentication failed' };
+    }
+  };
 
-        const authoritativeUser = {
-          id: `usr-${matched.role_code}`,
-          name: matched.designation.split('(')[0].trim(),
-          email: matched.email,
-          service_id: matched.service_id,
-          designation: matched.designation,
-          role: matched.role_code,
-          org_id: `org-${matched.role_code}`,
-          org_name: matched.department,
-          org_type: 'official',
-          language_preference: 'en',
-          permissions: ['cases:read', 'documents:read']
-        };
-
-        setUser(authoritativeUser);
-        sessionStorage.setItem('auth_user', JSON.stringify(authoritativeUser));
-        return { success: true, role: authoritativeUser.role };
-      }
-
-      return { success: false, error: error.message || 'Authentication failed' };
+  // Re-fetches the authoritative profile and updates local state — used
+  // after a forced password change clears must_change_password, so the
+  // gate lifts without requiring a full re-login.
+  const refreshProfile = async () => {
+    try {
+      const profile = await apiClient('/auth/me');
+      setUser((prev) => {
+        const updated = { ...(prev || {}), ...profile };
+        sessionStorage.setItem('auth_user', JSON.stringify(updated));
+        return updated;
+      });
+    } catch (_) {
+      // Leave existing state as-is on failure — this is a refresh, not a
+      // login; a transient error here shouldn't clear a valid session.
     }
   };
 
@@ -211,7 +133,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, testCredentials: OFFICIAL_TEST_CREDENTIALS }}>
+    <AuthContext.Provider value={{ user, login, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

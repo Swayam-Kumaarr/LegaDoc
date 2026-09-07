@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom"
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
 import { I18nProvider, useI18n } from "./contexts/I18nContext.jsx";
 import StatusBanner from "./components/StatusBanner.jsx";
+import ForcedPasswordChange from "./components/ForcedPasswordChange.jsx";
 import Login from "./routes/Login.jsx";
 import Dashboard from "./routes/Dashboard.jsx";
 
@@ -16,6 +17,10 @@ import Judiciary from "./routes/Judiciary.jsx";
 import DefenseAccused from "./routes/DefenseAccused.jsx";
 import RecordsReporting from "./routes/RecordsReporting.jsx";
 import PlatformAdmin from "./routes/PlatformAdmin.jsx";
+import OfficerOnboarding from "./routes/OfficerOnboarding.jsx";
+// Dev-only quick-login helper — only imported/registered in the Vite dev
+// server, never bundled into a production build. See routes/DevLogin.jsx.
+const DevLogin = import.meta.env.DEV ? React.lazy(() => import("./routes/DevLogin.jsx")) : null;
 
 function PrivateRoute({ children, allowedRoles }) {
   const { user } = useAuth();
@@ -55,7 +60,7 @@ function MainLayout() {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  const isLoginPage = location.pathname === "/login";
+  const isLoginPage = location.pathname === "/login" || location.pathname === "/dev-login";
   const role = user?.role?.toLowerCase() || '';
 
   // Role-scoped navigation definition per Requirement 5
@@ -148,11 +153,25 @@ function MainLayout() {
       {/* Network / Offline Health Monitor */}
       <StatusBanner />
 
+      {/* Blocking gate for a freshly-onboarded account still on its
+          one-time temporary password — see components/ForcedPasswordChange.jsx */}
+      {user && user.must_change_password && !isLoginPage && <ForcedPasswordChange />}
+
       {/* Login Screen: Dedicated Full Viewport Split Panel */}
       {isLoginPage ? (
         <main style={{ flex: 1 }}>
           <Routes>
             <Route path="/login" element={<Login />} />
+            {DevLogin && (
+              <Route
+                path="/dev-login"
+                element={
+                  <React.Suspense fallback={null}>
+                    <DevLogin />
+                  </React.Suspense>
+                }
+              />
+            )}
           </Routes>
         </main>
       ) : (
@@ -276,6 +295,15 @@ function MainLayout() {
                       </svg>
                       <span>{t('nav_admin', 'RBAC & Audit Governance')}</span>
                     </NavLink>
+                    <NavLink to="/onboarding" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                      </svg>
+                      <span>Officer Onboarding</span>
+                    </NavLink>
                   </>
                 )}
               </nav>
@@ -350,6 +378,12 @@ function MainLayout() {
                 <Route path="/admin" element={
                   <PrivateRoute allowedRoles={['config_admin', 'security_auditor', 'admin']}>
                     <PlatformAdmin />
+                  </PrivateRoute>
+                } />
+
+                <Route path="/onboarding" element={
+                  <PrivateRoute allowedRoles={['config_admin', 'admin']}>
+                    <OfficerOnboarding />
                   </PrivateRoute>
                 } />
 

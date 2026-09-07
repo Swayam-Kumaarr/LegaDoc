@@ -73,6 +73,12 @@ class User(Base):
     designation = Column(String, nullable=True)  # Official rank / title
     language_preference = Column(String, nullable=False, default="en")
     mfa_enabled = Column(Boolean, nullable=False, default=False)  # required for config_admin/security_auditor/court
+    # True for an account just approved out of onboarding (see UserApplication
+    # below) — the config_admin who approves it sets a one-time temporary
+    # password and communicates it out-of-band; this forces a real password
+    # to be chosen on first login rather than the officer ever operating on
+    # a password someone else picked and knows.
+    must_change_password = Column(Boolean, nullable=False, default=False)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
@@ -251,4 +257,67 @@ class AuditLog(Base):
     # locked critical section as the hash computation, so it can never tie.
     seq = Column(Integer, nullable=False)
     fabric_tx_id = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserApplication(Base):
+    """Officer/authority onboarding — a claimed identity awaiting credential
+    verification, NOT yet a real account. Nothing here can log in: no role,
+    no permissions, no CaseAssignment eligibility, until a config_admin
+    approves it and a real User row is created (see routers/onboarding.py).
+
+    Deliberately separate from User rather than a User with status='pending'
+    — a pending application must never accidentally satisfy a role check
+    written against the User table (e.g. require_role, CaseAssignment FKs).
+    Keeping it a different table makes that a schema-level impossibility,
+    not a discipline problem.
+    """
+    __tablename__ = "user_applications"
+    id = uuid_pk()
+    name = Column(String, nullable=False)  # as claimed — not yet verified
+    email = Column(String, nullable=False)
+    claimed_role = Column(String, nullable=False)  # a Role.code, e.g. "io", "defense"
+    org_id = Column(GUID(), ForeignKey("organizations.id"), nullable=False)
+    designation = Column(String, nullable=True)
+    # e.g. a police service/PIS number, a Bar Council enrollment number
+    # ("DL/1234/2015"), a judicial appointment order number — format
+    # depends on claimed_role, never validated beyond non-empty here.
+    claimed_credential_id = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="pending_review")  # pending_review | approved | rejected
+    submitted_by_user_id = Column(GUID(), ForeignKey("users.id"), nullable=False)
+    reviewed_by_user_id = Column(GUID(), ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    rejection_reason = Column(String, nullable=True)
+    created_user_id = Column(GUID(), ForeignKey("users.id"), nullable=True)  # set once approved
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CredentialDocument(Base):
+    """A scanned proof-of-identity document attached to a UserApplication —
+    the same OCR -> extraction pipeline shape as Document/DocumentSensitivityTag,
+    but extraction here is a POSITIVE read (find the name and ID number and
+    surface them for a human to compare), not redaction. Never auto-approves
+    an application by itself — match_status is input to a human decision,
+    never a substitute for one, same fail-closed posture as the AI Parser
+    elsewhere in this system.
+    """
+    __tablename__ = "credential_documents"
+    id = uuid_pk()
+    application_id = Column(GUID(), ForeignKey("user_applications.id"), nullable=False)
+    # e.g. "police_service_id", "bar_enrollment_certificate",
+    # "judicial_appointment_order", "institutional_authorization_letter",
+    # "nabl_accreditation_certificate"
+    doc_type = Column(String, nullable=False)
+    storage_path = Column(String, nullable=False)
+    raw_text = Column(Text, nullable=True)  # OCR output
+    doc_hash = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="processing")  # processing | ready | needs_review
+    # {"name": "...", "id_number": "...", "issuing_authority": "...", "confidence": 0-100}
+    # — never anything beyond what's needed to compare against the claimed
+    # identity; this is not a general document text store.
+    extracted_fields = Column(JSON, nullable=True)
+    # matched | mismatch | needs_review — compares extracted_fields against
+    # the parent UserApplication's claimed name/claimed_credential_id.
+    match_status = Column(String, nullable=True)
+    uploaded_by = Column(GUID(), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

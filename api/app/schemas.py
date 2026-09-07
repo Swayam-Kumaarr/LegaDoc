@@ -144,6 +144,7 @@ class UserProfileResponse(BaseModel):
     org_type: Optional[str] = None
     language_preference: str = "en"
     permissions: list[str] = []
+    must_change_password: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -459,3 +460,55 @@ class DocumentReviewItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+
+
+# ---------- Officer/Authority Onboarding & Credential Verification ----------
+class UserApplicationCreateRequest(BaseModel):
+    name: str
+    email: str
+    claimed_role: str
+    org_id: UUID
+    designation: Optional[str] = None
+    claimed_credential_id: Optional[str] = None
+
+
+class CredentialDocumentResponse(BaseModel):
+    id: UUID
+    application_id: UUID
+    doc_type: str
+    status: str
+    extracted_fields: Optional[dict] = None
+    match_status: Optional[str] = None
+    doc_hash: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserApplicationResponse(BaseModel):
+    id: UUID
+    name: str
+    email: str
+    claimed_role: str
+    org_id: UUID
+    designation: Optional[str] = None
+    claimed_credential_id: Optional[str] = None
+    status: str
+    reviewed_by_user_id: Optional[UUID] = None
+    reviewed_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
+    created_user_id: Optional[UUID] = None
+    created_at: datetime
+    documents: list[CredentialDocumentResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApplicationRejectRequest(BaseModel):
+    reason: str
+
+
+class ApplicationApproveResponse(BaseModel):
+    user_id: UUID
+    email: str
+    temporary_password: str  # shown exactly once — communicate out-of-band, never logged

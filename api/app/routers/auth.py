@@ -100,7 +100,8 @@ def get_current_user_profile(
         org_name=org_name,
         org_type=org_type,
         language_preference=current_user.language_preference or "en",
-        permissions=permissions
+        permissions=permissions,
+        must_change_password=current_user.must_change_password
     )
 
 
@@ -142,6 +143,7 @@ def change_password(
 
     security.validate_password_strength(body.new_password)
     current_user.hashed_password = security.hash_password(body.new_password)
+    current_user.must_change_password = False
     db.commit()
     return {"status": "password updated successfully"}
 

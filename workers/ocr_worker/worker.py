@@ -262,11 +262,17 @@ def process_extract_document(
             },
         )
 
-        # Enqueue downstream AI Parser worker (Flow 2 Track B)
+        # Enqueue downstream AI Parser worker (Flow 2 Track B). queue=
+        # explicitly, matching the routing api/app/queue.py's producer uses
+        # — each worker only listens on its own named queue now (see the
+        # Dockerfiles' -Q flag); a raw send_task with no queue= lands on
+        # Celery's default "celery" queue, which nothing consumes anymore,
+        # and this internal hop would silently never run.
         try:
             app.send_task(
                 "ai_parser_worker.tag_document",
-                args=[str(document.id)],
+                kwargs={"document_id": str(document.id)},
+                queue="ai_parser_worker",
             )
         except Exception as enqueue_err:
             logger.warning(f"Could not enqueue ai_parser_worker task: {enqueue_err}")
@@ -298,3 +304,93 @@ def process_extract_document(
 def extract_document(self, document_id: str):
     """Celery task entrypoint for OCR worker."""
     return process_extract_document(document_id)
+
+
+def process_extract_credential_document(
+    document_id: str,
+    db: Optional[Any] = None,
+    storage: Optional[Any] = None,
+    mock_boxes: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Same OCR pipeline as process_extract_document (preprocessing,
+    PaddleOCR -> Tesseract fallback, layout reconstruction), but reading and
+    writing CredentialDocument instead of Document — an onboarding proof-of-
+    identity scan (police ID, Bar Council certificate, appointment order),
+    not case evidence. No FIR-field extraction (that layout template doesn't
+    apply here); the reconstructed text is handed to
+    ai_parser_worker.extract_credential_fields, a positive-extraction task,
+    not the redaction one case documents get."""
+    session = db if db is not None else SessionLocal()
+    obj_storage = storage if storage is not None else get_storage()
+
+    try:
+        doc_uuid = document_id if isinstance(document_id, UUID) else UUID(str(document_id))
+        document = session.get(models.CredentialDocument, doc_uuid)
+        if document is None:
+            raise ValueError(f"CredentialDocument {document_id} not found")
+
+        raw_boxes = []
+        if mock_boxes is not None:
+            raw_boxes = mock_boxes
+        else:
+            file_bytes = obj_storage.get(document.storage_path)
+            if not file_bytes:
+                raise ValueError(f"Empty storage payload at {document.storage_path}")
+
+            processed_bytes = preprocess_image_bytes(file_bytes)
+            try:
+                raw_boxes = run_paddle_ocr(processed_bytes)
+            except Exception as paddle_err:
+                logger.warning(f"PaddleOCR failed for credential doc {document_id}, attempting Tesseract fallback: {paddle_err}")
+                raw_boxes = run_tesseract_fallback(processed_bytes)
+
+        layout = process_ocr_boxes_to_layout(raw_boxes)
+        reconstructed_text = layout["reconstructed_text"]
+
+        if not reconstructed_text or not reconstructed_text.strip():
+            document.status = "needs_review"
+            session.commit()
+            return {"status": "needs_review", "reason": "empty_ocr_text"}
+
+        document.raw_text = reconstructed_text
+        session.commit()
+        session.refresh(document)
+
+        write_audit_log(
+            session,
+            action="credential_document_ocr_extracted",
+            actor_user_id=document.uploaded_by,
+            target_type="credential_document",
+            target_id=document.id,
+            metadata={"row_count": layout["row_count"], "token_count": layout["token_count"]},
+        )
+
+        try:
+            app.send_task(
+                "ai_parser_worker.extract_credential_fields",
+                kwargs={"credential_document_id": str(document.id)},
+                queue="ai_parser_worker",
+            )
+        except Exception as enqueue_err:
+            logger.warning(f"Could not enqueue ai_parser_worker credential extraction task: {enqueue_err}")
+
+        return {"status": "success", "credential_document_id": str(document.id), "raw_text": document.raw_text}
+
+    except Exception as exc:
+        logger.exception(f"OCR Worker failure on credential document {document_id}: {exc}")
+        try:
+            if "document" in locals() and document is not None:
+                document.status = "needs_review"
+                session.commit()
+        except Exception:
+            session.rollback()
+        return {"status": "needs_review", "error": str(exc)}
+    finally:
+        if db is None:
+            session.close()
+
+
+@app.task(name="ocr_worker.extract_credential_document", bind=True, max_retries=5)
+def extract_credential_document(self, document_id: str):
+    """Celery task entrypoint — OCR for onboarding credential proof documents."""
+    return process_extract_credential_document(document_id)
