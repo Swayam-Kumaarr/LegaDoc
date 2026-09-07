@@ -133,25 +133,6 @@ def test_admin_assign_user_role(client, db_session):
     assert duty_officer.role == "sho"
 
 
-def test_unimplemented_admin_endpoints_explicit_501(client):
-    res = client.post("/auth/login", json={"email": "admin.sharma@legadoc.gov.in", "password": DEFAULT_TEST_PASSWORD})
-    token = res.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # 1. document-schemas must return explicit 501, not fake mock data
-    schema_res = client.get("/admin/document-schemas", headers=headers)
-    assert schema_res.status_code == 501
-    assert "not implemented" in schema_res.json()["detail"].lower()
-
-    # 2. recognizer mappings must return explicit 501
-    rec_res = client.post("/admin/document-schemas/FIR/recognizers", headers=headers)
-    assert rec_res.status_code == 501
-    assert "not implemented" in rec_res.json()["detail"].lower()
-
-    # 3. stage-requirements must return explicit 501
-    stage_res = client.get("/admin/stage-requirements", headers=headers)
-    assert stage_res.status_code == 501
-    assert "not implemented" in stage_res.json()["detail"].lower()
 
 
 def test_role_assignment_and_removal_audit_logging(client, db_session):

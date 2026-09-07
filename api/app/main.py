@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import (
-    auth, orgs, documents, audit, admin, reports, demo,
+    auth, orgs, cases, evidence_requests, documents, bail, trial, audit, admin, reports, demo,
 )
 
 app = FastAPI(
@@ -20,18 +20,28 @@ app = FastAPI(
     version="0.1.0",
 )
 
+import os
+
+cors_env = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=origins if "*" not in origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+
 app.include_router(auth.router)
 app.include_router(orgs.router)
+app.include_router(cases.router)
+app.include_router(evidence_requests.router)
 app.include_router(documents.router)
+app.include_router(bail.router)
+app.include_router(trial.router)
 app.include_router(audit.router)
 app.include_router(admin.router)
 app.include_router(reports.router)

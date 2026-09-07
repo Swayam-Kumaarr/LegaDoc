@@ -193,7 +193,7 @@ class DocumentVersionSummary(BaseModel):
 class ChainStatusResponse(BaseModel):
     document_id: UUID
     chain_status: str
-    fabric_tx_id: Optional[str] = None
+
 
 
 class RedactTagRequest(BaseModel):
@@ -334,4 +334,39 @@ class AdminAuditLogEntry(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------- Document Schemas & Stage Requirements ----------
+class DocumentSchemaResponse(BaseModel):
+    id: UUID
+    doc_type: str
+    tier: int
+    sensitivity_fields: Optional[dict] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RecognizerMappingRequest(BaseModel):
+    entity_type: str
+    field_name: str
+
+
+class RecognizerMappingResponse(BaseModel):
+    id: UUID
+    document_schema_id: UUID
+    entity_type: str
+    field_name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StageRequirementResponse(BaseModel):
+    id: UUID
+    crime_type: str
+    requirement_type: str
+    requirement_key: str
+    mandatory: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
 

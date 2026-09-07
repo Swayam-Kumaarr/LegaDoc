@@ -9,6 +9,12 @@ venv/
 # LocalObjectStorage's dev-mode file store — never committed, see app/storage.py
 api/data/
 
+# Local development databases
+*.db
+*.sqlite
+*.sqlite3
+
+
 # Fabric local dev/test crypto material and generated connection profiles —
 # never real production keys, but never committed either. See fabric-network/README.md.
 fabric-network/connection-profile.json
