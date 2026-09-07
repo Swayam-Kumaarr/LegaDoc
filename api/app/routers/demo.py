@@ -131,7 +131,7 @@ DEMO_HTML = """<!DOCTYPE html>
                     <option value="sho.sharma@police.gov.in|Password123!|sho">Station House Officer (SHO Sharma)</option>
                     <option value="admin@legadoc.gov.in|Password123!|config_admin">Config Admin (System Admin)</option>
                     <option value="judge.iyer@court.gov.in|Password123!|court">Judge (Sessions Court)</option>
-                    <option value="dr.verma@fsl.gov.in|Password123!|authority_staff">FSL Doctor (Forensics)</option>
+                    <option value="dr.verma@fsl.gov.in|Password123!|external_authority">FSL Doctor (Forensics)</option>
                     <option value="adv.kapoor@bar.in|Password123!|defense">Defense Lawyer (Kapoor)</option>
                 </select>
 
