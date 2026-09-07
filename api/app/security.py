@@ -290,12 +290,20 @@ _POLICE_SPECIALIST_ROLES = {
 }
 
 # Roles that see a document's full, unredacted text once they already have
-# case access — everyone else gets the AI-Parser-tagged spans masked. This
-# is a baseline simplification of the Access Model's real nuance (Duty
-# Officer is actually restricted to FIR-registration fields only; External
-# Authority is restricted to their own routed request) — full per-role,
-# per-doc-type scoping is real future work, not built in this slice.
-FULL_TEXT_ACCESS_ROLES = _UNRESTRICTED_CASE_ROLES | {"io"}
+# case access — everyone else gets the AI-Parser-tagged spans masked.
+#
+# Listed explicitly, and deliberately NOT derived from _UNRESTRICTED_CASE_ROLES.
+# These two sets answer different questions ("which cases may this role open?"
+# vs "may this role see raw PII?"), and deriving one from the other made them
+# move together: adding a role to the case set silently handed it every
+# witness name, phone number and address in the system, with nothing at the
+# call site to review. Reaching this set must be a separate, deliberate edit.
+#
+# Duty Officer is intentionally absent. It has case access (see
+# _POLICE_SPECIALIST_ROLES) but only to cases it registered, and the Access
+# Model restricts it to FIR-registration fields — so it reads documents
+# redacted, like Defense does.
+FULL_TEXT_ACCESS_ROLES = {"config_admin", "security_auditor", "court", "prosecutor", "sho", "io"}
 
 
 def assert_case_access(case_id, claims: dict, db: Session) -> None:
@@ -318,6 +326,29 @@ def assert_case_access(case_id, claims: dict, db: Session) -> None:
             case_uuid = case_id if isinstance(case_id, UUID) else UUID(str(case_id))
         except ValueError:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+
+        # A Duty Officer keeps access to the FIRs it registered, and to
+        # nothing else. The register_fir audit row is the only record of who
+        # registered a case, so it is what grants this — see cases.register_fir
+        # for why this is not a CaseAssignment row. Access is still narrow:
+        # documents come back redacted, because duty_officer is deliberately
+        # absent from FULL_TEXT_ACCESS_ROLES.
+        if role == "duty_officer":
+            registered = (
+                db.query(models.AuditLog)
+                .filter(
+                    models.AuditLog.case_id == case_uuid,
+                    models.AuditLog.actor_user_id == user_id,
+                    models.AuditLog.action == "register_fir",
+                )
+                .first()
+            )
+            if registered is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Not the registering officer for this case"
+                )
+            return
+
         assigned = (
             db.query(models.CaseAssignment)
             .filter(models.CaseAssignment.case_id == case_uuid, models.CaseAssignment.io_user_id == user_id)

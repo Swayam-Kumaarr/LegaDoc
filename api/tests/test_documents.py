@@ -311,18 +311,22 @@ def test_redact_tag_adds_a_correction_and_extends_the_audit_hash_chain(client, m
     assert len(tags) == 1
     assert tags[0].source == "officer_correction"
 
-    # Upload wrote one audit_log entry, redact-tag wrote a second — the
-    # chain must still verify end to end.
-    entries = db_session.query(models.AuditLog).order_by(models.AuditLog.created_at.asc()).all()
-    assert len(entries) == 2
-    assert entries[0].action == "document_uploaded"
+    # Three links, in order: the duty officer's FIR registration (written by
+    # _setup_case_with_io), the upload, then the redact-tag correction. The
+    # chain must verify end to end across all of them.
+    entries = db_session.query(models.AuditLog).order_by(models.AuditLog.seq.asc()).all()
+    assert [e.action for e in entries] == [
+        "register_fir",
+        "document_uploaded",
+        "redact_tag_correction",
+    ]
     assert entries[0].prev_hash is None
-    assert entries[1].action == "redact_tag_correction"
     assert entries[1].prev_hash == entries[0].row_hash
+    assert entries[2].prev_hash == entries[1].row_hash
     assert verify_chain_intact(db_session)
 
     # And the metadata never contains the actual phone number — only the span.
-    assert "9876543210" not in str(entries[1].action_metadata)
+    assert "9876543210" not in str(entries[2].action_metadata)
 
 
 def test_upload_disguised_executable_rejected_by_magic_bytes(client, make_user, db_session):

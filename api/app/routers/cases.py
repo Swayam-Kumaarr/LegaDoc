@@ -60,6 +60,32 @@ def register_fir(
         investigation_status="FIR_Registered",
     )
     db.add(case)
+    db.flush()  # need case.id for the audit row below, same transaction
+
+    # FIR registration was previously the one case-lifecycle action that wrote
+    # no audit entry at all — the originating event of every case was absent
+    # from the tamper-evident trail that the rest of the system depends on.
+    #
+    # It also carries the authorization record: nothing else in the schema
+    # says who registered a case (Case has no org or registrant column), and
+    # assert_case_access reads this row to let a Duty Officer reopen the FIR
+    # they filed. The alternative taken previously was to add duty_officer to
+    # _UNRESTRICTED_CASE_ROLES, which granted every station intake officer
+    # read access to every case in the system instead of their own.
+    #
+    # Deliberately NOT a CaseAssignment row: that table means "the current IO
+    # for this case" and reassign_io deletes every row for the case when the
+    # IO changes, which would silently revoke the registering officer's access.
+    write_audit_log(
+        db,
+        action="register_fir",
+        case_id=case.id,
+        actor_user_id=UUID(claims["sub"]),
+        target_type="case",
+        target_id=case.id,
+        metadata={"case_number": case.case_number, "crime_type": case.crime_type},
+    )
+
     db.commit()
     db.refresh(case)
     return case
