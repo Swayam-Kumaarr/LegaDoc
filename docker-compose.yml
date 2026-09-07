@@ -40,6 +40,12 @@ services:
     env_file: .env
     environment:
       - OBJECT_STORAGE_BACKEND=minio
+      # uvicorn's --reload watcher (via watchfiles) has the same problem
+      # Vite's default watcher had: Docker Desktop on Windows often doesn't
+      # propagate native filesystem change events through a bind mount, so
+      # code edits on the host never trigger a reload. Force polling so it
+      # actually notices — see web/vite.config.js for the same fix.
+      - WATCHFILES_FORCE_POLLING=true
     depends_on:
       - db
       - redis
@@ -50,6 +56,12 @@ services:
       - ./api/app:/app/app
       - ./api/tests:/app/tests
       - ./workers:/workers
+    # Local/dev only — overrides the Dockerfile's plain CMD so edits to
+    # ./api/app (bind-mounted above) take effect without a manual restart.
+    # Without --reload every backend change silently kept running the code
+    # from whenever this container last started, which is exactly what let
+    # a real 404 (GET /evidence-requests) ship unnoticed this session.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app"]
 
   # ocr_worker, ai_parser_worker, and chain_worker all build from the REPO
   # ROOT (context: .), not their own directory — each one's Dockerfile
@@ -61,6 +73,15 @@ services:
       context: .
       dockerfile: workers/ocr_worker/Dockerfile
     env_file: .env
+    environment:
+      # Without this, get_storage() defaults to "local" here while the api
+      # service (which actually wrote the file — see api service's own
+      # OBJECT_STORAGE_BACKEND=minio above) defaults to MinIO. This worker
+      # then looks for the file on its own container's local disk, where
+      # it was never written, and fails every real OCR job with a
+      # FileNotFoundError — confirmed live: a real image upload's OCR task
+      # errored on exactly this, silently downgrading to needs_review.
+      - OBJECT_STORAGE_BACKEND=minio
     depends_on:
       - redis
       - db

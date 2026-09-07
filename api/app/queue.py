@@ -30,7 +30,22 @@ class CeleryQueueClient(QueueClient):
         self._app = Celery("api_producer", broker=settings.CELERY_BROKER_URL)
 
     def enqueue(self, task_name: str, **kwargs) -> None:
-        self._app.send_task(task_name, kwargs=kwargs)
+        # Route by the task-name prefix (e.g. "chain_worker" out of
+        # "chain_worker.write_hash") into a queue of the same name — each
+        # worker's Dockerfile CMD listens on exactly that queue (-Q flag).
+        #
+        # Without this, every task from every producer landed on Celery's
+        # shared default queue ("celery"), which every worker container
+        # also consumed from with no routing at all. Whichever worker
+        # happened to dequeue a message first would try to run it — a task
+        # it didn't have registered (e.g. ai_parser_worker grabbing
+        # "chain_worker.write_hash") was silently discarded, not requeued
+        # or retried. With 3 worker types sharing one queue, roughly 2/3 of
+        # every job type was being dropped on the floor at random, which is
+        # exactly the kind of bug that looks like "sometimes documents
+        # never finish processing" with no obvious pattern.
+        queue = task_name.split(".", 1)[0]
+        self._app.send_task(task_name, kwargs=kwargs, queue=queue)
 
 
 class InMemoryQueueClient(QueueClient):
