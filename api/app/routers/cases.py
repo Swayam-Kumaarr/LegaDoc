@@ -96,12 +96,14 @@ def list_cases(claims: dict = Depends(get_current_claims), db: Session = Depends
     """GET /cases — Any authenticated role. List cases, filtered by role/org
     visibility. Paginated, filterable by crime_type/status.
 
-    Baseline scoping: Config Admin/Security Auditor/Court/Prosecutor/Duty
-    Officer/SHO see every case (matches the Access Model — these roles need
-    cross-case visibility to do their job). An IO sees only cases they're
-    assigned to, same rule as verify_case_access. Pagination and
-    crime_type/status filtering are not implemented yet — this returns
-    everything the role is allowed to see, unpaginated.
+    Baseline scoping: Config Admin/Security Auditor/Court/Prosecutor/SHO see
+    every case (matches the Access Model — these roles need cross-case
+    visibility to do their job). An IO sees only cases they're assigned to and
+    a Duty Officer only the FIRs it registered, both the same rules
+    verify_case_access enforces, so this list never shows a row the caller
+    cannot then open. Pagination and crime_type/status filtering are not
+    implemented yet — this returns everything the role is allowed to see,
+    unpaginated.
     """
     role = claims.get("role")
     if role == "io":
@@ -110,6 +112,22 @@ def list_cases(claims: dict = Depends(get_current_claims), db: Session = Depends
             db.query(models.Case)
             .join(models.CaseAssignment, models.CaseAssignment.case_id == models.Case.id)
             .filter(models.CaseAssignment.io_user_id == user_id)
+            .all()
+        )
+    if role == "duty_officer":
+        # Same rule assert_case_access applies to this role, so the list and
+        # the detail view agree. Without this the worklist showed every case in
+        # the system while opening all but the officer's own returned 403 —
+        # a list whose rows mostly cannot be opened is worse than a short list,
+        # and it misrepresents the officer's actual remit.
+        user_id = UUID(claims["sub"])
+        return (
+            db.query(models.Case)
+            .join(models.AuditLog, models.AuditLog.case_id == models.Case.id)
+            .filter(
+                models.AuditLog.actor_user_id == user_id,
+                models.AuditLog.action == "register_fir",
+            )
             .all()
         )
     return db.query(models.Case).all()
