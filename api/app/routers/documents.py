@@ -153,20 +153,44 @@ async def upload_document(
     return document
 
 
+_REVIEW_QUEUE_ROLES = ("config_admin", "security_auditor", "io")
+
+
 @router.get("", response_model=list[schemas.DocumentReviewItem])
-def list_documents_needing_review(
-    status_filter: Optional[str] = Query(default="needs_review", alias="status"),
+def list_documents(
+    case_id: Optional[str] = Query(default=None),
+    status_filter: Optional[str] = Query(default=None, alias="status"),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    claims: dict = Depends(require_role("config_admin", "io")),
+    claims: dict = Depends(get_current_claims),
     db: Session = Depends(get_db),
 ):
-    """GET /documents?status=needs_review — Config Admin / Investigating
-    Officer. Lists documents flagged for manual review or falling back from OCR/AI-Parser.
-    - When called by an IO: scoped strictly to cases assigned to that IO.
-    - When called by Config Admin: across all cases.
-    - raw_text is structurally excluded from the list schema to prevent bulk PII leaks.
+    """GET /documents — two modes, each with its own authorization.
+
+    With `case_id`: the evidentiary record list for one case. Any role may ask,
+    but only through assert_case_access, so the same case-scoping that guards
+    GET /cases/:id applies here — an IO still needs an assignment, a Duty
+    Officer still needs to have registered the case.
+
+    Without `case_id`: the cross-case review queue, restricted to the roles
+    that have a reason to see documents from cases they are not on. An IO is
+    narrowed to its own assigned cases.
+
+    raw_text is structurally excluded from DocumentReviewItem in both modes, so
+    neither can be used to bulk-read document contents.
     """
+    if case_id is not None:
+        try:
+            case_uuid = UUID(case_id)
+        except ValueError:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
+        assert_case_access(case_uuid, claims, db)
+
+        query = db.query(models.Document).filter(models.Document.case_id == case_uuid)
+        if status_filter is not None:
+            query = query.filter(models.Document.status == status_filter)
+        return query.order_by(models.Document.created_at.desc()).offset(offset).limit(limit).all()
+
     target_status = status_filter if status_filter is not None else "needs_review"
     if target_status not in ("needs_review", "processing", "ready"):
         raise HTTPException(
@@ -174,9 +198,12 @@ def list_documents_needing_review(
             detail=f"Invalid document status filter '{target_status}'. Must be one of: needs_review, processing, ready",
         )
 
+    user_role = claims.get("role")
+    if user_role not in _REVIEW_QUEUE_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized to access the review queue")
+
     query = db.query(models.Document).filter(models.Document.status == target_status)
 
-    user_role = claims.get("role")
     if user_role == "io":
         user_id = UUID(claims["sub"])
         query = query.join(
@@ -185,9 +212,31 @@ def list_documents_needing_review(
         ).filter(models.CaseAssignment.io_user_id == user_id)
 
     # Order FIFO (oldest first) so review backlogs don't starve
-    docs = query.order_by(models.Document.created_at.asc()).offset(offset).limit(limit).all()
+    return query.order_by(models.Document.created_at.asc()).offset(offset).limit(limit).all()
 
-    return docs
+
+@router.get("/review-queue", response_model=list[schemas.DocumentReviewItem])
+def list_review_queue(
+    status_filter: Optional[str] = Query(default="needs_review", alias="status"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    claims: dict = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
+    """GET /documents/review-queue — named alias for the queue mode above, so
+    the review-queue screen does not depend on the absence of a query
+    parameter. Same authorization; it delegates rather than reimplementing.
+
+    Declared before /{document_id} so the literal path is matched first.
+    """
+    return list_documents(
+        case_id=None,
+        status_filter=status_filter,
+        limit=limit,
+        offset=offset,
+        claims=claims,
+        db=db,
+    )
 
 
 @router.get("/{document_id}", response_model=schemas.DocumentView)
@@ -200,7 +249,13 @@ def get_document(
     """GET /documents/:id — Role-filtered. Returns the redacted or full view
     per auto-tagged sensitivity spans + role, via app.redaction — never a
     bespoke redacted-vs-full branch written ad hoc in this handler."""
-    document = db.get(models.Document, UUID(document_id))
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        # A non-UUID id is a 404, not an unhandled ValueError surfacing as a 500.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+
+    document = db.get(models.Document, doc_uuid)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
 
