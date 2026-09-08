@@ -1,10 +1,21 @@
 import React from 'react';
 
 /**
- * StatusChip — Implements PRD Section 3.2 & 6.3:
- * Square corners (2–4px radius), 12% opacity fill + full opacity text + 1px border.
- * Always paired with text label. Never pill/rounded-full.
+ * StatusChip — Renders status as clean, normal unboxed text.
  */
+function formatStatusText(val) {
+  if (!val) return 'N/A';
+  const str = String(val).trim();
+  if (str.includes('_') || (str === str.toUpperCase() && str.length > 3)) {
+    return str
+      .toLowerCase()
+      .split(/[_\s]+/)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+  return str;
+}
+
 export default function StatusChip({ status, label, className = '' }) {
   const norm = (status || '').toString().toLowerCase().replace(/[\s_-]+/g, '');
 
@@ -17,7 +28,7 @@ export default function StatusChip({ status, label, className = '' }) {
     variant = 'error';
   }
 
-  const displayText = label || status || 'N/A';
+  const displayText = label || formatStatusText(status);
 
   return (
     <span className={`status-chip status-chip-${variant} ${className}`}>

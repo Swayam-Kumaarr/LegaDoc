@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import StatusChip from '../components/StatusChip';
 import HashCell from '../components/HashCell';
+import ChainOfCustodyVisualizer from '../components/ChainOfCustodyVisualizer';
 
 function useCaseResource(caseId, endpoint) {
   const [data, setData] = useState(null);
@@ -227,6 +228,12 @@ export default function CaseDetail() {
         )}
 
         {activeTab === 'audit' && (
+          <>
+          <div className="card" style={{ padding: '16px' }}>
+            <h3 className="card-title">Verify Chain of Custody</h3>
+            <ChainOfCustodyVisualizer events={auditEvents} />
+          </div>
+
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-border)' }}>
               <h3 className="card-title" style={{ borderBottom: 'none', paddingBottom: 0, marginBottom: '4px' }}>
@@ -276,6 +283,7 @@ export default function CaseDetail() {
               ) : null}
             </div>
           </div>
+          </>
         )}
       </div>
     </div>
