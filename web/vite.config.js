@@ -28,18 +28,19 @@ export default defineConfig({
         // /api marker is stripped before forwarding.
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
-      "/reports": {
-        target: process.env.VITE_PROXY_TARGET || "http://localhost:8000",
-        changeOrigin: true,
-      },
-      "/auth": {
-        target: process.env.VITE_PROXY_TARGET || "http://localhost:8000",
-        changeOrigin: true,
-      },
-      "/cases": {
-        target: process.env.VITE_PROXY_TARGET || "http://localhost:8000",
-        changeOrigin: true,
-      },
+      // NOTE: do not add bare "/cases", "/reports" or "/auth" entries here.
+      //
+      // They were added once and had to be removed: "/cases", "/cases/:id",
+      // "/cases/:id/documents/:docId", "/cases/:id/charge-sheet" and
+      // "/reports" are all React Router routes, so proxying those prefixes
+      // hands the SPA's own URLs to the API instead of serving index.html.
+      // Loading or refreshing any of those five pages returned 502 Bad
+      // Gateway and a blank screen — including the document viewer, where
+      // the redaction demo happens. The target compounded it: inside the web
+      // container "localhost:8000" is the web container itself, not the API.
+      //
+      // Nothing needs them. Every API call goes through API_BASE = "/api"
+      // (web/src/api/client.js), which the single rule above already covers.
     },
   },
   build: {
