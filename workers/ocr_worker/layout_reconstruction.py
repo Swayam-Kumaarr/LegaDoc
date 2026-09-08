@@ -37,6 +37,24 @@ def has_devanagari(text: str) -> bool:
     return any("\u0900" <= ch <= "\u097f" for ch in text)
 
 
+def has_devanagari_letters(text: str) -> bool:
+    """True only for Devanagari *letters* \u2014 the block minus its numerals
+    (U+0966-U+096F).
+
+    This is the signal that a detection is genuinely Devanagari rather than
+    the Hindi pass hallucinating Indic numerals over Latin digits. Both look
+    identical to has_devanagari, but they mean opposite things during NMS:
+    "\u0925\u093e\u0928\u093e" is authentic Hindi that must outrank a Latin ghost box, while the
+    "\u096a\u0967" the Devanagari pass returned for a printed "41" on an English FIR is
+    the ghost and must lose. Devanagari digits alone are never evidence that
+    the underlying text is Hindi \u2014 a genuine Hindi line carries letters too.
+    """
+    return any(
+        "\u0900" <= ch <= "\u097f" and not ("\u0966" <= ch <= "\u096f")
+        for ch in text
+    )
+
+
 def normalize_devanagari_digits(text: str) -> str:
     """Normalizes Devanagari numerals (०-९) to standard ASCII digits (0-9)."""
     return text.translate(DEVANAGARI_DIGITS)
@@ -72,13 +90,45 @@ def deduplicate_boxes_nms(
     if not boxes:
         return []
 
-    # Sort key:
-    # 1. Devanagari presence (gives priority to authentic Hindi script over Latin hallucinations)
-    # 2. Confidence
-    # 3. Box area
+    # Sort key — confidence first, Devanagari only as a tie-breaker.
+    #
+    # Devanagari presence used to rank ABOVE confidence, on the assumption that
+    # a Devanagari reading is always the authentic one and the Latin box is the
+    # hallucination. On a bilingual page that holds. On an English-only page it
+    # inverts: the Devanagari pass hallucinates Indic numerals over Latin
+    # digits, and that low-confidence guess then outranked the correct,
+    # higher-confidence Latin reading of the same region. Confirmed live on an
+    # English FIR — "Section 154" became "Section 15४" (0.89 beating 0.98),
+    # "41 Jyotinagar" became "४१ Jyotinagar" (0.87 beating 0.99), and
+    # "IPC 406" became "IPC ४०५" (0.73 beating 0.97). Silently corrupting a
+    # statute number is materially worse than dropping a glyph.
+    #
+    # Ranking by the model's own confidence and using script only to break
+    # ties keeps genuine Devanagari winning where it is actually read well —
+    # on a real Hindi page the Devanagari pass scores high and the Latin pass
+    # returns low-confidence garbage for the same box — without letting a weak
+    # Indic guess overwrite confident Latin text.
+    # Sort key, highest first: genuine Devanagari, then confidence, then area.
+    #
+    # The only change from the original ordering is that the script signal is
+    # has_devanagari_LETTERS rather than has_devanagari. Indic numerals alone
+    # are precisely what the Hindi pass hallucinates over printed Latin digits,
+    # and counting those as authentic script let a weak guess outrank a
+    # confident Latin read of the same region — turning "Section 154" into
+    # "Section 15४" (0.89 beating 0.98) and "IPC 406" into "IPC ४०५" (0.73
+    # beating 0.97) on an English FIR. Real Hindi text carries letters, so
+    # keying on letters keeps "थाना" winning over its Latin ghost while
+    # denying a bare numeral that same authority.
+    #
+    # Ranking area above confidence was tried and reverted: it cleaned up a
+    # synthetic English page but destroyed the real Delhi FIR fixture, where
+    # the correct content lives in the word-level boxes and the larger
+    # competing box is garbage ("District: NORTH DIsTRIct/ Crme Branch, Delhi
+    # P.S: KOTwALI" degraded to "District ! HIHON 12H1sI9 Srim? Branchi").
+    # Confidence stays ahead of size.
     def sort_key(b: Dict[str, Any]) -> Tuple[int, float, int]:
         text = b.get("text", "")
-        is_dev = 1 if has_devanagari(text) else 0
+        is_dev = 1 if has_devanagari_letters(text) else 0
         conf = float(b.get("confidence", 0.0))
         box = b.get("box", [0, 0, 0, 0])
         area = (box[2] - box[0]) * (box[3] - box[1])
@@ -101,7 +151,20 @@ def deduplicate_boxes_nms(
             box2 = kept["box"]
             iou = compute_box_iou(box1, box2)
 
-            # Check directional containment (box1 inside box2)
+            # Directional containment, measured against the candidate: "is
+            # this candidate mostly inside something already kept?" That
+            # direction is deliberate. It lets a high-ranking line box swallow
+            # the word-level fragments detected under it, which is where most
+            # of the suppression on a real scan comes from.
+            #
+            # Making it symmetric — min(area1, area2) — was tried and reverted.
+            # It inverts that behaviour: a small fragment kept first then
+            # suppresses the larger box containing it, so the line box dies and
+            # all its other fragments survive. On the real Delhi FIR fixture
+            # that took retention from 169 boxes to 246 and turned the header
+            # "District: NORTH DIsTRIct/ Crme Branch, Delhi P.S: KOTwALI" into
+            # "District ! HIHON 12H1sI9 Srim? Branchi" — the good line reads
+            # were exactly the boxes it removed.
             x_ov = max(0, min(box1[2], box2[2]) - max(box1[0], box2[0]))
             y_ov = max(0, min(box1[3], box2[3]) - max(box1[1], box2[1]))
             ov_area = x_ov * y_ov
@@ -382,11 +445,73 @@ def extract_bilingual_fir_fields(
     }
 
 
+def drop_contained_duplicate_text(boxes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Removes a retained box whose text is already spelled out, verbatim, by a
+    larger box overlapping the same region.
+
+    Spatial NMS cannot catch this case. The English pass returns one box per
+    line and the Devanagari pass one per word, so a line and its own fragments
+    are all detections of the same text at different granularity. When a
+    fragment outranks the line on confidence — common, since a single word
+    scores 1.00 where the full line scores 0.97 — the fragment is retained
+    first, and the line is then measured as overlap/area_of_line, a small
+    fraction that clears neither the IoU nor the containment threshold. Both
+    survive, and every such line lands in the output twice:
+
+        "FIRST INFORMATION REPORT REPORT"
+        "Complainant: Priya Menon Menon"
+        "Accused: Kalyan Sarkar. Kalyan Sarkar"
+
+    Widening the spatial test to fix this was tried and reverted — it destroys
+    the line-swallows-fragments behaviour that does the real work on a scan
+    (see deduplicate_boxes_nms). Comparing the decoded text instead is precise:
+    a fragment is only dropped when a box it overlaps already contains that
+    exact string, so nothing is removed on the strength of geometry alone.
+
+    Case- and space-insensitive, since the two passes disagree on both
+    ("NFORMATlON" vs "INFORMATION" is a different read and is deliberately
+    NOT treated as a duplicate — only text that genuinely already appears is).
+    """
+    def norm(s: str) -> str:
+        return "".join(s.split()).casefold()
+
+    kept: List[Dict[str, Any]] = []
+    for cand in boxes:
+        c_txt = norm(cand.get("text", ""))
+        c_box = cand.get("box")
+        if not c_txt or not c_box or len(c_box) < 4:
+            kept.append(cand)
+            continue
+
+        redundant = False
+        for other in boxes:
+            if other is cand:
+                continue
+            o_txt = norm(other.get("text", ""))
+            o_box = other.get("box")
+            if not o_box or len(o_box) < 4 or len(o_txt) <= len(c_txt):
+                continue
+            if c_txt not in o_txt:
+                continue
+            # Same region: the fragment must actually sit under the larger box.
+            x_ov = max(0, min(c_box[2], o_box[2]) - max(c_box[0], o_box[0]))
+            y_ov = max(0, min(c_box[3], o_box[3]) - max(c_box[1], o_box[1]))
+            c_area = (c_box[2] - c_box[0]) * (c_box[3] - c_box[1])
+            if c_area > 0 and (x_ov * y_ov) / c_area > 0.5:
+                redundant = True
+                break
+
+        if not redundant:
+            kept.append(cand)
+
+    return kept
+
+
 def process_ocr_boxes_to_layout(raw_boxes: List[Dict[str, Any]]) -> Dict[str, Any]:
     """End-to-end transformation:
     Raw OCR detections -> Spatial IoU NMS -> Row Clustering -> Bilingual Field Extraction.
     """
-    filtered_boxes = deduplicate_boxes_nms(raw_boxes)
+    filtered_boxes = drop_contained_duplicate_text(deduplicate_boxes_nms(raw_boxes))
     rows = reconstruct_layout_rows(filtered_boxes)
     reconstructed_text = "\n".join(r["text"] for r in rows)
     extracted = extract_bilingual_fir_fields(rows, raw_text=reconstructed_text)

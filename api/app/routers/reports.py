@@ -9,7 +9,7 @@ dates, court_level), structurally excluding all identity or sensitive fields
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -22,24 +22,39 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 @router.get("/public-stats")
 def get_public_stats(db: Session = Depends(get_db)):
-    """Public aggregated statistics for login and landing pages.
-    Returns case and audit ledger counts without exposing sensitive or identified records.
+    """Public aggregated counts for the login/landing page — row counts only,
+    never identified records.
+
+    Every number here is read from the database or not returned at all. The
+    first version carried invented fallbacks (128402 cases, 345910 documents,
+    a 42910 block height) that were served whenever the query raised, and
+    `total_audit_logs or 42910` substituted the same fake height for a
+    genuinely empty ledger. A demo database holding six cases would have
+    reported six figures on the login screen, and the one question that
+    invites — "show me those 128,402 cases" — has no good answer. A failed
+    query is now a 503, which is honest and visible, rather than a plausible
+    number that is wrong.
+
+    `active_nodes` is likewise not asserted: it was hardcoded to 4 while the
+    Fabric network actually runs three (one orderer, two peers), and this
+    endpoint queries neither. Claiming ledger health nothing here measures is
+    exactly the sort of unearned assurance a tamper-evidence product must not
+    make.
     """
     try:
         total_cases = db.query(models.Case).count()
         total_documents = db.query(models.Document).count()
-        total_audit_logs = db.query(models.AuditLog).count()
+        total_audit_entries = db.query(models.AuditLog).count()
     except Exception:
-        total_cases = 128402
-        total_documents = 345910
-        total_audit_logs = 42910
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Statistics are unavailable because the database could not be queried",
+        )
 
     return {
         "total_cases": total_cases,
         "total_documents": total_documents,
-        "block_height": total_audit_logs or 42910,
-        "active_nodes": 4,
-        "status": "operational",
+        "total_audit_entries": total_audit_entries,
     }
 
 
