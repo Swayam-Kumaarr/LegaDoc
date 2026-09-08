@@ -17,4 +17,9 @@ COPY workers/chain_worker/worker.py workers/chain_worker/fabric_client.py ./
 # computes from /worker/worker.py.
 COPY api/app /api/app
 
-CMD ["celery", "-A", "worker", "worker", "--loglevel=info"]
+# -Q chain_worker: listen only on this worker's own queue. Task names are
+# routed queue-per-name-prefix by CeleryQueueClient (see api/app/queue.py)
+# — without this flag every worker shares Celery's single default "celery"
+# queue and silently drops tasks it doesn't recognize instead of leaving
+# them for the worker that does.
+CMD ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "chain_worker"]

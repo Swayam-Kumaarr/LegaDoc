@@ -1,59 +1,80 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { apiClient, apiUpload } from '../api/client';
 import StatusChip from '../components/StatusChip';
+
+function formatError(err) {
+  const detail = err?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object') {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      // fall through
+    }
+  }
+  return err?.message || 'Request failed.';
+}
 
 export default function ExternalAuthority() {
   const { user } = useAuth();
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [selectedReq, setSelectedReq] = useState(null);
-  const [reportTitle, setReportTitle] = useState('');
-  const [reportNotes, setReportNotes] = useState('');
   const [attachment, setAttachment] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const [sortOrder, setSortOrder] = useState('oldest');
 
-  const initialRequests = [
-    {
-      id: 'REQ-FSL-2026-001',
-      case_number: 'CYB-2026-482910',
-      requesting_officer: 'IO S. Rao (Cyber Cell)',
-      request_type: 'Bank Account Transaction Statement (KYC & Trail)',
-      target_subject: 'Accused Account ending 9182',
-      requested_at: '2026-08-28T09:30:00Z',
-      urgency: 'HIGH',
-      status: 'PENDING_FULFILLMENT',
-      days_open: 6
-    },
-    {
-      id: 'REQ-FSL-2026-002',
-      case_number: 'NDP-2026-119482',
-      requesting_officer: 'IO P. Sharma (Narcotics Branch)',
-      request_type: 'Chemical Forensic Purity Test Report',
-      target_subject: 'Sample Seal #FSL-NDP-40192',
-      requested_at: '2026-08-31T14:20:00Z',
-      urgency: 'MEDIUM',
-      status: 'PENDING_FULFILLMENT',
-      days_open: 3
+  const fetchRequests = async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await apiClient('/evidence-requests');
+      setRequests(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setRequests([]);
+      setLoadError(formatError(err));
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
 
-  const sortedRequests = [...initialRequests].sort((a, b) => {
-    if (sortOrder === 'oldest') {
-      return new Date(a.requested_at) - new Date(b.requested_at);
-    }
-    return new Date(b.requested_at) - new Date(a.requested_at);
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
+  const pending = requests.filter((r) => r.status !== 'completed');
+  const sortedRequests = [...pending].sort((a, b) => {
+    const diff = new Date(a.created_at) - new Date(b.created_at);
+    return sortOrder === 'oldest' ? diff : -diff;
   });
 
-  const handleSubmitReport = (e) => {
+  const handleSubmitReport = async (e) => {
     e.preventDefault();
-    if (!selectedReq) return;
+    if (!selectedReq || !attachment) return;
 
-    setStatusMessage({
-      type: 'success',
-      msg: `Official report submitted against Requisition ${selectedReq.id}. Document signed and hashed directly to the Case ${selectedReq.case_number} Fabric chain of custody.`
-    });
-    setReportTitle('');
-    setReportNotes('');
-    setAttachment(null);
+    setSubmitting(true);
+    setStatusMessage(null);
+
+    const formData = new FormData();
+    formData.append('file', attachment);
+
+    try {
+      const updated = await apiUpload(`/evidence-requests/${selectedReq.id}/submit`, formData);
+      setStatusMessage({
+        type: 'success',
+        msg: `Report submitted and hashed to Case ${selectedReq.case_number}'s chain of custody. Requisition status: ${updated.status}.`,
+      });
+      setAttachment(null);
+      setSelectedReq(null);
+      fetchRequests();
+    } catch (err) {
+      setStatusMessage({ type: 'error', msg: `Submission failed: ${formatError(err)}` });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -73,19 +94,17 @@ export default function ExternalAuthority() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <StatusChip status="neutral" label="Organization: State Forensic Science Laboratory" />
-            <StatusChip status="confirmed" label="Scoped Gateway: Active" />
+            <StatusChip status="neutral" label={`Organization: ${user?.org_name || 'Unknown'}`} />
           </div>
         </div>
 
         <div className="domain-notice">
-          <strong>Security Standard (Audit Section 1.8 & 2.0):</strong> Access is strictly restricted to the specific
-          item requisitioned. External users have no access to the broader case docket. Inquiries are sorted
-          <em> Oldest First</em> to eliminate operational bottlenecks.
+          <strong>Security Standard (Audit Section 1.8 & 2.0):</strong> Access is strictly restricted to
+          requisitions routed to your organization. You have no access to the broader case docket.
         </div>
 
         {statusMessage && (
-          <div className={`alert ${statusMessage.type === 'success' ? 'alert-success' : 'alert-warning'}`}>
+          <div className={`alert ${statusMessage.type === 'success' ? 'alert-success' : 'alert-error'}`}>
             {statusMessage.msg}
           </div>
         )}
@@ -99,7 +118,7 @@ export default function ExternalAuthority() {
                   Requisition Inbox
                 </h2>
                 <span className="table-caption" style={{ marginBottom: 0 }}>
-                  {sortedRequests.length} pending evidentiary requisitions.
+                  {loading ? 'Loading...' : `${sortedRequests.length} pending evidentiary requisition${sortedRequests.length === 1 ? '' : 's'}.`}
                 </span>
               </div>
               <select
@@ -112,6 +131,18 @@ export default function ExternalAuthority() {
                 <option value="newest">Sort: Newest First</option>
               </select>
             </div>
+
+            {loadError && (
+              <div className="alert alert-error" style={{ marginBottom: '12px' }}>
+                Could not load requisitions: {loadError}
+              </div>
+            )}
+
+            {!loadError && !loading && sortedRequests.length === 0 && (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                No pending requisitions addressed to your organization.
+              </p>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {sortedRequests.map((req) => (
@@ -127,17 +158,14 @@ export default function ExternalAuthority() {
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span className="mono-text" style={{ fontSize: '11px' }}>{req.id}</span>
-                    <StatusChip status="pending" label={`Open ${req.days_open} days`} />
+                    <span className="mono-text" style={{ fontSize: '11px' }}>{req.case_number}</span>
+                    <StatusChip status="pending" label={req.status} />
                   </div>
                   <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-text-primary)' }}>
-                    {req.request_type}
+                    {req.doc_type_expected || 'Evidence'}
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                    Requested by: {req.requesting_officer} (Case: {req.case_number})
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-primary)', marginTop: '4px', fontWeight: 500 }}>
-                    Target: {req.target_subject}
+                    Requested {new Date(req.created_at).toLocaleDateString()}
                   </div>
                 </div>
               ))}
@@ -155,40 +183,16 @@ export default function ExternalAuthority() {
                     Requisition Target
                   </div>
                   <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>
-                    {selectedReq.request_type}
+                    {selectedReq.doc_type_expected || 'Evidence'}
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                    Case Docket: {selectedReq.case_number} · Requisition ID: {selectedReq.id}
+                    Case Docket: {selectedReq.case_number}
                   </div>
                 </div>
 
                 <form onSubmit={handleSubmitReport}>
                   <div className="form-group">
-                    <label className="form-label">Report Reference / Lab Docket Number</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. FSL-DL-2026-REPORT-941"
-                      value={reportTitle}
-                      onChange={(e) => setReportTitle(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Official Findings Summary (Section 293 CrPC)</label>
-                    <textarea
-                      className="form-textarea"
-                      placeholder="Provide certified findings and methodology..."
-                      value={reportNotes}
-                      onChange={(e) => setReportNotes(e.target.value)}
-                      required
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Signed Official PDF Report</label>
+                    <label className="form-label">Signed Official Report File</label>
                     <input
                       type="file"
                       className="form-input"
@@ -197,8 +201,8 @@ export default function ExternalAuthority() {
                     />
                   </div>
 
-                  <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
-                    Submit Report & Commit to Chain of Custody
+                  <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={submitting}>
+                    {submitting ? 'Submitting...' : 'Submit Report & Commit to Chain of Custody'}
                   </button>
                 </form>
               </div>

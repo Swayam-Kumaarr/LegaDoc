@@ -17,4 +17,8 @@ COPY workers/ai_parser_worker/worker.py .
 # needs to read Document.raw_text or write DocumentSensitivityTag rows.
 COPY api/app /api/app
 
-CMD ["celery", "-A", "worker", "worker", "--loglevel=info"]
+# -Q ai_parser_worker: see chain_worker/Dockerfile for why this flag is
+# required — without it this container silently discards tasks meant for
+# the other workers (and vice versa), since all three would otherwise
+# share Celery's single default "celery" queue.
+CMD ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "ai_parser_worker"]

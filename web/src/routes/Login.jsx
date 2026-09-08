@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
@@ -65,15 +65,13 @@ const NODE_ARCS = [
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, testCredentials } = useAuth();
+  const { login } = useAuth();
   const { language, setLanguage, t, supportedLanguages } = useI18n();
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [showTestDrawer, setShowTestDrawer] = useState(false);
-
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -88,12 +86,6 @@ export default function Login() {
     } else {
       setError(result.error || "Authentication failed. Please verify your government credentials.");
     }
-  };
-
-  const handleSelectTestAccount = (acc) => {
-    setIdentifier(acc.email);
-    setPassword('GovSecure@2026');
-    setError(null);
   };
 
   return (
@@ -112,58 +104,58 @@ export default function Login() {
 
         {/* Authentic India Dot Map via GeeksforGeeks C Run-Length Algorithm */}
         <div className="map-wrap">
-            <svg className="india-map" viewBox="0 0 380 430" xmlns="http://www.w3.org/2000/svg">
-              {/* GfG Algorithm Dot Layer */}
-              <g id="dotLayer" fill="#334155">
-                {GFG_DOTS.map((d, i) => (
-                  <circle key={i} cx={d.cx} cy={d.cy} r={d.r} />
-                ))}
-              </g>
+          <svg className="india-map" viewBox="0 0 380 430" xmlns="http://www.w3.org/2000/svg">
+            {/* GfG Algorithm Dot Layer */}
+            <g id="dotLayer" fill="#334155">
+              {GFG_DOTS.map((d, i) => (
+                <circle key={i} cx={d.cx} cy={d.cy} r={d.r} />
+              ))}
+            </g>
 
-              {/* Regional Hub Nodes with Pulse Animation & Labels */}
-              <g id="nodeLayer">
-                {REGIONAL_NODES.map((n, i) => (
-                  <g key={i}>
-                    <circle
-                      cx={n.x}
-                      cy={n.y}
-                      r={3.4}
-                      fill="#38BDF8"
-                      className="node-pulse"
-                    />
-                    <circle
-                      cx={n.x}
-                      cy={n.y}
-                      r={7}
-                      fill="none"
-                      stroke="#38BDF8"
-                      strokeWidth={0.8}
-                      opacity={0.4}
-                    />
-                  </g>
-                ))}
-                {/* Node Geographical Labels matching reference */}
-                <text x={152} y={124} textAnchor="end" fill="#93C5FD" fontSize="10" fontWeight="500" fontFamily="var(--font-sans)">
-                  Delhi NCR
-                </text>
-                <text x={152} y={340} textAnchor="end" fill="#93C5FD" fontSize="10" fontWeight="500" fontFamily="var(--font-sans)">
-                  Bengaluru
-                </text>
-              </g>
-
-              {/* Inter-Node Ledger Sync Arcs */}
-              <g id="arcLayer" fill="none" stroke="#38BDF8" strokeWidth={1}>
-                {NODE_ARCS.map((arc, i) => (
-                  <path
-                    key={i}
-                    d={arc.d}
-                    className="arc-path"
-                    style={{ animationDelay: arc.delay }}
+            {/* Regional Hub Nodes with Pulse Animation & Labels */}
+            <g id="nodeLayer">
+              {REGIONAL_NODES.map((n, i) => (
+                <g key={i}>
+                  <circle
+                    cx={n.x}
+                    cy={n.y}
+                    r={3.4}
+                    fill="#38BDF8"
+                    className="node-pulse"
                   />
-                ))}
-              </g>
-            </svg>
-          </div>
+                  <circle
+                    cx={n.x}
+                    cy={n.y}
+                    r={7}
+                    fill="none"
+                    stroke="#38BDF8"
+                    strokeWidth={0.8}
+                    opacity={0.4}
+                  />
+                </g>
+              ))}
+              {/* Node Geographical Labels matching reference */}
+              <text x={152} y={124} textAnchor="end" fill="#93C5FD" fontSize="10" fontWeight="500" fontFamily="var(--font-sans)">
+                Delhi NCR
+              </text>
+              <text x={152} y={340} textAnchor="end" fill="#93C5FD" fontSize="10" fontWeight="500" fontFamily="var(--font-sans)">
+                Bengaluru
+              </text>
+            </g>
+
+            {/* Inter-Node Ledger Sync Arcs */}
+            <g id="arcLayer" fill="none" stroke="#38BDF8" strokeWidth={1}>
+              {NODE_ARCS.map((arc, i) => (
+                <path
+                  key={i}
+                  d={arc.d}
+                  className="arc-path"
+                  style={{ animationDelay: arc.delay }}
+                />
+              ))}
+            </g>
+          </svg>
+        </div>
 
         {/* --- Statutory Slogans & Regulatory Chips --- */}
         <div className="mt-4 pt-4 border-t border-slate-700/60 flex flex-col items-center text-center space-y-3 max-w-lg mx-auto authority-slogan-section">
@@ -176,9 +168,6 @@ export default function Login() {
               Securing admissible judicial custody across State Police Directorates, Forensic Laboratories, and High Court registries.
             </p>
           </div>
-
-
-
         </div>
       </div>
 
@@ -217,7 +206,7 @@ export default function Login() {
 
           {error && <div className="alert alert-error" role="alert">{error}</div>}
 
-          {/* --- Security Clearance Advisory (Place above input fields) --- */}
+          {/* --- Security Clearance Advisory --- */}
           <div className="flex gap-2.5 p-3 mb-5 rounded-md border border-amber-200 bg-amber-50 text-amber-900 text-left">
             <svg className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -264,7 +253,7 @@ export default function Login() {
             <button
               type="submit"
               className="btn btn-primary"
-              style={{ width: '100%', marginTop: '14px', padding: '10px' }}
+              style={{ width: '100%', marginTop: '8px' }}
               disabled={loading}
             >
               {loading ? 'Verifying Authoritative Credentials...' : 'Sign In & Authorize'}
@@ -279,67 +268,8 @@ export default function Login() {
               </span>
             </div>
           </form>
-
-          {/* Official Pre-Registered Identities Drawer */}
-          <div style={{ marginTop: '20px', paddingTop: '14px', borderTop: '1px solid var(--color-border)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="text-label" style={{ fontSize: '11px', color: 'var(--color-text-primary)' }}>
-                Pre-Registered Official Personas
-              </span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setShowTestDrawer(!showTestDrawer)}
-              >
-                {showTestDrawer ? 'Hide Personas' : 'Show Personas'}
-              </button>
-            </div>
-
-            {showTestDrawer && (
-              <div style={{ marginTop: '12px' }}>
-                <p className="text-caption" style={{ marginBottom: '8px' }}>
-                  Select an official role to populate authoritative credentials:
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
-                  {testCredentials.map((acc) => (
-                    <div
-                      key={acc.email}
-                      onClick={() => handleSelectTestAccount(acc)}
-                      style={{
-                        padding: '6px 10px',
-                        borderRadius: 'var(--radius)',
-                        border: '1px solid var(--color-border)',
-                        background: 'var(--color-surface-subtle)',
-                        cursor: 'pointer',
-                        fontSize: '11px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                          {acc.designation}
-                        </div>
-                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
-                          {acc.service_id} · {acc.email}
-                        </div>
-                      </div>
-                      <span className="status-chip status-chip-neutral" style={{ fontSize: '9px', padding: '1px 5px' }}>
-                        {acc.role_label}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-
-
         </div>
       </div>
     </div>
   );
 }
-

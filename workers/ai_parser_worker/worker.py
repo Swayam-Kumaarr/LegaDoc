@@ -165,6 +165,52 @@ class LegalPIIRecognizer:
         return findings
 
 
+class CredentialIDRecognizer:
+    """Pattern recognizers for the government/institutional ID formats this
+    system's onboarding flow expects — a POSITIVE-extraction counterpart to
+    LegalPIIRecognizer above (that one finds PII to hide; this one finds an
+    identifier to surface and compare against a claimed identity). Patterns
+    are deliberately permissive — this is candidate extraction for a human
+    reviewer to confirm, not a validator that rejects real IDs for not
+    matching a guessed format exactly.
+    """
+
+    PATTERNS = [
+        # Government service/badge ID — matches the shape already used
+        # throughout seed_data.py: "DL-POL-4921", "MHA-ADM-001", "CFSL-DIR-91",
+        # "DEL-JUD-082", "NCRB-STAT-21" — 2-3 hyphen-separated alphanumeric
+        # groups, letters-heavy on the first two, digits on the last.
+        {
+            "entity_type": "GOVT_SERVICE_ID",
+            "regex": re.compile(r"\b[A-Z]{2,6}-[A-Z]{2,6}-\d{2,6}\b"),
+            "confidence": 80,
+        },
+        # Bar Council of India enrollment number — "<State Code>/<Number>/<Year>",
+        # e.g. "D/1234/2015", "DL/4521/2018", "MAH/998/2011".
+        {
+            "entity_type": "BAR_ENROLLMENT_NUMBER",
+            "regex": re.compile(r"\b[A-Z]{1,4}/\d{1,6}/(?:19|20)\d{2}\b"),
+            "confidence": 85,
+        },
+    ]
+
+    @classmethod
+    def find_spans(cls, text: str) -> List[Dict[str, Any]]:
+        if not text:
+            return []
+        findings: List[Dict[str, Any]] = []
+        for p in cls.PATTERNS:
+            for match in p["regex"].finditer(text):
+                findings.append({
+                    "entity_type": p["entity_type"],
+                    "value": match.group(0),
+                    "span_start": match.start(),
+                    "span_end": match.end(),
+                    "confidence": p["confidence"],
+                })
+        return findings
+
+
 def _resolve_overlapping_spans(spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Sorts spans by start offset and resolves overlapping matches by higher confidence."""
     if not spans:
@@ -187,6 +233,83 @@ def _resolve_overlapping_spans(spans: List[Dict[str, Any]]) -> List[Dict[str, An
     return resolved
 
 
+_analyzer_engine = None
+_analyzer_engine_init_failed = False
+
+# Presidio ships recognizers for many jurisdictions and enables all of them
+# when `entities` is not passed to analyze(). On Indian legal text that
+# produced confident nonsense — a recorded timestamp matched UK_NHS, and
+# "Sec"/"CrPC" matched ORGANIZATION.
+#
+# ORGANIZATION and DATE_TIME are deliberately absent. Masking a statute
+# reference or a seizure date does not protect anyone and actively destroys
+# the document: "[REDACTED:ORGANIZATION] 161 [REDACTED:ORGANIZATION]" is not
+# a usable record of a statement recorded under Sec 161 CrPC, and a panchnama
+# whose date is masked is worth little as evidence.
+#
+# Indian identifiers (Aadhaar, PAN, and the rest) are not in this list
+# because Presidio has no recognizer for them — LegalPIIRecognizer below
+# handles those natively, and its spans are merged in separately.
+PRESIDIO_ENTITIES = [
+    "PERSON",
+    "PHONE_NUMBER",
+    "EMAIL_ADDRESS",
+    "LOCATION",
+    "CREDIT_CARD",
+    "IBAN_CODE",
+    "IP_ADDRESS",
+]
+
+# Presidio scores 0.0-1.0. Below this a match is weak enough that masking it
+# costs more in destroyed text than it saves in protected PII; the native
+# recognizer carries the identifiers we actually care about at full
+# confidence regardless of this threshold.
+PRESIDIO_SCORE_THRESHOLD = 0.5
+
+
+def _get_analyzer_engine():
+    """Lazily builds and caches ONE Presidio AnalyzerEngine, explicitly
+    configured to use en_core_web_sm — the model the Dockerfile actually
+    pre-downloads (`python -m spacy download en_core_web_sm`). A bare
+    AnalyzerEngine() ignores that entirely: Presidio's own default reaches
+    for en_core_web_lg (588MB) regardless of what's already on disk, so
+    every fresh container was quietly trying to download the large model
+    from scratch at the first real request — confirmed live: a single
+    extraction task sat downloading a 587.7MB wheel before it could do
+    anything, the same "en_core_web_lg downloaded instead of _sm" issue
+    already fixed once for the Dockerfile's build step, but never actually
+    wired into the code that decides which model to load at runtime.
+    Cached at module level rather than rebuilt per call — spaCy pipeline
+    construction has real, avoidable cost otherwise.
+
+    Returns None (rather than raising) if construction fails, so a bad
+    Presidio/spaCy environment degrades to the native LegalPIIRecognizer
+    instead of losing the whole parse — this worker's real job is finding
+    Aadhaar/PAN/CrPC references, which the native recognizer catches with
+    or without Presidio."""
+    global _analyzer_engine, _analyzer_engine_init_failed
+    if _analyzer_engine_init_failed:
+        return None
+    if _analyzer_engine is None:
+        try:
+            from presidio_analyzer.nlp_engine import NlpEngineProvider
+            provider = NlpEngineProvider(nlp_configuration={
+                "nlp_engine_name": "spacy",
+                "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+            })
+            _analyzer_engine = AnalyzerEngine(
+                nlp_engine=provider.create_engine(),
+                supported_languages=["en"],
+            )
+        except Exception as exc:
+            # Deliberately no fallback to a bare AnalyzerEngine(): that is
+            # the path that reaches for en_core_web_lg and downloads/OOMs.
+            logger.warning(f"Presidio AnalyzerEngine initialisation failed: {exc}")
+            _analyzer_engine_init_failed = True
+            return None
+    return _analyzer_engine
+
+
 def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List[Dict[str, Any]]:
     """Runs entity detection over raw text:
     1. Runs Presidio Analyzer if available in environment.
@@ -195,11 +318,19 @@ def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List
     """
     all_spans: List[Dict[str, Any]] = []
 
-    # 1. Presidio extraction if engine is present
-    if _HAS_PRESIDIO:
+    # 1. Presidio extraction if engine is present. Restricted to
+    # PRESIDIO_ENTITIES and PRESIDIO_SCORE_THRESHOLD — left unrestricted,
+    # Presidio enables every jurisdiction's recognizers at once and
+    # mislabels ordinary Indian legal text (see PRESIDIO_ENTITIES above).
+    analyzer = _get_analyzer_engine() if _HAS_PRESIDIO else None
+    if analyzer is not None:
         try:
-            analyzer = AnalyzerEngine()
-            results = analyzer.analyze(text=text, language="en")
+            results = analyzer.analyze(
+                text=text,
+                language="en",
+                entities=PRESIDIO_ENTITIES,
+                score_threshold=PRESIDIO_SCORE_THRESHOLD,
+            )
             for res in results:
                 ent_type = res.entity_type
                 if ent_type == "US_PHONE_NUMBER":
@@ -394,3 +525,149 @@ def tag_document(self, document_id: str):
 def tag_case_diary_entry(self, case_diary_entry_id: str):
     """Celery task entrypoint for case diary auto-tagging."""
     return process_tag_case_diary_entry(case_diary_entry_id)
+
+
+def _normalize_for_compare(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip().upper())
+
+
+def _name_similarity(claimed: str, extracted: str) -> float:
+    """0.0-1.0. difflib's SequenceMatcher, not a new dependency — good
+    enough for "does this look like the same name", which is all this
+    feeds into (a human still makes the actual approve/reject call)."""
+    import difflib
+    a, b = _normalize_for_compare(claimed), _normalize_for_compare(extracted)
+    if not a or not b:
+        return 0.0
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def process_extract_credential_fields(credential_document_id: str, db: Optional[Any] = None) -> str:
+    """Core orchestration for onboarding credential extraction:
+    1. Reads CredentialDocument.raw_text (OCR output).
+    2. Extracts a candidate PERSON name (Presidio) and a candidate ID number
+       (CredentialIDRecognizer).
+    3. Compares both against the parent UserApplication's claimed identity.
+    4. Sets match_status — 'matched' only if both compare well; 'mismatch'
+       if either clearly conflicts; 'needs_review' whenever extraction is
+       incomplete or ambiguous. This NEVER approves an application by
+       itself — match_status is input to a config_admin's decision, same
+       fail-closed posture as document redaction elsewhere in this system.
+    """
+    session = db if db is not None else SessionLocal()
+    try:
+        doc_uuid = credential_document_id if isinstance(credential_document_id, UUID) else UUID(str(credential_document_id))
+        cred_doc = session.get(models.CredentialDocument, doc_uuid)
+        if cred_doc is None:
+            raise ValueError(f"CredentialDocument {credential_document_id} not found")
+
+        if not cred_doc.raw_text or not cred_doc.raw_text.strip():
+            cred_doc.status = "needs_review"
+            cred_doc.match_status = "needs_review"
+            session.commit()
+            return "needs_review"
+
+        application = session.get(models.UserApplication, cred_doc.application_id)
+        text = cred_doc.raw_text
+
+        # Candidate name: highest-confidence PERSON span from the same
+        # combined Presidio + LegalPIIRecognizer pass every other document
+        # in this system uses (parse_text_for_sensitive_spans) — not a
+        # Presidio-only call, since Presidio is an optional dependency and
+        # LegalPIIRecognizer's Indian-honorific/police-rank patterns are
+        # often the only thing that actually fires on this kind of text.
+        candidate_name = None
+        MIN_PLAUSIBLE_NAME_LEN = 5  # "Xu Li" is short but real; "Ra" or "Fnk" never is
+        person_spans = [
+            s for s in parse_text_for_sensitive_spans(text)
+            if s["entity_type"] == "PERSON" and (s["span_end"] - s["span_start"]) >= MIN_PLAUSIBLE_NAME_LEN
+        ]
+        if person_spans:
+            # Confirmed live: Presidio's statistical NER (spaCy, now actually
+            # running after the en_core_web_sm fix above) confidently
+            # mis-tagged 2-3 character OCR-garbled fragments as PERSON at a
+            # HIGHER confidence (85) than the deterministic "Name:" regex
+            # match found for the real name one line above it (fixed at 80)
+            # — so sorting by confidence first picked the fragment. The
+            # length filter above removes anything too short to plausibly be
+            # a name in the first place; among what's left, prefer the
+            # longer match, then confidence, since a longer structured-
+            # pattern match is more trustworthy on this kind of labeled-form
+            # text than a marginally higher NER confidence score.
+            best = max(person_spans, key=lambda s: (s["span_end"] - s["span_start"], s["confidence"]))
+            raw_match = text[best["span_start"]:best["span_end"]]
+            # The capturing regex can run on past a line break onto the next
+            # OCR line (e.g. "...Rao\nService ID") — a name never legitimately
+            # spans a newline, so cut there.
+            candidate_name = raw_match.split("\n")[0].strip()
+
+        # Candidate ID number: first ID-shaped match found.
+        id_spans = CredentialIDRecognizer.find_spans(text)
+        candidate_id = id_spans[0]["value"] if id_spans else None
+
+        extracted_fields = {
+            "name": candidate_name,
+            "id_number": candidate_id,
+        }
+
+        name_score = _name_similarity(application.name, candidate_name) if (application and candidate_name) else 0.0
+        id_match = (
+            bool(application and candidate_id and application.claimed_credential_id)
+            and _normalize_for_compare(application.claimed_credential_id) == _normalize_for_compare(candidate_id)
+        )
+        extracted_fields["name_similarity"] = round(name_score, 2)
+        extracted_fields["id_number_exact_match"] = id_match
+
+        if candidate_name is None or candidate_id is None:
+            match_status = "needs_review"  # incomplete extraction — never guess
+        elif name_score >= 0.75 and id_match:
+            match_status = "matched"
+        elif name_score < 0.4 or (candidate_id and application and application.claimed_credential_id and not id_match):
+            match_status = "mismatch"
+        else:
+            match_status = "needs_review"
+
+        cred_doc.extracted_fields = extracted_fields
+        cred_doc.match_status = match_status
+        cred_doc.status = "ready"
+        session.commit()
+        session.refresh(cred_doc)
+
+        write_audit_log(
+            session,
+            action="credential_fields_extracted",
+            actor_user_id=cred_doc.uploaded_by,
+            target_type="credential_document",
+            target_id=cred_doc.id,
+            metadata={
+                "application_id": str(cred_doc.application_id),
+                "match_status": match_status,
+                "name_similarity": extracted_fields["name_similarity"],
+                "id_number_exact_match": id_match,
+                # deliberately no candidate_name/candidate_id here — same
+                # rule as every other audit entry in this system: never put
+                # raw extracted personal data into audit log metadata.
+            },
+        )
+
+        return match_status
+
+    except Exception as exc:
+        logger.exception(f"AI Parser Worker failure on credential document {credential_document_id}: {exc}")
+        try:
+            if "cred_doc" in locals() and cred_doc is not None:
+                cred_doc.status = "needs_review"
+                cred_doc.match_status = "needs_review"
+                session.commit()
+        except Exception:
+            session.rollback()
+        return "needs_review"
+    finally:
+        if db is None:
+            session.close()
+
+
+@app.task(name="ai_parser_worker.extract_credential_fields", bind=True, max_retries=5)
+def extract_credential_fields(self, credential_document_id: str):
+    """Celery task entrypoint for onboarding credential field extraction."""
+    return process_extract_credential_fields(credential_document_id)

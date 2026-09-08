@@ -9,6 +9,7 @@ for every IO, every time.
 
 import random
 import string
+import uuid
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -20,11 +21,15 @@ from app.audit import write_audit_log
 from app.database import get_db
 from app.queue import QueueClient, get_queue
 from app.security import (
+    _POLICE_SPECIALIST_ROLES,
+    _UNRESTRICTED_CASE_ROLES,
+    EXTERNAL_AUTHORITY_ROLE,
     assert_case_access,
     get_current_claims,
     require_role,
     verify_case_access,
 )
+from app.storage import ObjectStorage, get_storage, object_key, sha256_hex
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -44,15 +49,26 @@ def register_fir(
     body: schemas.RegisterFIRRequest,
     claims: dict = Depends(require_role("duty_officer")),
     db: Session = Depends(get_db),
+    storage: ObjectStorage = Depends(get_storage),
+    queue_client: QueueClient = Depends(get_queue),
 ):
-    """POST /cases — Duty Officer. Register FIR, create case. See Flow 1.
+    """POST /cases — Duty Officer. Register FIR, create case, AND ingest the
+    complaint narrative as the case's first Document (doc_type="FIR") in the
+    same request — Track A (hash commit) and Track B (redaction) dispatch
+    exactly like any other document upload (see POST /documents), just
+    skipping OCR: the text is already typed, not scanned, so there's
+    nothing to extract — ai_parser_worker.tag_document is enqueued directly
+    against the raw_text this endpoint already has. See Flow 1.
 
-    Scope note: this baseline creates the Case row and assigns a
-    case_number. It does NOT yet create the linked complaint Document row
-    or enqueue the blockchain hash-write job (arrow #5 in System
-    Connections) — those need Object Storage and a live queue, neither of
-    which this environment has running. Wire them in once MinIO/Redis are
-    actually available; the Case row itself is real and durable now.
+    This used to only create the bare Case row: "does NOT yet create the
+    linked complaint Document row... those need Object Storage and a live
+    queue, neither of which this environment has running." MinIO and Redis
+    have been up and working the whole time this session — nobody had
+    circled back. The real consequence: every complaint narrative ever
+    typed into the FIR form was silently discarded server-side. It was
+    never stored, never redacted, never hash-chained, and the "Ingest
+    Evidence" step was a fully disconnected second action an officer had
+    to separately remember to do for the exact same text.
     """
     case = models.Case(
         case_number=_generate_case_number(body.crime_type),
@@ -60,8 +76,51 @@ def register_fir(
         investigation_status="FIR_Registered",
     )
     db.add(case)
+    db.flush()  # assigns case.id without committing, so it can key the document below
+
+    user = db.get(models.User, UUID(claims["sub"]))
+    org_id = user.org_id if user else case.id
+
+    doc_id = uuid.uuid4()
+    text_bytes = body.complaint_text.encode("utf-8")
+    doc_hash = sha256_hex(text_bytes)
+    key = object_key(org_id, case.id, doc_id, 1)
+    storage.put(key, text_bytes, content_type="text/plain")
+
+    document = models.Document(
+        id=doc_id,
+        case_id=case.id,
+        doc_type="FIR",
+        version=1,
+        storage_path=key,
+        raw_text=body.complaint_text,
+        doc_hash=doc_hash,
+        status="processing",
+        chain_status="pending",
+        uploaded_by=UUID(claims["sub"]),
+    )
+    db.add(document)
     db.commit()
     db.refresh(case)
+    db.refresh(document)
+
+    idempotency_key = f"{document.id}:v{document.version}"
+    # Track A — hash commit, same as any other document upload.
+    queue_client.enqueue("chain_worker.write_hash", document_id=str(document.id), idempotency_key=idempotency_key)
+    # Track B — redaction. No OCR dispatch: raw_text is already set above,
+    # so tag_document has everything it needs without an extraction step.
+    queue_client.enqueue("ai_parser_worker.tag_document", document_id=str(document.id))
+
+    write_audit_log(
+        db,
+        action="fir_registered",
+        case_id=case.id,
+        actor_user_id=UUID(claims["sub"]),
+        target_type="case",
+        target_id=case.id,
+        metadata={"crime_type": body.crime_type, "document_id": str(document.id), "doc_hash": doc_hash},
+    )
+
     return case
 
 
@@ -70,23 +129,81 @@ def list_cases(claims: dict = Depends(get_current_claims), db: Session = Depends
     """GET /cases — Any authenticated role. List cases, filtered by role/org
     visibility. Paginated, filterable by crime_type/status.
 
-    Baseline scoping: Config Admin/Security Auditor/Court/Prosecutor/Duty
-    Officer/SHO see every case (matches the Access Model — these roles need
-    cross-case visibility to do their job). An IO sees only cases they're
-    assigned to, same rule as verify_case_access. Pagination and
-    crime_type/status filtering are not implemented yet — this returns
-    everything the role is allowed to see, unpaginated.
+    Every branch mirrors what assert_case_access would decide for the same
+    role, so this list never shows a row the caller cannot then open. A list
+    whose rows mostly 403 is worse than a short list: it misrepresents the
+    caller's remit and turns an authorization boundary into dead links.
+
+    Oversight roles see everything. An IO and the police specialist units see
+    their assigned cases, a Duty Officer the FIRs it registered, and an
+    External Authority the cases it holds a Section 91 requisition on. Every
+    other role gets an empty list — see the default branch.
+
+    Pagination and crime_type/status filtering are not implemented yet — this
+    returns everything the role is allowed to see, unpaginated.
     """
     role = claims.get("role")
-    if role == "io":
+
+    if role in _UNRESTRICTED_CASE_ROLES:
+        return db.query(models.Case).all()
+
+    if role in (_POLICE_SPECIALIST_ROLES | {"io"}):
+        # Assignment-scoped, matching assert_case_access. duty_officer is
+        # handled separately below and is excluded from this set there.
+        if role != "duty_officer":
+            user_id = UUID(claims["sub"])
+            return (
+                db.query(models.Case)
+                .join(models.CaseAssignment, models.CaseAssignment.case_id == models.Case.id)
+                .filter(models.CaseAssignment.io_user_id == user_id)
+                .all()
+            )
+
+    if role == "duty_officer":
         user_id = UUID(claims["sub"])
         return (
             db.query(models.Case)
-            .join(models.CaseAssignment, models.CaseAssignment.case_id == models.Case.id)
-            .filter(models.CaseAssignment.io_user_id == user_id)
+            .join(models.AuditLog, models.AuditLog.case_id == models.Case.id)
+            .filter(
+                models.AuditLog.actor_user_id == user_id,
+                models.AuditLog.action == "fir_registered",
+            )
+            .distinct()
             .all()
         )
-    return db.query(models.Case).all()
+
+    if role == EXTERNAL_AUTHORITY_ROLE:
+        # The only case link an external organization has is a requisition
+        # routed to it. Anything beyond that is somebody else's investigation:
+        # the authority portal's own banner promises "no access to the broader
+        # case docket", and returning the full registry contradicted it.
+        org_id = claims.get("org_id")
+        try:
+            org_uuid = UUID(str(org_id))
+        except (TypeError, ValueError):
+            return []
+        return (
+            db.query(models.Case)
+            .join(models.EvidenceRequest, models.EvidenceRequest.case_id == models.Case.id)
+            .filter(models.EvidenceRequest.requested_org_id == org_uuid)
+            .distinct()
+            .all()
+        )
+
+    # Default-deny for every remaining role — currently Defense and the
+    # NCRB analyst. Both previously received the entire case registry, which
+    # is how a defense advocate could enumerate every case in the state,
+    # domestic-violence matters included.
+    #
+    # An empty list rather than a 403 because this is a collection endpoint
+    # and "no cases are linked to you" is the truthful answer, not an error.
+    #
+    # Neither role can be scoped properly yet: nothing in the schema links a
+    # Defense advocate to the case they are engaged on (BailRecord records no
+    # actor), so a real engagement link is schema work, not a filter. The NCRB
+    # analyst's aggregate view is /reports/case-metadata, which is the
+    # endpoint that role should be using.
+    return []
 
 
 @router.get("/{case_id}", response_model=schemas.CaseResponse)
@@ -410,3 +527,35 @@ def file_charge_sheet(
     )
 
     return case
+
+
+@router.get("/{case_id}/documents", response_model=list[schemas.DocumentReviewItem])
+def list_case_documents(
+    case_id: str,
+    claims: dict = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
+    """GET /cases/:id/documents — Role-filtered (same rule as GET /cases/:id).
+    Lists every document version uploaded against this case — metadata only
+    (doc_type, version, hash, status, chain_status), same DocumentReviewItem
+    shape as the needs-review queue, for the same reason: raw_text is never
+    bulk-listed, only ever returned one document at a time via
+    GET /documents/:id, which applies the real redaction-view rules.
+    """
+    try:
+        case_uuid = UUID(case_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
+
+    case = db.get(models.Case, case_uuid)
+    if case is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
+
+    assert_case_access(case_uuid, claims, db)
+
+    return (
+        db.query(models.Document)
+        .filter(models.Document.case_id == case_uuid)
+        .order_by(models.Document.created_at.desc())
+        .all()
+    )

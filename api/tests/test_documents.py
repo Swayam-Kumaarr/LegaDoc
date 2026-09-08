@@ -59,10 +59,15 @@ def test_upload_text_document_enqueues_both_tracks(client, make_user, db_session
     assert body["chain_status"] == "pending"
     assert body["version"] == 1
 
-    task_names = {job["task_name"] for job in fake_queue.enqueued}
+    # Filtered to this document's own jobs: _setup_case_with_io's FIR
+    # registration enqueues its own chain_worker.write_hash and
+    # ai_parser_worker.tag_document for the complaint-narrative document —
+    # unrelated to this upload's tracks, but present in the same fake_queue.
+    own_jobs = [j for j in fake_queue.enqueued if j["kwargs"].get("document_id") == body["id"]]
+    task_names = {job["task_name"] for job in own_jobs}
     assert task_names == {"chain_worker.write_hash", "ocr_worker.extract_document"}
 
-    chain_job = next(j for j in fake_queue.enqueued if j["task_name"] == "chain_worker.write_hash")
+    chain_job = next(j for j in own_jobs if j["task_name"] == "chain_worker.write_hash")
     assert chain_job["kwargs"]["idempotency_key"] == f"{body['id']}:v1"
 
 
@@ -80,7 +85,10 @@ def test_upload_binary_evidence_skips_ocr_and_goes_straight_to_ready(client, mak
     body = resp.json()
     assert body["status"] == "ready"  # nothing to OCR or redact in a video
 
-    task_names = {job["task_name"] for job in fake_queue.enqueued}
+    # Filtered to this document's own jobs — see the comment in
+    # test_upload_text_document_enqueues_both_tracks above.
+    own_jobs = [j for j in fake_queue.enqueued if j["kwargs"].get("document_id") == body["id"]]
+    task_names = {job["task_name"] for job in own_jobs}
     assert task_names == {"chain_worker.write_hash"}  # Track B never enqueued
 
 
@@ -234,13 +242,18 @@ def test_retry_chain_write_reenqueues_with_the_same_idempotency_key(client, make
         files={"file": ("statement.txt", b"content", "text/plain")},
         headers=auth_headers(io_token),
     ).json()["id"]
-    original_key = next(j for j in fake_queue.enqueued if j["task_name"] == "chain_worker.write_hash")["kwargs"]["idempotency_key"]
+    # Filtered to this document's own chain-write jobs — _setup_case_with_io's
+    # FIR registration enqueues its own chain_worker.write_hash for the
+    # complaint-narrative document, which would otherwise be the first (and
+    # wrong) match here.
+    own_chain_jobs = lambda: [j for j in fake_queue.enqueued if j["task_name"] == "chain_worker.write_hash" and j["kwargs"].get("document_id") == doc_id]
+    original_key = own_chain_jobs()[0]["kwargs"]["idempotency_key"]
 
     resp = client.post(f"/documents/{doc_id}/retry-chain-write", headers=auth_headers(admin_token))
 
     assert resp.status_code == 200
     assert resp.json()["retry_enqueued"] is True
-    retry_jobs = [j for j in fake_queue.enqueued if j["task_name"] == "chain_worker.write_hash"]
+    retry_jobs = own_chain_jobs()
     assert len(retry_jobs) == 2  # original upload + this retry
     assert retry_jobs[1]["kwargs"]["idempotency_key"] == original_key  # same key, not a fresh one
 
@@ -311,18 +324,22 @@ def test_redact_tag_adds_a_correction_and_extends_the_audit_hash_chain(client, m
     assert len(tags) == 1
     assert tags[0].source == "officer_correction"
 
-    # Upload wrote one audit_log entry, redact-tag wrote a second — the
-    # chain must still verify end to end.
+    # _setup_case_with_io's FIR registration wrote the first entry
+    # (fir_registered), the explicit upload above wrote a second
+    # (document_uploaded), and redact-tag wrote a third — the chain must
+    # still verify end to end across all three.
     entries = db_session.query(models.AuditLog).order_by(models.AuditLog.created_at.asc()).all()
-    assert len(entries) == 2
-    assert entries[0].action == "document_uploaded"
+    assert len(entries) == 3
+    assert entries[0].action == "fir_registered"
     assert entries[0].prev_hash is None
-    assert entries[1].action == "redact_tag_correction"
+    assert entries[1].action == "document_uploaded"
     assert entries[1].prev_hash == entries[0].row_hash
+    assert entries[2].action == "redact_tag_correction"
+    assert entries[2].prev_hash == entries[1].row_hash
     assert verify_chain_intact(db_session)
 
     # And the metadata never contains the actual phone number — only the span.
-    assert "9876543210" not in str(entries[1].action_metadata)
+    assert "9876543210" not in str(entries[2].action_metadata)
 
 
 def test_upload_disguised_executable_rejected_by_magic_bytes(client, make_user, db_session):
@@ -370,11 +387,16 @@ def test_upload_deduplication_returns_existing_document(client, make_user, db_se
     case, io, io_token = _setup_case_with_io(client, make_user, db_session)
     pdf_content = b"%PDF-1.4 sample pdf content for dedup testing"
 
+    # doc_type "Panchnama", not "FIR" — _setup_case_with_io's FIR registration
+    # already created a version-1 "FIR" document for this case; using that
+    # same doc_type here would make this test's own "Upload 1" land as v2 and
+    # break the version/count assertions below for reasons unrelated to what
+    # this test actually verifies.
     # Upload 1
     resp1 = client.post(
         "/documents",
-        data={"case_id": case["id"], "doc_type": "FIR"},
-        files={"file": ("fir.pdf", pdf_content, "application/pdf")},
+        data={"case_id": case["id"], "doc_type": "Panchnama"},
+        files={"file": ("panchnama.pdf", pdf_content, "application/pdf")},
         headers=auth_headers(io_token),
     )
     assert resp1.status_code == 202
@@ -384,8 +406,8 @@ def test_upload_deduplication_returns_existing_document(client, make_user, db_se
     # Upload 2 (identical content)
     resp2 = client.post(
         "/documents",
-        data={"case_id": case["id"], "doc_type": "FIR"},
-        files={"file": ("fir_copy.pdf", pdf_content, "application/pdf")},
+        data={"case_id": case["id"], "doc_type": "Panchnama"},
+        files={"file": ("panchnama_copy.pdf", pdf_content, "application/pdf")},
         headers=auth_headers(io_token),
     )
     assert resp2.status_code == 202
@@ -395,7 +417,7 @@ def test_upload_deduplication_returns_existing_document(client, make_user, db_se
     assert doc2["id"] == doc1["id"]
     assert doc2["version"] == 1
 
-    count = db_session.query(models.Document).filter_by(case_id=UUID(case["id"])).count()
+    count = db_session.query(models.Document).filter_by(case_id=UUID(case["id"]), doc_type="Panchnama").count()
     assert count == 1
 
 
@@ -763,6 +785,37 @@ def test_upload_with_pdf_launch_or_javascript_exploit_rejected(client, make_user
     assert "malicious PDF action '/JavaScript'" in resp_js.json()["detail"]
 
 
+def test_upload_benign_pdf_with_coincidental_token_bytes_in_a_stream_is_not_rejected(client, make_user, db_session):
+    """Regression test for a real false positive found live: a genuine,
+    entirely benign government FIR PDF (real embedded images/fonts) was
+    rejected as malicious because the raw byte sequence "/JS" happened to
+    occur, purely by coincidence, inside a compressed image stream — no
+    more meaningful there than anywhere else in a large binary blob. A
+    dangerous action is only ever DEFINED in a PDF's plaintext object
+    dictionary syntax, never inside a stream's own opaque payload, so the
+    scanner must not flag matches found only inside stream...endstream."""
+    case, io, io_token = _setup_case_with_io(client, make_user, db_session)
+
+    # The dangerous-looking bytes sit only inside a stream payload — never
+    # in any object's dictionary syntax — exactly like the coincidental
+    # match found in the real FIR PDF.
+    benign_pdf = (
+        b"%PDF-1.4\n"
+        b"1 0 obj\n<< /Type /Catalog >>\nendobj\n"
+        b"2 0 obj\n<< /Length 20 >>\nstream\n"
+        b"random binary /JS /Launch junk"
+        b"\nendstream\nendobj\n"
+        b"%%EOF"
+    )
+    resp = client.post(
+        "/documents",
+        data={"case_id": case["id"], "doc_type": "Witness Statement"},
+        files={"file": ("real_fir_scan.pdf", benign_pdf, "application/pdf")},
+        headers=auth_headers(io_token),
+    )
+    assert resp.status_code == 202, resp.text
+
+
 def test_upload_archive_disguised_as_pdf_rejected(client, make_user, db_session):
     """Polyglot archive defense: Disguised zip file claiming to be PDF is caught by magic bytes and rejected."""
     case, io, io_token = _setup_case_with_io(client, make_user, db_session)
@@ -959,3 +1012,31 @@ def test_legal_hold_unauthorized_role_rejected(client, make_user, db_session):
     assert "Role not permitted" in delete_attempt.json()["detail"]
 
 
+
+
+def test_malformed_document_id_returns_404_not_500(client, make_user):
+    """A non-UUID document_id (typo, probe, stale bookmark) must 404, not
+    surface an unhandled ValueError as a 500 — every document lookup route
+    parses the path param the same way. Each call uses a role that actually
+    clears that route's require_role gate, so the assertion exercises the
+    UUID parsing itself rather than stopping at a 403."""
+    make_user("io", email="io_malformed@example.com", password="pw")
+    io_token = login(client, "io_malformed@example.com", "pw").json()["access_token"]
+    make_user("config_admin", email="admin_malformed@example.com", password="pw")
+    admin_token = login(client, "admin_malformed@example.com", "pw").json()["access_token"]
+
+    garbage_id = "not-a-real-uuid"
+    calls = [
+        ("get", f"/documents/{garbage_id}", io_token, None),
+        ("get", f"/documents/{garbage_id}/versions", io_token, None),
+        ("get", f"/documents/{garbage_id}/chain-status", io_token, None),
+        ("post", f"/documents/{garbage_id}/retry-chain-write", admin_token, None),
+        ("post", f"/documents/{garbage_id}/redact-tag", io_token,
+         {"entity_type": "PERSON", "span_start": 0, "span_end": 1}),
+    ]
+    for method, path, token, body in calls:
+        kwargs = {"headers": auth_headers(token)}
+        if body is not None:
+            kwargs["json"] = body
+        resp = getattr(client, method)(path, **kwargs)
+        assert resp.status_code == 404, f"{method.upper()} {path} returned {resp.status_code}: {resp.text}"

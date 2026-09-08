@@ -4,11 +4,29 @@ import { apiClient, apiUpload } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import StatusChip from '../components/StatusChip';
 
+// Turns a thrown apiClient error into a readable string. err.detail comes
+// straight from the backend's JSON body (see client.js handleApiError) —
+// it's a plain string for most validation/permission errors here, but stay
+// defensive in case a future endpoint returns a structured object.
+function formatError(err) {
+  const detail = err?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object') {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      // fall through
+    }
+  }
+  return err?.message || 'Request failed.';
+}
+
 export default function PoliceInvestigation() {
   const { user } = useAuth();
   const [cases, setCases] = useState([]);
   const [loadingCases, setLoadingCases] = useState(false);
-  
+  const [casesError, setCasesError] = useState(null);
+
   // FIR Form State
   const [crimeType, setCrimeType] = useState('Cybercrime');
   const [complaintText, setComplaintText] = useState('');
@@ -22,43 +40,23 @@ export default function PoliceInvestigation() {
   const [uploadedDoc, setUploadedDoc] = useState(null);
 
   // Case Diary State
+  const [diaryCaseId, setDiaryCaseId] = useState('');
   const [diaryNote, setDiaryNote] = useState('');
   const [diaryStatus, setDiaryStatus] = useState(null);
 
-  // Sample Cases
-  const sampleCases = [
-    {
-      id: 'b1a2c3d4-0001-4000-8000-000000000001',
-      case_number: 'CYB-2026-482910',
-      crime_type: 'Cybercrime',
-      investigation_status: 'FIR_Registered',
-      created_at: '2026-09-02T10:30:00Z',
-      blockchain_status: 'confirmed'
-    },
-    {
-      id: 'b1a2c3d4-0002-4000-8000-000000000002',
-      case_number: 'NDP-2026-119482',
-      crime_type: 'NDPS',
-      investigation_status: 'Under_Investigation',
-      created_at: '2026-09-01T14:15:00Z',
-      blockchain_status: 'confirmed'
-    }
-  ];
-
   const fetchCases = async () => {
     setLoadingCases(true);
+    setCasesError(null);
     try {
       const data = await apiClient('/cases');
-      if (Array.isArray(data) && data.length > 0) {
-        setCases(data);
-        setSelectedCaseId(data[0].id);
-      } else {
-        setCases(sampleCases);
-        setSelectedCaseId(sampleCases[0].id);
-      }
-    } catch (_) {
-      setCases(sampleCases);
-      setSelectedCaseId(sampleCases[0].id);
+      const list = Array.isArray(data) ? data : [];
+      setCases(list);
+      // Keep the form selectors pointed at a real case, but never invent one.
+      setSelectedCaseId((prev) => (list.some((c) => c.id === prev) ? prev : (list[0]?.id || '')));
+      setDiaryCaseId((prev) => (list.some((c) => c.id === prev) ? prev : (list[0]?.id || '')));
+    } catch (err) {
+      setCases([]);
+      setCasesError(formatError(err));
     } finally {
       setLoadingCases(false);
     }
@@ -70,37 +68,37 @@ export default function PoliceInvestigation() {
 
   const handleRegisterFIR = async (e) => {
     e.preventDefault();
-    setFirStatus({ type: 'pending', msg: 'Recording FIR and committing initial hash to Fabric ledger...' });
+    setFirStatus({ type: 'pending', msg: 'Submitting FIR to the case registry...' });
     try {
       const res = await apiClient('/cases', {
         body: {
           crime_type: crimeType,
-          complaint_text: complaintText
-        }
+          complaint_text: complaintText,
+        },
       });
-      setFirStatus({ type: 'success', msg: `FIR registered successfully: Case ${res.case_number || 'New Case'}` });
+      setFirStatus({
+        type: 'success',
+        msg: `FIR registered: Case ${res.case_number} (status: ${res.investigation_status}). The complaint narrative is stored as the case's first document, queued for redaction and ledger hash commit — no separate upload needed.`,
+      });
       setComplaintText('');
       fetchCases();
     } catch (err) {
-      const mockCase = {
-        id: `mock-${Date.now()}`,
-        case_number: `${crimeType.slice(0, 3).toUpperCase()}-2026-${Math.floor(100000 + Math.random() * 900000)}`,
-        crime_type: crimeType,
-        investigation_status: 'FIR_Registered',
-        created_at: new Date().toISOString(),
-        blockchain_status: 'confirmed'
-      };
-      setCases([mockCase, ...cases]);
-      setFirStatus({ type: 'success', msg: `FIR registered: Case ${mockCase.case_number} (Fabric Track A enqueued)` });
-      setComplaintText('');
+      setFirStatus({ type: 'error', msg: `FIR registration failed: ${formatError(err)}` });
     }
   };
 
   const handleFileUpload = async (e) => {
     e.preventDefault();
-    if (!uploadFile || !selectedCaseId) return;
+    if (!uploadFile) {
+      setUploadStatus({ type: 'error', msg: 'Select a file before ingesting.' });
+      return;
+    }
+    if (!selectedCaseId) {
+      setUploadStatus({ type: 'error', msg: 'No case selected — register or select a case first.' });
+      return;
+    }
 
-    setUploadStatus({ type: 'pending', msg: 'Executing parallel tracks: Track A (SHA-256 Hashing) and Track B (OCR Redaction)...' });
+    setUploadStatus({ type: 'pending', msg: 'Uploading document and enqueuing hash + OCR processing...' });
 
     const formData = new FormData();
     formData.append('case_id', selectedCaseId);
@@ -110,28 +108,34 @@ export default function PoliceInvestigation() {
     try {
       const doc = await apiUpload('/documents', formData);
       setUploadedDoc(doc);
-      setUploadStatus({ type: 'success', msg: `Document uploaded. Hash: ${doc.doc_hash?.slice(0, 16)}... Status: ${doc.status}` });
+      setUploadStatus({
+        type: 'success',
+        msg: `Document accepted (v${doc.version}). Status: ${doc.status}, chain status: ${doc.chain_status}.`,
+      });
       setUploadFile(null);
     } catch (err) {
-      const mockUploaded = {
-        id: 'doc-' + Math.random().toString(36).substring(2, 9),
-        doc_type: docType,
-        version: 1,
-        doc_hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-        status: 'ready',
-        chain_status: 'confirmed',
-        text: `[Redacted · Victim Name] reported an incident on 2026-09-02 at [Redacted · Location]. Seized serial number [Redacted · Identifier].`
-      };
-      setUploadedDoc(mockUploaded);
-      setUploadStatus({ type: 'success', msg: `Upload processed. SHA-256: ${mockUploaded.doc_hash.slice(0, 16)}... Confirmed on ledger.` });
+      setUploadedDoc(null);
+      setUploadStatus({ type: 'error', msg: `Upload failed: ${formatError(err)}` });
     }
   };
 
-  const handleAddDiaryEntry = (e) => {
+  const handleAddDiaryEntry = async (e) => {
     e.preventDefault();
-    if (!diaryNote) return;
-    setDiaryStatus({ type: 'success', msg: 'Case Diary entry appended to tamper-evident ledger (Section 172 CrPC).' });
-    setDiaryNote('');
+    if (!diaryNote.trim()) return;
+    if (!diaryCaseId) {
+      setDiaryStatus({ type: 'error', msg: 'No case selected — register or select a case first.' });
+      return;
+    }
+    setDiaryStatus({ type: 'pending', msg: 'Submitting case diary entry...' });
+    try {
+      const entry = await apiClient(`/cases/${diaryCaseId}/case-diary`, {
+        body: { text: diaryNote },
+      });
+      setDiaryStatus({ type: 'success', msg: `Case diary entry recorded (status: ${entry.status}). It will route through redaction before becoming visible to other roles.` });
+      setDiaryNote('');
+    } catch (err) {
+      setDiaryStatus({ type: 'error', msg: `Could not add case diary entry: ${formatError(err)}` });
+    }
   };
 
   return (
@@ -151,8 +155,7 @@ export default function PoliceInvestigation() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <StatusChip status="neutral" label={`Role: ${user?.role ? user.role.replace(/_/g, ' ').toUpperCase() : 'DUTY OFFICER'}`} />
-            <StatusChip status="confirmed" label="Fabric Ledger: Active" />
+            <StatusChip status="neutral" label={`Role: ${user?.role ? user.role.replace(/_/g, ' ').toUpperCase() : 'UNKNOWN'}`} />
           </div>
         </div>
 
@@ -161,22 +164,20 @@ export default function PoliceInvestigation() {
           Sensitive fields (complainant identity, phone numbers, addresses) are redacted at the server boundary before transmission.
         </div>
 
-        {/* Operational Metrics */}
-        <div className="grid-3">
+        {/* Operational Metrics — both are real counts derived from the case
+            list above, not static policy text dressed up as a metric. */}
+        <div className="grid-2">
           <div className="stat-widget">
             <span className="stat-value">{cases.length}</span>
             <span className="stat-label">Assigned Investigation Cases</span>
-            <span className="stat-sub">Active in this jurisdiction</span>
+            <span className="stat-sub">Visible to this account</span>
           </div>
           <div className="stat-widget">
-            <span className="stat-value" style={{ color: 'var(--status-success-text)' }}>Fail-Closed</span>
-            <span className="stat-label">AI Redaction Engine Policy</span>
-            <span className="stat-sub">Automated PII masking</span>
-          </div>
-          <div className="stat-widget">
-            <span className="stat-value" style={{ color: 'var(--ink-900)' }}>100%</span>
-            <span className="stat-label">Cryptographic Ledger Integrity</span>
-            <span className="stat-sub">SHA-256 hash verified</span>
+            <span className="stat-value" style={{ color: 'var(--ink-900)' }}>
+              {cases.filter((c) => c.investigation_status && c.investigation_status !== 'FIR_Registered').length}
+            </span>
+            <span className="stat-label">Cases Past Initial Registration</span>
+            <span className="stat-sub">Beyond FIR-only stage</span>
           </div>
         </div>
 
@@ -188,7 +189,7 @@ export default function PoliceInvestigation() {
                 Active Case Worklist
               </h2>
               <span className="table-caption" style={{ marginTop: '2px', marginBottom: 0 }}>
-                {cases.length} cases assigned to this station.
+                {loadingCases ? 'Loading...' : `${cases.length} case${cases.length === 1 ? '' : 's'} visible to this account.`}
               </span>
             </div>
             <button className="btn btn-secondary" onClick={fetchCases} disabled={loadingCases} style={{ height: '32px', fontSize: '12px' }}>
@@ -196,48 +197,58 @@ export default function PoliceInvestigation() {
             </button>
           </div>
 
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Case Identifier</th>
-                  <th>Crime Classification</th>
-                  <th>Investigation Stage</th>
-                  <th>Ledger Confirmation</th>
-                  <th>Registration Date</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cases.map((c) => (
-                  <tr key={c.id}>
-                    <td>
-                      <span className="mono-text">{c.case_number}</span>
-                    </td>
-                    <td>{c.crime_type}</td>
-                    <td>
-                      <StatusChip status={c.investigation_status} label={c.investigation_status ? c.investigation_status.replace(/_/g, ' ') : 'Registered'} />
-                    </td>
-                    <td>
-                      <StatusChip status="confirmed" label="Ledger Confirmed" />
-                    </td>
-                    <td style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                      {new Date(c.created_at || Date.now()).toLocaleDateString()}
-                    </td>
-                    <td>
-                      <Link
-                        to={`/cases/${c.id}`}
-                        className="btn btn-secondary"
-                        style={{ height: '28px', fontSize: '12px', padding: '0 8px' }}
-                      >
-                        Inspect Docket
-                      </Link>
-                    </td>
+          {casesError && (
+            <div className="alert alert-warning" style={{ marginBottom: '12px' }}>
+              Could not load cases: {casesError}
+            </div>
+          )}
+
+          {!casesError && !loadingCases && cases.length === 0 && (
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+              No cases yet. Register a FIR below to create the first one.
+            </p>
+          )}
+
+          {cases.length > 0 && (
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Case Identifier</th>
+                    <th>Crime Classification</th>
+                    <th>Investigation Stage</th>
+                    <th>Registration Date</th>
+                    <th>Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {cases.map((c) => (
+                    <tr key={c.id}>
+                      <td>
+                        <span className="mono-text">{c.case_number}</span>
+                      </td>
+                      <td>{c.crime_type}</td>
+                      <td>
+                        <StatusChip status={c.investigation_status} label={c.investigation_status ? c.investigation_status.replace(/_/g, ' ') : 'Registered'} />
+                      </td>
+                      <td style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                        {c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}
+                      </td>
+                      <td>
+                        <Link
+                          to={`/cases/${c.id}`}
+                          className="btn btn-secondary"
+                          style={{ height: '28px', fontSize: '12px', padding: '0 8px' }}
+                        >
+                          Inspect Docket
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Action Forms Grid */}
@@ -246,11 +257,12 @@ export default function PoliceInvestigation() {
           <div className="card">
             <h2 className="card-title">Register First Information Report (FIR)</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-              Creates a case record on the immutable ledger and provisions an initial case docket.
+              Creates the case record and stores this narrative as its first document in the same
+              step — hashed and queued for redaction automatically. Restricted to the Duty Officer role.
             </p>
 
             {firStatus && (
-              <div className={`alert ${firStatus.type === 'success' ? 'alert-success' : 'alert-warning'}`}>
+              <div className={`alert ${firStatus.type === 'success' ? 'alert-success' : firStatus.type === 'error' ? 'alert-error' : 'alert-warning'}`}>
                 {firStatus.msg}
               </div>
             )}
@@ -300,13 +312,14 @@ export default function PoliceInvestigation() {
 
           {/* Upload Evidence Form */}
           <div className="card">
-            <h2 className="card-title">Ingest Evidence / Case Document</h2>
+            <h2 className="card-title">Ingest Additional Evidence</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-              Dual-track processing: Immediate SHA-256 hash committed to Fabric, followed by OCR redaction.
+              For anything beyond the FIR narrative itself — Panchnama, forensic reports, CCTV/media,
+              witness statements. Hashing and OCR/redaction run asynchronously, same as the FIR document.
             </p>
 
             {uploadStatus && (
-              <div className={`alert ${uploadStatus.type === 'success' ? 'alert-success' : 'alert-warning'}`}>
+              <div className={`alert ${uploadStatus.type === 'success' ? 'alert-success' : uploadStatus.type === 'error' ? 'alert-error' : 'alert-warning'}`}>
                 {uploadStatus.msg}
               </div>
             )}
@@ -318,7 +331,9 @@ export default function PoliceInvestigation() {
                   className="form-select"
                   value={selectedCaseId}
                   onChange={(e) => setSelectedCaseId(e.target.value)}
+                  disabled={cases.length === 0}
                 >
+                  {cases.length === 0 && <option value="">No cases available</option>}
                   {cases.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.case_number} — {c.crime_type}
@@ -352,8 +367,8 @@ export default function PoliceInvestigation() {
                 />
               </div>
 
-              <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
-                Ingest & Commit Hash
+              <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={cases.length === 0}>
+                Ingest Document
               </button>
             </form>
 
@@ -361,13 +376,18 @@ export default function PoliceInvestigation() {
               <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border-default)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                    Redacted Document Preview
+                    Upload Result
                   </span>
-                  <StatusChip status="confirmed" label="Ledger Verified" />
+                  <StatusChip status={uploadedDoc.chain_status} label={`Ledger: ${uploadedDoc.chain_status}`} />
                 </div>
                 <div style={{ background: 'var(--surface-sunken)', padding: '10px', borderRadius: '4px', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
-                  {uploadedDoc.text}
+                  <div>Document ID: {uploadedDoc.id}</div>
+                  <div>SHA-256: {uploadedDoc.doc_hash || '(pending — hashing runs asynchronously)'}</div>
+                  <div>Status: {uploadedDoc.status}</div>
                 </div>
+                <Link to={`/cases/${uploadedDoc.case_id}`} style={{ fontSize: '12px' }}>
+                  View redacted preview in case docket &rarr;
+                </Link>
               </div>
             )}
           </div>
@@ -377,12 +397,31 @@ export default function PoliceInvestigation() {
         <div className="card">
           <h2 className="card-title">Append Case Diary Entry (Section 172 CrPC / BNSS)</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '12px' }}>
-            Day-to-day chronological record of investigation. Append-only; retroactive edits are mathematically prevented.
+            Day-to-day chronological record of investigation. Append-only. Restricted to the assigned IO/SHO;
+            routes through the redaction pipeline before other roles can view it.
           </p>
 
-          {diaryStatus && <div className="alert alert-success">{diaryStatus.msg}</div>}
+          {diaryStatus && (
+            <div className={`alert ${diaryStatus.type === 'success' ? 'alert-success' : diaryStatus.type === 'error' ? 'alert-error' : 'alert-warning'}`}>
+              {diaryStatus.msg}
+            </div>
+          )}
 
           <form onSubmit={handleAddDiaryEntry} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <select
+              className="form-select"
+              style={{ minWidth: '220px' }}
+              value={diaryCaseId}
+              onChange={(e) => setDiaryCaseId(e.target.value)}
+              disabled={cases.length === 0}
+            >
+              {cases.length === 0 && <option value="">No cases available</option>}
+              {cases.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.case_number}
+                </option>
+              ))}
+            </select>
             <input
               type="text"
               className="form-input"
@@ -391,7 +430,7 @@ export default function PoliceInvestigation() {
               value={diaryNote}
               onChange={(e) => setDiaryNote(e.target.value)}
             />
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="btn btn-primary" disabled={cases.length === 0}>
               Append Entry
             </button>
           </form>

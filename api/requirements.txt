@@ -14,3 +14,10 @@ boto3==1.43.87
 # Test tooling — the suite runs against in-memory SQLite, no external services needed
 pytest==9.1.1
 httpx==0.27.0
+# tests/test_ocr_worker.py imports fitz to build PDF fixtures for the OCR
+# worker's PDF path. The API itself never imports it, but the suite lives in
+# this image and pytest aborts collection for the WHOLE run on an ImportError,
+# so leaving it undeclared turned `docker exec legadoc-api-1 pytest` — the
+# command CLAUDE.md documents — into zero tests executed rather than one file
+# skipped. Version-matched to workers/ocr_worker/requirements.txt.
+pymupdf==1.24.10

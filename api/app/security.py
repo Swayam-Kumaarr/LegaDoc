@@ -278,6 +278,15 @@ def require_role(*allowed_roles: str):
 # row for this exact case, or a Court order that touches it.
 _UNRESTRICTED_CASE_ROLES = {"config_admin", "security_auditor", "court", "prosecutor", "sho"}
 
+# The role string for FSL / hospital / bank / telecom / RTO staff who fulfil
+# Section 91 requisitions. Named once, here, because it was previously spelled
+# two different ways: seed_data.py (and the whole frontend) register
+# "external_authority", while the authorization checks tested for
+# "authority_staff" — a string no seeder ever writes and the roles table has
+# no row for. Every real external-authority account therefore fell through to
+# the default-deny branch and could not reach its own requisitions.
+EXTERNAL_AUTHORITY_ROLE = "external_authority"
+
 _POLICE_SPECIALIST_ROLES = {
     "duty_officer",
     "women_cell",
@@ -290,12 +299,20 @@ _POLICE_SPECIALIST_ROLES = {
 }
 
 # Roles that see a document's full, unredacted text once they already have
-# case access — everyone else gets the AI-Parser-tagged spans masked. This
-# is a baseline simplification of the Access Model's real nuance (Duty
-# Officer is actually restricted to FIR-registration fields only; External
-# Authority is restricted to their own routed request) — full per-role,
-# per-doc-type scoping is real future work, not built in this slice.
-FULL_TEXT_ACCESS_ROLES = _UNRESTRICTED_CASE_ROLES | {"io"}
+# case access — everyone else gets the AI-Parser-tagged spans masked.
+#
+# Listed explicitly, and deliberately NOT derived from _UNRESTRICTED_CASE_ROLES.
+# These two sets answer different questions ("which cases may this role open?"
+# vs "may this role see raw PII?"), and deriving one from the other made them
+# move together: adding a role to the case set silently handed it every
+# witness name, phone number and address in the system, with nothing at the
+# call site to review. Reaching this set must be a separate, deliberate edit.
+#
+# Duty Officer is intentionally absent. It has case access (see
+# _POLICE_SPECIALIST_ROLES) but only to cases it registered, and the Access
+# Model restricts it to FIR-registration fields — so it reads documents
+# redacted, like Defense does.
+FULL_TEXT_ACCESS_ROLES = {"config_admin", "security_auditor", "court", "prosecutor", "sho", "io"}
 
 
 def assert_case_access(case_id, claims: dict, db: Session) -> None:
@@ -318,6 +335,31 @@ def assert_case_access(case_id, claims: dict, db: Session) -> None:
             case_uuid = case_id if isinstance(case_id, UUID) else UUID(str(case_id))
         except ValueError:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+
+        # A Duty Officer keeps access to the FIRs it registered, and to
+        # nothing else. The fir_registered audit row (written in
+        # cases.register_fir, alongside the case and its first Document) is
+        # the only record of who registered a case, so it is what grants
+        # this — see cases.register_fir for why this is not a
+        # CaseAssignment row. Access is still narrow: documents come back
+        # redacted, because duty_officer is deliberately absent from
+        # FULL_TEXT_ACCESS_ROLES.
+        if role == "duty_officer":
+            registered = (
+                db.query(models.AuditLog)
+                .filter(
+                    models.AuditLog.case_id == case_uuid,
+                    models.AuditLog.actor_user_id == user_id,
+                    models.AuditLog.action == "fir_registered",
+                )
+                .first()
+            )
+            if registered is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Not the registering officer for this case"
+                )
+            return
+
         assigned = (
             db.query(models.CaseAssignment)
             .filter(models.CaseAssignment.case_id == case_uuid, models.CaseAssignment.io_user_id == user_id)
@@ -347,8 +389,11 @@ def verify_evidence_request_org_access(
 ) -> models.EvidenceRequest:
     """Validates that external authorities (FSL, Hospital, Bank, etc.) only touch
     evidence requests specifically routed to their organization (Domain 2-4 scoping).
-    Ready for wiring into api/app/routers/evidence_requests.py as endpoints are
-    implemented from their current 501 stubs."""
+    Used by api/app/routers/evidence_requests.py's fulfillment endpoint. The role
+    checked here must match the canonical "external_authority" role registered
+    in seed_data.py — it used to check a stale "authority_staff" string that
+    doesn't exist in the actual role registry, silently 403-ing every real
+    external-authority account that tried to fulfill a request."""
     try:
         req_uuid = request_id if isinstance(request_id, UUID) else UUID(str(request_id))
     except ValueError:
@@ -364,8 +409,12 @@ def verify_evidence_request_org_access(
     if role in ("config_admin", "security_auditor"):
         return req
 
-    if role == "authority_staff":
-        if str(req.requested_org_id) != str(user_org_id):
+    if role == EXTERNAL_AUTHORITY_ROLE:
+        # A missing or unparseable org claim is a denial, never a pass. This
+        # comparison is the whole tenant boundary between one forensic lab or
+        # bank and another, so it must not be reachable with an empty string
+        # on either side.
+        if not user_org_id or str(req.requested_org_id) != str(user_org_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access restricted: this evidence request is routed to a different organization",

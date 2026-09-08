@@ -1211,7 +1211,49 @@ body {
   border-right: 1px solid var(--panel-line);
 }
 
-h1.title {
+.login-left-panel {
+  position: relative;
+  background: var(--panel-bg);
+  color: var(--ink-hi);
+  padding: 40px 40px 32px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  justify-content: space-between;
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.login-watermark-svg {
+  position: absolute;
+  top: 50%;
+  right: -8%;
+  width: 62%;
+  max-width: 480px;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  transform: translateY(-50%);
+  color: #FFFFFF;
+  opacity: 0.14;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.login-left-branding,
+.login-legal-notice {
+  position: relative;
+  z-index: 1;
+}
+
+.login-legal-notice {
+  padding-top: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 11px;
+  line-height: 16px;
+  color: #8C97A5;
+}
+
+h1.title,
+.login-left-branding h1 {
   font-family: var(--font-serif);
   font-weight: 600;
   font-size: 38px;

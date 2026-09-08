@@ -3,8 +3,24 @@ redis==5.0.8
 boto3==1.35.24
 sqlalchemy==2.0.35
 psycopg2-binary==2.9.9
+# Needed because this worker imports api/app directly (app.config,
+# app.database, app.models, app.audit) to reuse the API's own schema
+# instead of duplicating it — same reasoning as chain_worker's
+# requirements.txt. Missing this crashes the container at import time with
+# "ModuleNotFoundError: No module named 'pydantic_settings'" the moment
+# app.config is reached, since app/config.py imports it directly.
+pydantic-settings==2.15.0
 paddleocr==2.9.1
 paddlepaddle==2.6.2
 pytesseract  # fallback engine when PaddleOCR itself errors out — see worker.py
 Pillow
 opencv-python-headless  # deskew/denoise/contrast preprocessing before OCR
+# Rasterizes PDF pages to images before OCR. Neither PaddleOCR nor
+# Tesseract reads a raw PDF — without this, every real PDF upload (the
+# actual common case for a scanned FIR) silently failed OCR outright,
+# not just ran degraded: cv2.imdecode returns None on non-raster bytes,
+# so preprocessing was skipped unnoticed, and both engines then failed
+# on what was effectively still raw PDF bytes. Pure-pip, no external
+# binary dependency (unlike pdf2image, which needs poppler installed
+# separately at the OS level).
+pymupdf==1.24.10

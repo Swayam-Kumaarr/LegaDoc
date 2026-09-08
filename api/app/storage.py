@@ -15,6 +15,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,7 @@ class MinIOObjectStorage(ObjectStorage):
         bucket: str,
         region_name: str = "us-east-1",
         env: str = "local",
+        public_endpoint_url: Optional[str] = None,
     ):
         import boto3
         from botocore.client import Config
@@ -119,6 +121,19 @@ class MinIOObjectStorage(ObjectStorage):
         self.client = boto3.client(
             "s3",
             endpoint_url=endpoint_url,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=Config(signature_version="s3v4"),
+            region_name=region_name,
+        )
+        # A second client, identical except for endpoint_url, used ONLY for
+        # signing presigned URLs — those are handed to the browser, so they
+        # need a host the browser can actually resolve, not this process's
+        # own (often Docker-internal) view of MinIO. Same credentials still
+        # produce a validly-signed URL regardless of which client signs it.
+        self._public_client = self.client if public_endpoint_url is None else boto3.client(
+            "s3",
+            endpoint_url=public_endpoint_url,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             config=Config(signature_version="s3v4"),
@@ -172,7 +187,7 @@ class MinIOObjectStorage(ObjectStorage):
 
     def get_presigned_url(self, key: str, expires_in: int = 300) -> str:
         self._ensure_bucket()
-        return self.client.generate_presigned_url(
+        return self._public_client.generate_presigned_url(
             "get_object",
             Params={"Bucket": self.bucket, "Key": key},
             ExpiresIn=expires_in,
@@ -206,6 +221,7 @@ def get_storage() -> ObjectStorage:
                     secret_key=settings.OBJECT_STORAGE_SECRET_KEY,
                     bucket=settings.OBJECT_STORAGE_BUCKET,
                     env=settings.ENV,
+                    public_endpoint_url=getattr(settings, "OBJECT_STORAGE_PUBLIC_ENDPOINT", None),
                 )
                 storage._ensure_bucket()
                 _default_storage = storage

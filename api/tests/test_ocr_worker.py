@@ -14,6 +14,7 @@ import os
 import sys
 from uuid import UUID, uuid4
 
+import fitz  # PyMuPDF — also used directly by worker.py for PDF handling
 import pytest
 
 from app import models
@@ -254,6 +255,88 @@ def test_ocr_worker_fail_closed_on_empty_text_or_engine_crash(db_session, make_o
     assert res["status"] == "needs_review"
     db_session.refresh(document)
     assert document.status == "needs_review"
+
+
+def _make_pdf_with_text_layer(pages_text):
+    """Builds a real, tiny PDF with a genuine embedded text layer (not a
+    scanned image) — the same shape as a real government e-filing export,
+    confirmed against an actual submitted FIR PDF during this feature's
+    development: it had 4 pages of real extractable text, not raster
+    scans. Built with PyMuPDF itself rather than depending on reportlab or
+    any file outside the repo."""
+    doc = fitz.open()
+    for text in pages_text:
+        page = doc.new_page()
+        page.insert_text((72, 72), text)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def test_ocr_worker_reads_pdf_native_text_layer_without_ocr(db_session, make_org, make_user, monkeypatch):
+    """A PDF with a real text layer (government e-filing exports, not
+    scanned paper) should be read directly — faster and far more accurate
+    than rasterizing to an image and OCRing it. Neither OCR engine should
+    even be called."""
+    case, io_user, document = _create_test_document(db_session, make_org, make_user)
+
+    pdf_bytes = _make_pdf_with_text_layer([
+        "FIRST INFORMATION REPORT\nDistrict: Kolkata\nFIR No: RC2220 21E0011",
+        "Complainant: Test Officer\nAddress: 570 KMs North of CBI EO-IV",
+    ])
+
+    class DummyStorage:
+        def get(self, path):
+            return pdf_bytes
+
+    def _fail_if_called(*args, **kwargs):
+        raise AssertionError("OCR engine should not run when a PDF text layer is present")
+
+    monkeypatch.setattr(ocr_worker, "run_paddle_ocr", _fail_if_called)
+    monkeypatch.setattr(ocr_worker, "run_tesseract_fallback", _fail_if_called)
+
+    res = ocr_worker.process_extract_document(str(document.id), db=db_session, storage=DummyStorage())
+
+    assert res["status"] == "success"
+    assert res["ocr_engine"] == "pdf_native_text"
+    assert "Kolkata" in res["raw_text"]
+    assert "RC2220 21E0011" in res["raw_text"]
+    assert "Test Officer" in res["raw_text"]
+    assert "--- Page Break ---" in res["raw_text"]
+
+    db_session.refresh(document)
+    assert document.ocr_engine == "pdf_native_text"
+    assert document.status == "processing"  # OCR's job is raw_text only; AI Parser sets ready/needs_review
+
+
+def test_ocr_worker_falls_back_to_ocr_for_image_only_pdf(db_session, make_org, make_user, monkeypatch):
+    """A PDF with no usable text layer (a genuine paper scan saved as PDF)
+    must still go through the real per-page OCR path, not silently return
+    empty text."""
+    case, io_user, document = _create_test_document(db_session, make_org, make_user)
+
+    # A real one-page PDF with no text inserted — i.e. image-only in spirit
+    # (this test doesn't embed an actual raster image; it only proves the
+    # code path decides to OCR rather than accepting an empty native layer).
+    blank_pdf = fitz.open()
+    blank_pdf.new_page()
+    pdf_bytes = blank_pdf.tobytes()
+    blank_pdf.close()
+
+    class DummyStorage:
+        def get(self, path):
+            return pdf_bytes
+
+    def mock_paddle(bytes_):
+        return [{"text": "Scanned FIR text", "confidence": 0.9, "box": [10, 10, 100, 30]}]
+
+    monkeypatch.setattr(ocr_worker, "run_paddle_ocr", mock_paddle)
+
+    res = ocr_worker.process_extract_document(str(document.id), db=db_session, storage=DummyStorage())
+
+    assert res["status"] == "success"
+    assert res["ocr_engine"] == "paddleocr"
+    assert "Scanned FIR text" in res["raw_text"]
 
 
 def test_ocr_worker_to_ai_parser_handoff_e2e(client, db_session, make_org, make_user):

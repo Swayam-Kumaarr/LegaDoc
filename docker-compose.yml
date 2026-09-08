@@ -40,6 +40,12 @@ services:
     env_file: .env
     environment:
       - OBJECT_STORAGE_BACKEND=minio
+      # uvicorn's --reload watcher (via watchfiles) has the same problem
+      # Vite's default watcher had: Docker Desktop on Windows often doesn't
+      # propagate native filesystem change events through a bind mount, so
+      # code edits on the host never trigger a reload. Force polling so it
+      # actually notices — see web/vite.config.js for the same fix.
+      - WATCHFILES_FORCE_POLLING=true
     depends_on:
       - db
       - redis
@@ -50,6 +56,12 @@ services:
       - ./api/app:/app/app
       - ./api/tests:/app/tests
       - ./workers:/workers
+    # Local/dev only — overrides the Dockerfile's plain CMD so edits to
+    # ./api/app (bind-mounted above) take effect without a manual restart.
+    # Without --reload every backend change silently kept running the code
+    # from whenever this container last started, which is exactly what let
+    # a real 404 (GET /evidence-requests) ship unnoticed this session.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app"]
 
   # ocr_worker, ai_parser_worker, and chain_worker all build from the REPO
   # ROOT (context: .), not their own directory — each one's Dockerfile
@@ -61,6 +73,15 @@ services:
       context: .
       dockerfile: workers/ocr_worker/Dockerfile
     env_file: .env
+    environment:
+      # Without this, get_storage() defaults to "local" here while the api
+      # service (which actually wrote the file — see api service's own
+      # OBJECT_STORAGE_BACKEND=minio above) defaults to MinIO. This worker
+      # then looks for the file on its own container's local disk, where
+      # it was never written, and fails every real OCR job with a
+      # FileNotFoundError — confirmed live: a real image upload's OCR task
+      # errored on exactly this, silently downgrading to needs_review.
+      - OBJECT_STORAGE_BACKEND=minio
     depends_on:
       - redis
       - db
@@ -80,11 +101,37 @@ services:
       context: .
       dockerfile: workers/chain_worker/Dockerfile
     env_file: .env
+    environment:
+      # fabric_client.py shells out to the real `peer` CLI using crypto
+      # material that only exists on the host running the Fabric
+      # test-network (set up per fabric-network/README.md, normally at
+      # ~/fabric-samples) — never inside this repo, and never inside this
+      # container's own image. Without the matching volume mount below,
+      # FabricClient looks for /root/fabric-samples/test-network, finds
+      # nothing, and every chain_worker.write_hash task fails forever with
+      # FabricSubmissionError, retried every 30s — confirmed live.
+      - FABRIC_SAMPLES_DIR=/root/fabric-samples
+      # Reach the orderer/peers by their real Docker DNS hostnames on the
+      # shared fabric_test network (see below) instead of fabric_client.py's
+      # "localhost" default, which is only correct when the peer CLI runs
+      # directly on the same host as the Fabric containers (e.g. from WSL2).
+      - FABRIC_ORDERER_ADDRESS=orderer.example.com:7050
+      - FABRIC_PEER0_ORG1_ADDRESS=peer0.org1.example.com:7051
+      - FABRIC_PEER0_ORG2_ADDRESS=peer0.org2.example.com:9051
     depends_on:
       - redis
       - db
     volumes:
       - ./fabric-network:/fabric-network
+      # Requires `docker compose` to be invoked from inside WSL2 (or
+      # wherever ~/fabric-samples actually lives) — a native Windows path
+      # here, or Docker Desktop's \\wsl$\<distro>\... UNC form, silently
+      # mounts an EMPTY directory instead of erroring, which is worse:
+      # confirmed live testing this exact fix.
+      - ${HOME}/fabric-samples:/root/fabric-samples:ro
+    networks:
+      - default
+      - fabric_test
 
   web:
     build: ./web
@@ -92,9 +139,25 @@ services:
       - "5173:5173"
     volumes:
       - ./web/src:/app/src
+      # vite.config.js carries the /api proxy and allowedHosts settings. Without
+      # this mount it stays baked into the image, so changing it silently has no
+      # effect until a full rebuild — which is exactly the kind of surprise you
+      # do not want while getting a demo online.
+      - ./web/vite.config.js:/app/vite.config.js
     command: npm run dev -- --host
 
 volumes:
   db_data:
   minio_data:
   redis_data:
+
+networks:
+  # The real Fabric test-network (orderer.example.com, peer0.org1/org2 —
+  # see fabric-network/README.md) creates and runs on this network under
+  # its own separate docker-compose stack. Declared external here (not
+  # created by this file) so chain_worker can resolve those hostnames by
+  # name — confirmed live: without this, chain_worker has no route to the
+  # peer/orderer containers at all, on top of the missing crypto-material
+  # mount above.
+  fabric_test:
+    external: true

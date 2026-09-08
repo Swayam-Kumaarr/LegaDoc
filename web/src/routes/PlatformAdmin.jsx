@@ -5,6 +5,21 @@ import { apiClient } from '../api/client';
 import StatusChip from '../components/StatusChip';
 import HashCell from '../components/HashCell';
 
+// err.detail comes straight from the backend's JSON body (see client.js
+// handleApiError) — usually a plain string for this router's errors.
+function formatError(err) {
+  const detail = err?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object') {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      // fall through
+    }
+  }
+  return err?.message || 'Request failed.';
+}
+
 export default function PlatformAdmin() {
   const { user } = useAuth();
   const { t } = useI18n();
@@ -44,84 +59,37 @@ export default function PlatformAdmin() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [chainRetrying, setChainRetrying] = useState(false);
 
-  // Static reference of redaction baseline in app/redaction.py (Truthful system documentation, not fake DB data)
-  const staticSchemaReference = [
-    { doc_type: 'FIR', sensitivity: 'Tier 1 (High)', fields: ['informant_name', 'victim_address', 'phone_number', 'aadhaar_id'], recognizers: 'Presidio NER + India Regex Pipeline' },
-    { doc_type: 'Panchnama', sensitivity: 'Tier 1 (High)', fields: ['panch_witness_identities', 'confidential_location', 'personal_names'], recognizers: 'Presidio NER + Section 100 CrPC Regex' },
-    { doc_type: 'Forensic_Report', sensitivity: 'Tier 2 (Restricted)', fields: ['chemical_composition', 'dna_profile', 'examiner_signatures'], recognizers: 'FSL Certificate Format Parser' },
-    { doc_type: 'Bank_Statement', sensitivity: 'Tier 1 (High)', fields: ['account_number', 'pan_card', 'ifsc_code', 'upi_vpa'], recognizers: 'India Financial Entity Regex' },
-  ];
+  const [roleDataError, setRoleDataError] = useState(null);
+  const [auditError, setAuditError] = useState(null);
 
-  // Fallbacks if backend is temporarily disconnected
-  const fallbackRoles = [
-    { id: 'r-1', code: 'duty_officer', name: 'Duty Officer (Station Intake)', description: 'FIR intake and initial registration', is_system: true, permission_codes: ['cases:create', 'cases:read', 'documents:upload'], user_count: 1 },
-    { id: 'r-2', code: 'io', name: 'Investigating Officer (IO)', description: 'Assigned investigator with case and evidence access', is_system: true, permission_codes: ['cases:read', 'cases:diary_write', 'documents:upload', 'evidence:request_create'], user_count: 1 },
-    { id: 'r-3', code: 'sho', name: 'Station House Officer (SHO)', description: 'Precinct supervisor with case assignment authority', is_system: true, permission_codes: ['cases:read', 'cases:create', 'cases:assign', 'documents:upload'], user_count: 1 },
-    { id: 'r-4', code: 'court', name: 'Judicial Bench (Magistrate / Judge)', description: 'Presiding judicial bench for bail and trial orders', is_system: true, permission_codes: ['cases:read', 'bail:order', 'judiciary:hearings_schedule', 'judiciary:unredacted_view'], user_count: 1 },
-    { id: 'r-5', code: 'prosecutor', name: 'Public Prosecutor', description: 'Prosecutor validating stage requirements', is_system: true, permission_codes: ['cases:read', 'judiciary:charge_sheet_file'], user_count: 1 },
-    { id: 'r-6', code: 'external_authority', name: 'External Authority (FSL / Bank)', description: 'Forensic labs and banks fulfilling Section 91 requisitions', is_system: true, permission_codes: ['evidence:fulfill_submit'], user_count: 1 },
-    { id: 'r-7', code: 'defense', name: 'Defense Counsel / Accused', description: 'Submission-only bail and surety petitions', is_system: true, permission_codes: ['bail:apply', 'bail:surety_submit'], user_count: 1 },
-    { id: 'r-8', code: 'config_admin', name: 'Platform Administrator', description: 'System governance, roles, and schema registry', is_system: true, permission_codes: ['admin:roles_manage', 'admin:schemas_manage', 'admin:chain_recovery'], user_count: 1 },
-  ];
-
-  const fallbackPermissions = [
-    { id: 'p-1', code: 'cases:read', name: 'Read Cases', category: 'cases', description: 'View case dockets in jurisdiction' },
-    { id: 'p-2', code: 'cases:create', name: 'Create FIR / Case', category: 'cases', description: 'Register First Information Report' },
-    { id: 'p-3', code: 'cases:assign', name: 'Assign IO', category: 'cases', description: 'Assign investigating officer' },
-    { id: 'p-4', code: 'cases:diary_write', name: 'Append Case Diary', category: 'cases', description: 'Append Section 172 case diary notes' },
-    { id: 'p-5', code: 'documents:read', name: 'Read Documents', category: 'documents', description: 'Read role-scoped sanitized documents' },
-    { id: 'p-6', code: 'documents:upload', name: 'Upload Documents', category: 'documents', description: 'Ingest evidentiary records with SHA-256' },
-    { id: 'p-7', code: 'documents:correct_redaction', name: 'Correct Redaction Tag', category: 'documents', description: 'Submit officer correction tags' },
-    { id: 'p-8', code: 'evidence:request_create', name: 'Create Requisition', category: 'evidence_requests', description: 'Dispatch Section 91 requisitions' },
-    { id: 'p-9', code: 'evidence:fulfill_submit', name: 'Fulfill Requisition', category: 'evidence_requests', description: 'Upload certified forensic/bank records' },
-    { id: 'p-10', code: 'bail:apply', name: 'Apply for Bail', category: 'bail', description: 'Submit bail petition (Sec 437/439 CrPC)' },
-    { id: 'p-11', code: 'bail:order', name: 'Issue Bail Order', category: 'bail', description: 'Pronounce bail orders and conditions' },
-    { id: 'p-12', code: 'bail:surety_submit', name: 'Submit Surety Bond', category: 'bail', description: 'Register surety undertaking' },
-    { id: 'p-13', code: 'judiciary:hearings_schedule', name: 'Schedule Hearing', category: 'judiciary', description: 'Publish hearing dates and summons' },
-    { id: 'p-14', code: 'judiciary:unredacted_view', name: 'Unredacted Judicial View', category: 'judiciary', description: 'Inspect unredacted documents' },
-    { id: 'p-15', code: 'judiciary:charge_sheet_file', name: 'File Charge Sheet', category: 'judiciary', description: 'Submit Section 173 charge sheet' },
-    { id: 'p-16', code: 'admin:roles_manage', name: 'Manage Roles', category: 'admin', description: 'Create roles and assign permissions' },
-    { id: 'p-17', code: 'admin:schemas_manage', name: 'Manage Schemas', category: 'admin', description: 'Update sensitivity tiers and recognizers' },
-    { id: 'p-18', code: 'admin:chain_recovery', name: 'Chain Recovery', category: 'admin', description: 'Execute manual blockchain retry' },
-    { id: 'p-19', code: 'reports:ncrb_read', name: 'Read NCRB Reports', category: 'reporting', description: 'Access de-identified crime statistics' },
-    { id: 'p-20', code: 'audit:read_full', name: 'Audit Trail Inspection', category: 'reporting', description: 'Examine hash-chained audit log' },
-  ];
-
-  const fallbackUsers = [
-    { id: 'u-1', name: 'Vikram Sharma', email: 'admin.sharma@legadoc.gov.in', service_id: 'MHA-ADM-001', designation: 'Director (Information Systems)', role: 'config_admin', org_name: 'Ministry of Home Affairs / NIC' },
-    { id: 'u-2', name: 'Inspector S. Rao', email: 'officer.rao@police.gov.in', service_id: 'DL-POL-4921', designation: 'Inspector of Police (Cyber Cell)', role: 'io', org_name: 'Delhi Police Cyber Cell' },
-    { id: 'u-3', name: 'Sub-Inspector A. Verma', email: 'duty.verma@police.gov.in', service_id: 'DL-POL-1084', designation: 'Duty Officer (Station Intake)', role: 'duty_officer', org_name: 'Delhi Police (Central Precinct)' },
-    { id: 'u-4', name: 'Hon. Justice R. S. Iyer', email: 'magistrate.iyer@court.gov.in', service_id: 'DEL-JUD-082', designation: 'Chief Judicial Magistrate', role: 'court', org_name: 'Patiala House District Courts' },
-    { id: 'u-5', name: 'Dr. Pradeep Nair', email: 'fsl.director@fsl.gov.in', service_id: 'CFSL-DIR-91', designation: 'Senior Scientific Officer', role: 'external_authority', org_name: 'Central Forensic Science Laboratory' },
-    { id: 'u-6', name: 'Adv. K. L. Mehta', email: 'defense.advocate@bar.in', service_id: 'DHC-BAR-5920', designation: 'Advocate-on-Record', role: 'defense', org_name: 'Delhi High Court Bar' },
-  ];
-
-  const fallbackOrgs = [
-    { id: 'o-1', name: 'Ministry of Home Affairs / NIC', org_type: 'admin', user_count: 1 },
-    { id: 'o-2', name: 'Delhi Police Cyber Cell', org_type: 'police', user_count: 1 },
-    { id: 'o-3', name: 'Delhi Police (Central Precinct)', org_type: 'police', user_count: 1 },
-    { id: 'o-4', name: 'Patiala House District Courts', org_type: 'court', user_count: 1 },
-    { id: 'o-5', name: 'Central Forensic Science Laboratory', org_type: 'fsl', user_count: 1 },
-  ];
+  // ---------- Document Schema Registry State (real /admin/document-schemas) ----------
+  const [schemas, setSchemas] = useState([]);
+  const [loadingSchemas, setLoadingSchemas] = useState(false);
+  const [schemasError, setSchemasError] = useState(null);
+  const [newSchemaDocType, setNewSchemaDocType] = useState('');
+  const [newSchemaTier, setNewSchemaTier] = useState(1);
+  const [newSchemaFields, setNewSchemaFields] = useState(''); // comma-separated field names
 
   const loadRoleData = async () => {
     setLoadingRoles(true);
+    setRoleDataError(null);
     try {
       const [rData, pData, uData, oData] = await Promise.all([
-        apiClient('/admin/roles').catch(() => fallbackRoles),
-        apiClient('/admin/permissions').catch(() => fallbackPermissions),
-        apiClient('/admin/users').catch(() => fallbackUsers),
-        apiClient('/admin/orgs').catch(() => fallbackOrgs),
+        apiClient('/admin/roles'),
+        apiClient('/admin/permissions'),
+        apiClient('/admin/users'),
+        apiClient('/admin/orgs'),
       ]);
-      setRoles(Array.isArray(rData) && rData.length > 0 ? rData : fallbackRoles);
-      setPermissions(Array.isArray(pData) && pData.length > 0 ? pData : fallbackPermissions);
-      setUsersList(Array.isArray(uData) && uData.length > 0 ? uData : fallbackUsers);
-      setOrgs(Array.isArray(oData) && oData.length > 0 ? oData : fallbackOrgs);
-    } catch (_) {
-      setRoles(fallbackRoles);
-      setPermissions(fallbackPermissions);
-      setUsersList(fallbackUsers);
-      setOrgs(fallbackOrgs);
+      setRoles(Array.isArray(rData) ? rData : []);
+      setPermissions(Array.isArray(pData) ? pData : []);
+      setUsersList(Array.isArray(uData) ? uData : []);
+      setOrgs(Array.isArray(oData) ? oData : []);
+    } catch (err) {
+      setRoles([]);
+      setPermissions([]);
+      setUsersList([]);
+      setOrgs([]);
+      setRoleDataError(formatError(err));
     } finally {
       setLoadingRoles(false);
     }
@@ -129,19 +97,66 @@ export default function PlatformAdmin() {
 
   const loadAuditData = async () => {
     setLoadingAudit(true);
+    setAuditError(null);
     try {
-      const logs = await apiClient('/admin/audit-logs?limit=50').catch(() => []);
+      const logs = await apiClient('/admin/audit-logs?limit=50');
       setAuditLogs(Array.isArray(logs) ? logs : []);
-    } catch (_) {
+    } catch (err) {
       setAuditLogs([]);
+      setAuditError(formatError(err));
     } finally {
       setLoadingAudit(false);
+    }
+  };
+
+  const loadSchemas = async () => {
+    setLoadingSchemas(true);
+    setSchemasError(null);
+    try {
+      const data = await apiClient('/admin/document-schemas');
+      setSchemas(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setSchemas([]);
+      setSchemasError(formatError(err));
+    } finally {
+      setLoadingSchemas(false);
+    }
+  };
+
+  const handleCreateSchema = async (e) => {
+    e.preventDefault();
+    if (!newSchemaDocType.trim()) return;
+
+    const fieldNames = newSchemaFields
+      .split(',')
+      .map((f) => f.trim())
+      .filter(Boolean);
+
+    const payload = {
+      doc_type: newSchemaDocType.trim(),
+      tier: Number(newSchemaTier),
+      sensitivity_fields:
+        Number(newSchemaTier) === 3
+          ? null
+          : fieldNames.map((field_name) => ({ field_name, sensitive: true })),
+    };
+
+    try {
+      const created = await apiClient('/admin/document-schemas', { body: payload });
+      setSchemas([...schemas, created]);
+      setAlert({ type: 'success', msg: `Document schema "${created.doc_type}" (Tier ${created.tier}) created.` });
+      setNewSchemaDocType('');
+      setNewSchemaFields('');
+      setNewSchemaTier(1);
+    } catch (err) {
+      setAlert({ type: 'error', msg: `Failed to create schema: ${formatError(err)}` });
     }
   };
 
   useEffect(() => {
     loadRoleData();
     loadAuditData();
+    loadSchemas();
   }, []);
 
   const handleTogglePermission = (permCode) => {
@@ -169,7 +184,7 @@ export default function PlatformAdmin() {
       setAlert({ type: 'success', msg: `Custom role "${payload.name}" successfully provisioned with ${selectedPermissions.length} permissions.` });
       loadAuditData();
     } catch (err) {
-      setAlert({ type: 'error', msg: `Failed to create role: ${err.message || 'Server error'}` });
+      setAlert({ type: 'error', msg: `Failed to create role: ${formatError(err)}` });
     } finally {
       setShowCreateRoleModal(false);
       setNewRoleCode('');
@@ -192,7 +207,7 @@ export default function PlatformAdmin() {
       setAlert({ type: 'success', msg: `Role "${role.name}" deleted. Audit record recorded.` });
       loadAuditData();
     } catch (err) {
-      setAlert({ type: 'error', msg: `Failed to delete role: ${err.message || 'Server error'}` });
+      setAlert({ type: 'error', msg: `Failed to delete role: ${formatError(err)}` });
     }
   };
 
@@ -208,7 +223,7 @@ export default function PlatformAdmin() {
       setAlert({ type: 'success', msg: `Role "${assignedRoleCode}" authoritatively assigned to ${selectedUserForAssign.name}. Audit trail updated.` });
       loadAuditData();
     } catch (err) {
-      setAlert({ type: 'error', msg: `Role assignment failed: ${err.message || 'Server error'}` });
+      setAlert({ type: 'error', msg: `Role assignment failed: ${formatError(err)}` });
     } finally {
       setSelectedUserForAssign(null);
       setAssignedRoleCode('');
@@ -224,7 +239,7 @@ export default function PlatformAdmin() {
       setAlert({ type: 'success', msg: `Role revoked for ${targetUser.name}. Logged to tamper-evident audit trail.` });
       loadAuditData();
     } catch (err) {
-      setAlert({ type: 'error', msg: `Failed to revoke role: ${err.message || 'Server error'}` });
+      setAlert({ type: 'error', msg: `Failed to revoke role: ${formatError(err)}` });
     }
   };
 
@@ -241,7 +256,7 @@ export default function PlatformAdmin() {
       setNewOrgName('');
       loadAuditData();
     } catch (err) {
-      setAlert({ type: 'error', msg: `Failed to onboard organization: ${err.message || 'Server error'}` });
+      setAlert({ type: 'error', msg: `Failed to onboard organization: ${formatError(err)}` });
     }
   };
 
@@ -261,7 +276,7 @@ export default function PlatformAdmin() {
     } catch (err) {
       setAlert({
         type: 'warning',
-        msg: `Chain write retry: ${err.message || 'Document identifier not found or ledger peer error'}`
+        msg: `Chain write retry: ${formatError(err)}`
       });
     } finally {
       setChainRetrying(false);
@@ -304,7 +319,7 @@ export default function PlatformAdmin() {
         </div>
 
         {alert && (
-          <div className={`alert ${alert.type === 'success' ? 'alert-success' : 'alert-warning'}`}>
+          <div className={`alert ${alert.type === 'success' ? 'alert-success' : alert.type === 'error' ? 'alert-error' : 'alert-warning'}`}>
             {alert.msg}
           </div>
         )}
@@ -349,6 +364,12 @@ export default function PlatformAdmin() {
         {/* Tab 1: Dynamic Role & Permission Management */}
         {activeTab === 'roles' && (
           <div>
+            {roleDataError && (
+              <div className="alert alert-error" style={{ marginBottom: '16px' }}>
+                Could not load role/user/org data: {roleDataError}
+              </div>
+            )}
+
             {/* Roles Summary Table */}
             <div className="card" style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -669,57 +690,124 @@ export default function PlatformAdmin() {
           </div>
         )}
 
-        {/* Tab 2: Document Schemas & Recognizers (Explicit Architectural Reference) */}
+        {/* Tab 2: Document Schemas & Recognizers — real CRUD against /admin/document-schemas */}
         {activeTab === 'schemas' && (
-          <div className="card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-              <StatusChip status="confirmed" label="Document Schemas Active (Issue #42)" />
-              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                Protected Statutory Redaction Baseline
-              </span>
+          <div className="grid-2">
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <div>
+                  <h2 className="card-title" style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>
+                    Document Schema Registry
+                  </h2>
+                  <span className="table-caption" style={{ marginBottom: 0 }}>
+                    {schemas.length} schema{schemas.length === 1 ? '' : 's'} configured in database.
+                  </span>
+                </div>
+                <button className="btn btn-secondary" onClick={loadSchemas} disabled={loadingSchemas} style={{ height: '32px', fontSize: '12px' }}>
+                  {loadingSchemas ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
+
+              {schemasError && (
+                <div className="alert alert-error" style={{ marginBottom: '12px' }}>
+                  Could not load schemas: {schemasError}
+                </div>
+              )}
+
+              {!schemasError && !loadingSchemas && schemas.length === 0 && (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                  No document schemas configured yet. Create one to define a sensitivity tier
+                  and protected fields for a document type.
+                </p>
+              )}
+
+              {schemas.length > 0 && (
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Document Type</th>
+                        <th>Tier</th>
+                        <th>Sensitivity Fields</th>
+                        <th>Recognizer Mappings</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schemas.map((s) => (
+                        <tr key={s.id}>
+                          <td><strong style={{ color: 'var(--text-primary)' }}>{s.doc_type}</strong></td>
+                          <td>
+                            <StatusChip status={s.tier === 1 ? 'critical' : s.tier === 2 ? 'pending' : 'neutral'} label={`Tier ${s.tier}`} />
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                              {(s.sensitivity_fields || []).map((f) => (
+                                <span key={f.field_name} className="mono-text" style={{ fontSize: '11px' }}>{f.field_name}</span>
+                              ))}
+                              {!s.sensitivity_fields && <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Generic default profile</span>}
+                            </div>
+                          </td>
+                          <td style={{ fontSize: '12px' }}>
+                            {s.recognizer_mappings?.length ? s.recognizer_mappings.map(m => m.entity_type).join(', ') : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
-            <div className="domain-notice" style={{ marginBottom: '20px' }}>
-              <strong>Architecture Policy:</strong> In this release, document sensitivity tiers and entity recognizers
-              are enforced via static, verifiable pipeline policies in <code>app/redaction.py</code>.
-              Dynamic runtime modification endpoints (<code>/admin/document-schemas</code>, <code>/admin/document-schemas/:type/recognizers</code>, <code>/admin/stage-requirements</code>)
-              explicitly return <strong>HTTP 501 Not Implemented</strong> to prevent unverified runtime tampering with redaction rules.
-            </div>
+            <div className="card">
+              <h2 className="card-title">Register Document Schema</h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
+                Persists a sensitivity tier for a document type. Tier 1/2 require named sensitivity
+                fields; Tier 3 inherits the generic default profile and takes none.
+              </p>
 
-            <span className="table-caption">
-              Static Redaction Policy Reference (Enforced in app/redaction.py)
-            </span>
-            <div className="table-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Document Type</th>
-                    <th>Sensitivity Classification</th>
-                    <th>Protected Entity Fields</th>
-                    <th>AI Recognizer Model</th>
-                    <th>Enforcement Mode</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {staticSchemaReference.map((s) => (
-                    <tr key={s.doc_type}>
-                      <td><strong style={{ color: 'var(--text-primary)' }}>{s.doc_type}</strong></td>
-                      <td>
-                        <StatusChip status={s.sensitivity === 'RESTRICTED' ? 'critical' : s.sensitivity === 'CONFIDENTIAL' ? 'pending' : 'neutral'} label={s.sensitivity} />
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                          {s.fields.map(f => (
-                            <span key={f} className="mono-text" style={{ fontSize: '11px' }}>{f}</span>
-                          ))}
-                        </div>
-                      </td>
-                      <td style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{s.recognizers}</td>
-                      <td><StatusChip status="neutral" label="Static Policy (Code Enforced)" /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <form onSubmit={handleCreateSchema}>
+                <div className="form-group">
+                  <label className="form-label">Document Type</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. Bank_Statement"
+                    value={newSchemaDocType}
+                    onChange={(e) => setNewSchemaDocType(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Sensitivity Tier</label>
+                  <select
+                    className="form-select"
+                    value={newSchemaTier}
+                    onChange={(e) => setNewSchemaTier(e.target.value)}
+                  >
+                    <option value={1}>Tier 1 (High)</option>
+                    <option value={2}>Tier 2 (Restricted)</option>
+                    <option value={3}>Tier 3 (Generic default)</option>
+                  </select>
+                </div>
+
+                {Number(newSchemaTier) !== 3 && (
+                  <div className="form-group">
+                    <label className="form-label">Sensitivity Fields (comma-separated)</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. account_number, pan_card, ifsc_code"
+                      value={newSchemaFields}
+                      onChange={(e) => setNewSchemaFields(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
+                  Create Schema
+                </button>
+              </form>
             </div>
           </div>
         )}
@@ -729,8 +817,17 @@ export default function PlatformAdmin() {
           <div className="grid-2">
             <div className="card">
               <span className="table-caption">
-                {orgs.length} registered tenant organizations in database.
+                {roleDataError ? 'Could not load organizations.' : `${orgs.length} registered tenant organization${orgs.length === 1 ? '' : 's'} in database.`}
               </span>
+              {roleDataError && (
+                <div className="alert alert-error" style={{ marginTop: '8px' }}>{roleDataError}</div>
+              )}
+              {!roleDataError && orgs.length === 0 && (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '8px' }}>
+                  No organizations onboarded yet.
+                </p>
+              )}
+              {orgs.length > 0 && (
               <div className="table-container">
                 <table className="data-table">
                   <thead>
@@ -756,6 +853,7 @@ export default function PlatformAdmin() {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
 
             <div className="card">
@@ -903,6 +1001,12 @@ export default function PlatformAdmin() {
               <code>row_hash = SHA256(prev_row_hash + row_content)</code>, guaranteeing that reordering, deleting,
               or modifying records is immediately detectable.
             </div>
+
+            {auditError && (
+              <div className="alert alert-error" style={{ marginBottom: '16px' }}>
+                Could not load audit log: {auditError}
+              </div>
+            )}
 
             <div className="table-container">
               <table className="data-table">

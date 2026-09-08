@@ -140,6 +140,24 @@ DANGEROUS_PDF_TOKENS = [
 ]
 
 
+def _pdf_object_structure_bytes(data: bytes) -> bytes:
+    """Strips every `stream ... endstream` byte range out of a raw PDF
+    buffer before token-scanning it. A genuine malicious action (a real
+    /JavaScript, /Launch, /SubmitForm entry) is always DEFINED in a PDF
+    object's plaintext dictionary syntax — never inside a stream's own
+    (often compressed/binary) payload, since a stream's content isn't
+    interpreted as PDF syntax at all. Scanning the raw file including
+    stream payloads is a real, confirmed false-positive source: a genuine,
+    entirely benign government FIR PDF (with embedded images/fonts) was
+    rejected as malicious because the literal 2-byte sequence "/JS"
+    happened to occur, by pure coincidence, inside a compressed image
+    stream — no more meaningful there than in any other block of
+    sufficiently large binary data. Stripping stream payloads first keeps
+    the check specific to what could actually define a dangerous action.
+    """
+    return re.sub(rb"stream\r?\n.*?endstream", b"", data, flags=re.DOTALL)
+
+
 def scan_buffer_for_exploits(data: bytes, detected_mime: str) -> None:
     """Deep inspection of uploaded file buffers to detect weaponized payloads:
     1. PDF exploits: Embedded JavaScript, /Launch commands, or embedded binary files.
@@ -155,7 +173,7 @@ def scan_buffer_for_exploits(data: bytes, detected_mime: str) -> None:
     # 1. PDF weaponization scanning
     if detected_mime == "application/pdf":
         for token in DANGEROUS_PDF_TOKENS:
-            if token in data:
+            if token in _pdf_object_structure_bytes(data):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Security validation failed: File contains potentially malicious PDF action '{token.decode()}'.",

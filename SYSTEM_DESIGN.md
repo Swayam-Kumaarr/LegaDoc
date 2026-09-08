@@ -89,7 +89,7 @@ C4Container
         Container(api, "API Server", "Python / FastAPI", "REST API, RBAC enforcement, redaction filter, business rules")
         Container(ocrworker, "OCR & Extraction Worker", "Python / PaddleOCR", "Async: OCR, regex field extraction")
         Container(aiparser, "AI Parser Worker", "Python / Presidio + spaCy NER", "Async: auto-tags sensitive spans")
-        Container(chainworker, "Blockchain Write Worker", "Python / fabric-sdk-py", "Async: signs & submits hash transactions")
+        Container(chainworker, "Blockchain Write Worker", "Python / peer CLI (subprocess)", "Async: signs & submits hash transactions")
         ContainerDb(db, "Primary DB", "PostgreSQL", "Cases, documents, evidence, bail, config, audit log")
         ContainerDb(store, "Object Storage", "S3-compatible / MinIO", "Encrypted raw files & binary evidence")
         ContainerQueue(queue, "Job Queue", "Redis + Celery", "OCR / AI-parse / hash-write jobs")
@@ -122,7 +122,7 @@ C4Container
                                                    │
                               ┌────────────────────┼───────────────────────┐
                               ▼                    ▼                       ▼
-             [OCR Worker: PaddleOCR] ──▶ [AI Parser: Presidio+spaCy]  [Chain Worker: fabric-sdk-py]
+             [OCR Worker: PaddleOCR] ──▶ [AI Parser: Presidio+spaCy]  [Chain Worker: peer CLI]
                               │                    │                       │
                               ▼                    ▼                       ▼
                         (writes to DB)      (writes tags to DB)   [Hyperledger Fabric — 5 org nodes]
@@ -132,7 +132,7 @@ C4Container
 - **PostgreSQL over NoSQL** — case/document/evidence-request/bail data is deeply relational (foreign keys, joins for stage-requirement checks); relational integrity matters more here than schema flexibility.
 - **Python/FastAPI for the API** — the whole backend is standardized on Python; FastAPI's async support fits the poll-heavy, queue-heavy request patterns in this design and gives request/response validation for free.
 - **Python for the OCR worker** — PaddleOCR is Python-native; no polyglot cost since the whole backend is Python.
-- **Python (fabric-sdk-py) for the Chain Worker, deliberately** — Fabric's most mature SDKs are Node/Java/Go; the Python SDK is community-maintained and less current. Chosen anyway for stack consistency, with the risk explicitly accepted, not overlooked.
+- **Python (`peer` CLI via subprocess) for the Chain Worker** — `fabric-sdk-py`, the natural first choice for stack consistency, turned out to have genuinely broken dependencies on any current Python (`pysha3`, its bundled protobuf files, its pinned `requests`/`urllib3` — confirmed by actually trying, not assumed). Rather than depend on an effectively-abandoned SDK, the Chain Worker shells out to the same official `peer` CLI a human operator would use — same real network, same real transactions, no fragile dependency chain. See `fabric_client.py`'s docstring and `fabric-network/README.md` for the full story.
 - **Presidio + spaCy NER for the AI Parser, self-hosted** — purpose-built open-source PII/sensitive-span detection (pattern recognizers + a pretrained NER model), not a generative LLM. Needs a one-time human configuration step (map entity types → DocumentSchema fields) instead of training-data collection, which is the realistic path to "fully automatic, self-hosted, no existing trained model" inside a short build window.
 - **Redis/Celery over BullMQ** — with the whole backend in Python, Celery is the natural, officially-supported choice. Three job types (OCR, AI-parse, blockchain-write), each single-producer/single-consumer — exactly right-sized, no Kafka-scale event streaming needed.
 - **MinIO/S3-compatible object storage over storing files in Postgres** — documents and binary evidence (CCTV, device dumps) don't belong in relational rows; object storage with DB-held references is the standard, correct split.
@@ -191,13 +191,13 @@ flowchart LR
 | 5 | API → Job Queue | Decouples slow work (OCR, AI-tagging, blockchain writes) from the request/response cycle — the user gets a 202, not a multi-second wait | Fire-and-forget enqueue: if Redis is down, jobs are never queued (not silently lost, but visibly failed at enqueue time, not hidden) | Redis + Celery, idempotency key in every job payload |
 | 6 | Queue → OCR Worker | Text-bearing documents need extraction before anything downstream (tagging, redaction) can happen | Retried with backoff; on a PaddleOCR engine failure, falls back to Tesseract before giving up; after N failures on both, dead-lettered + flagged via `GET /documents?status=needs_review` | Celery, PaddleOCR (primary), Tesseract (fallback only) |
 | 7 | Queue → AI Parser Worker | Delivers the AI-parse job the OCR worker enqueues — this is the automatic-redaction step | On repeated failure, **fails closed**: document defaults to fully redacted, not fully exposed, and flags for review — the one failure mode in this system deliberately designed to be safe rather than convenient | Celery, Presidio + spaCy NER |
-| 8 | Queue → Chain Worker | Delivers the hash-write job — runs independently of the OCR/AI-parse track since it only needs the raw file bytes, which never change | Fabric transaction submission is this system's single most flaky integration point (community-maintained Python SDK) — retried with backoff, and has a manual `retry-chain-write` admin escape hatch | Celery, fabric-sdk-py |
+| 8 | Queue → Chain Worker | Delivers the hash-write job — runs independently of the OCR/AI-parse track since it only needs the raw file bytes, which never change | Fabric transaction submission depends on the `peer` CLI binary and network connectivity to the orderer/peers being reachable from this worker's container (see docker-compose.yml's `fabric_test` network + volume mount) — retried with backoff, and has a manual `retry-chain-write` admin escape hatch | Celery, `peer` CLI (subprocess) |
 | 9 | OCR Worker → DB | Persists `raw_text` plus extracted structured fields — the AI Parser literally has nothing to tag without this write landing first | Re-extraction only happens if the document is re-uploaded as a new version — an OCR mistake on v1 doesn't silently self-correct | SQL |
 | 10 | OCR Worker → Object Storage | Needs the actual file bytes to run PaddleOCR against | Read-only; a storage outage here just delays extraction, it can't corrupt the stored original | S3 API |
 | 11 | OCR Worker → Job Queue | This is the causal link between extraction finishing and auto-redaction starting — OCR doesn't call the AI Parser directly, it hands off through the same queue | If this enqueue silently failed, a document could sit "extracted but never tagged" indefinitely with no active worker watching it. **A periodic reconciliation job must flag any document stuck in `status=processing` for more than ~10 minutes** — this is not optional hardening, it's the only thing standing between a silent enqueue failure and a document nobody ever notices is stuck | Celery |
 | 12 | AI Parser → DB | Writes the auto-tagged sensitivity spans (entity type + location + confidence — **never the raw redacted text itself**) | If this write is what fails repeatedly (not just the tagging logic), the fail-closed rule still applies — the document stays "processing," never silently serves an untagged view | SQL |
 | 13 | Chain Worker → DB | Reads the document hash to sign, then writes back `chain_status` (pending/confirmed/failed) | The classic split-brain risk: Fabric confirms but the DB write crashes before recording it — this is exactly why `retry-chain-write` reuses the *original* idempotency key instead of minting a new one | SQL |
-| 14 | Chain Worker → Fabric | The actual tamper-evidence mechanism — a signed hash transaction per document, submitted under the org's own Fabric MSP identity | On repeated endorsement failure, the document is flagged `chain_status=failed` for manual review; there is no inbound webhook from Fabric — confirmation is read back by polling, deliberately, to avoid standing up event-listening infrastructure at MVP scale | Fabric Gateway gRPC, fabric-sdk-py, org signing key |
+| 14 | Chain Worker → Fabric | The actual tamper-evidence mechanism — a signed hash transaction per document, submitted under the org's own Fabric MSP identity via `peer chaincode invoke --waitForEvent` | On repeated endorsement failure, the document is flagged `chain_status=failed` for manual review; there is no inbound webhook from Fabric — confirmation is read back synchronously via `--waitForEvent`, deliberately, to avoid standing up event-listening infrastructure at MVP scale | `peer` CLI (subprocess), org MSP identity + TLS certs |
 
 The compact sync/async/retry/volume version of this same table lives in the **Interface Contracts**
 section below, under Arrow Specifications — this table is the "why and how it breaks" companion to
@@ -331,7 +331,7 @@ uploader.
   failure would.
 
 **Tooling**: MinIO (storage), Celery (queue), PaddleOCR with Tesseract as a fallback engine
-(extraction), Presidio + spaCy (tagging), fabric-sdk-py (hashing).
+(extraction), Presidio + spaCy (tagging), the `peer` CLI via subprocess (hashing).
 
 ---
 
@@ -1060,8 +1060,8 @@ Everything else in this document is confirmed and buildable as-is.
 
 > Building a multi-organization criminal case management system (Python/FastAPI API, React
 > frontend, PostgreSQL, Redis+Celery queue, MinIO object storage, Python/PaddleOCR worker,
-> Python/Presidio+spaCy AI Parser worker, Python fabric-sdk-py Chain Worker against a 5-node
-> Hyperledger Fabric network). Core resources: Organization, User, Case, Document (versioned, never
+> Python/Presidio+spaCy AI Parser worker, Python Chain Worker (subprocess-driven `peer` CLI) against
+> a 5-node Hyperledger Fabric network). Core resources: Organization, User, Case, Document (versioned, never
 > overwritten), EvidenceRequest (N parallel requests per case with an AND-join gate before
 > charge-sheet filing), BailRecord (tracks independently of investigation status), CaseDiaryEntry
 > (append-only running log), DocumentSchema (tiered field-level sensitivity registry + AI Parser

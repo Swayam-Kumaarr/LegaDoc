@@ -2,6 +2,13 @@ celery==5.4.0
 redis==5.0.8
 sqlalchemy==2.0.35
 psycopg2-binary==2.9.9
+# Needed because this worker imports api/app directly (app.config,
+# app.database, app.models, app.audit) to reuse the API's own schema
+# instead of duplicating it — same reasoning as chain_worker's
+# requirements.txt. Missing this crashes the container at import time with
+# "ModuleNotFoundError: No module named 'pydantic_settings'" the moment
+# app.config is reached, since app/config.py imports it directly.
+pydantic-settings==2.15.0
 # presidio-analyzer and spacy: pin exact versions after the first successful
 # install and test — deliberately left unpinned-to-patch here rather than
 # guess a patch number, since getting this wrong silently breaks the build.
