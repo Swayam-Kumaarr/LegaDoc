@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -190,19 +191,32 @@ def list_cases(claims: dict = Depends(get_current_claims), db: Session = Depends
             .all()
         )
 
-    # Default-deny for every remaining role — currently Defense and the
-    # NCRB analyst. Both previously received the entire case registry, which
-    # is how a defense advocate could enumerate every case in the state,
-    # domestic-violence matters included.
+    if role == "defense":
+        # Scoped to recorded engagements, mirroring assert_case_access so the
+        # list never shows a row the advocate cannot then open. Before
+        # CaseParty existed there was no correct answer here: returning the
+        # registry let an advocate enumerate every case in the state, and
+        # default-denying left the Defence portal's picker permanently empty.
+        user_id = UUID(claims["sub"])
+        return (
+            db.query(models.Case)
+            .join(models.CaseParty, models.CaseParty.case_id == models.Case.id)
+            .filter(
+                models.CaseParty.user_id == user_id,
+                models.CaseParty.party_role == "defense",
+            )
+            .distinct()
+            .all()
+        )
+
+    # Default-deny for every remaining role — currently the NCRB analyst.
+    # It previously received the entire case registry.
     #
     # An empty list rather than a 403 because this is a collection endpoint
     # and "no cases are linked to you" is the truthful answer, not an error.
     #
-    # Neither role can be scoped properly yet: nothing in the schema links a
-    # Defense advocate to the case they are engaged on (BailRecord records no
-    # actor), so a real engagement link is schema work, not a filter. The NCRB
-    # analyst's aggregate view is /reports/case-metadata, which is the
-    # endpoint that role should be using.
+    # The analyst's intended surface is the aggregate /reports/case-metadata,
+    # not the raw case list, so there is nothing to scope here.
     return []
 
 
@@ -241,6 +255,87 @@ def assign_io(
     db.commit()
     db.refresh(assignment)
     return {"case_id": case_id, "io_user_id": str(body.io_user_id), "assigned_at": assignment.assigned_at}
+
+
+@router.post(
+    "/{case_id}/parties",
+    response_model=schemas.CasePartyResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_case_party(
+    case_id: str,
+    body: schemas.RecordCasePartyRequest,
+    claims: dict = Depends(require_role("court", "prosecutor", "sho", "config_admin")),
+    db: Session = Depends(get_db),
+):
+    """POST /cases/:id/parties — Bench / Prosecutor / SHO / Config Admin.
+    Record a defence advocate (or other participant) on a case.
+
+    This is what grants a defence account access: without a CaseParty row,
+    assert_case_access denies and GET /cases returns nothing for them. It is
+    deliberately not self-service — an advocate claiming their own engagement
+    would reduce to "any defence account may open any case", which is the
+    enumeration hole this whole mechanism exists to close. See issue #70.
+    """
+    try:
+        case_uuid = UUID(case_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    if db.get(models.Case, case_uuid) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+
+    if body.user_id is not None:
+        party_user = db.get(models.User, body.user_id)
+    else:
+        party_user = (
+            db.query(models.User)
+            .filter(func.lower(models.User.email) == body.email.strip().lower())
+            .first()
+        )
+    if party_user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Guard against recording a police/bench account as an opposing party —
+    # it would hand that account a second, unaudited route to the case.
+    if body.party_role == "defense" and party_user.role != "defense":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only a defense account can be recorded as defense counsel",
+        )
+
+    existing = (
+        db.query(models.CaseParty)
+        .filter(
+            models.CaseParty.case_id == case_uuid,
+            models.CaseParty.user_id == party_user.id,
+            models.CaseParty.party_role == body.party_role,
+        )
+        .first()
+    )
+    if existing is not None:
+        return existing  # idempotent — re-recording an engagement is not an error
+
+    party = models.CaseParty(
+        case_id=case_uuid,
+        user_id=party_user.id,
+        party_role=body.party_role,
+        recorded_by_user_id=UUID(claims["sub"]),
+    )
+    db.add(party)
+
+    write_audit_log(
+        db,
+        action="case_party_recorded",
+        case_id=case_uuid,
+        actor_user_id=UUID(claims["sub"]),
+        target_type="case_party",
+        target_id=party_user.id,
+        metadata={"party_role": body.party_role, "party_user_id": str(party_user.id)},
+    )
+
+    db.commit()
+    db.refresh(party)
+    return party
 
 
 @router.post("/{case_id}/reassign-io", response_model=schemas.ReassignIOResponse)

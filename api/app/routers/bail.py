@@ -87,6 +87,12 @@ def file_bail_application(
     if case is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
 
+    # Role alone is not enough: without this a defence account could act on
+    # any case whose id it happened to learn, even though GET /cases and
+    # GET /cases/:id both deny it. Access comes from a recorded CaseParty
+    # engagement — see issue #70.
+    assert_case_access(case_uuid, claims, db)
+
     if case.bail_status not in ("Arrested", "Denied_Final"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -222,6 +228,12 @@ def register_surety(
     case = db.get(models.Case, case_uuid)
     if case is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
+
+    # Role alone is not enough: without this a defence account could act on
+    # any case whose id it happened to learn, even though GET /cases and
+    # GET /cases/:id both deny it. Access comes from a recorded CaseParty
+    # engagement — see issue #70.
+    assert_case_access(case_uuid, claims, db)
 
     if case.bail_status != "Order_Issued":
         raise HTTPException(

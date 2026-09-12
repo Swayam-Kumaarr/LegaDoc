@@ -29,6 +29,16 @@ def _setup_case_and_users(client, make_user):
         "court": login(client, "judge@court.gov.in", "pw").json()["access_token"],
         "defense": login(client, "advocate@bar.in", "pw").json()["access_token"],
     }
+
+    # The bench records counsel on the docket. Defence case access comes from
+    # this engagement, not from the role — see issue #70 — so the bail
+    # endpoints it may call are gated on it too.
+    client.post(
+        f"/cases/{case['id']}/parties",
+        json={"user_id": str(defense.id)},
+        headers=auth_headers(tokens["court"]),
+    )
+
     return case, tokens
 
 
@@ -170,3 +180,23 @@ def test_bail_pathway_taxonomy_coverage(client, make_user):
     assert "Twin Conditions" in ndps_data["statutory_pathway"]["applicable_sections"]
     assert "Strictly Non-Bailable" in ndps_data["statutory_pathway"]["bailable_status"]
 
+
+
+def test_defense_without_an_engagement_cannot_file_bail(client, make_user):
+    """The role guard alone let any defence account act on any case whose id
+    it learned, even though GET /cases and GET /cases/:id both denied it.
+    Access is the recorded CaseParty engagement, so the write paths are gated
+    on it too (issue #70)."""
+    case, tokens = _setup_case_and_users(client, make_user)
+    client.post(f"/cases/{case['id']}/bail/arrest", headers=auth_headers(tokens["io"]))
+
+    # A second advocate, with no engagement recorded on this case.
+    make_user("defense", email="stranger@bar.in", password="pw")
+    stranger = login(client, "stranger@bar.in", "pw").json()["access_token"]
+
+    resp = client.post(f"/cases/{case['id']}/bail/application", headers=auth_headers(stranger))
+    assert resp.status_code == 403
+
+    # The engaged advocate still can.
+    ok = client.post(f"/cases/{case['id']}/bail/application", headers=auth_headers(tokens["defense"]))
+    assert ok.status_code in (200, 201), ok.text
