@@ -80,7 +80,15 @@ class LegalPIIRecognizer:
                 r"(?:\+91[\-\s]?)?[6-9]\d{9}\b|"
                 r"(?:\+91[\-\s]?)?[6-9]\d{4}[\s\-]?[0-9]{5}\b|"
                 r"(?:\+91[\-\s]?)?[6-9]\d{2}[\s\-]?[0-9]{3}[\s\-]?[0-9]{4}\b|"
-                r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b"
+                # Separators are REQUIRED in this last alternative. It exists for
+                # foreign/NANP-style numbers written 123-456-7890, but with the
+                # separators optional it reduced to \d{10} and matched any bare
+                # ten-digit run — Unix timestamps, case-file numbers, seized
+                # amounts. Confirmed: "Recorded 1725432000" was masked as
+                # PHONE_NUMBER. Bare Indian mobiles are already covered by the
+                # [6-9]\d{9} alternative above, so nothing is lost by requiring
+                # punctuation here.
+                r"\b\d{3}[-.]\d{3}[-.]\d{4}\b"
             ),
             "confidence": 85,
         },
@@ -106,7 +114,7 @@ class LegalPIIRecognizer:
             "entity_type": "PERSON",
             "regex": re.compile(
                 r"(?i:(?:\b(?:Mr|Mrs|Ms|Miss|Shri|Smt|Dr|Prof|Advocate|Adv|Inspector|Sub-Inspector|SI|ASI|HC|Constable|"
-                r"Officer|Witness|Suspect|Accused|Victim|Complainant)\b[\.\:\-\/]?\s+)+)([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b"
+                r"Officer|Witness|Suspect|Accused|Victim|Complainant)\b[\.\:\-\/]?\s+)+)([A-Z][a-z]+(?:\s+(?!\w+\s*[:\-])[A-Z][a-z]+)*)\b"
             ),
             "confidence": 80,
             "capture_group": 1,
@@ -123,7 +131,7 @@ class LegalPIIRecognizer:
         {
             "entity_type": "PERSON",
             "regex": re.compile(
-                r"(?i)\b(?:Name|Complainant|Informant|Accused|Suspect|Victim)[\s\:\-\/\.]+(?:(?:Shri|Smt|Mr|Dr)\.?\s+)?([A-Za-z]{3,}(?:\s+[A-Za-z]{2,}){1,4})\b"
+                r"(?i)\b(?:Name|Complainant|Informant|Accused|Suspect|Victim)[\s\:\-\/\.]+(?:(?:Shri|Smt|Mr|Dr)\.?\s+)?([A-Za-z]{3,}(?:\s+(?!\w+\s*[:\-])[A-Za-z]{2,}){1,4})\b"
             ),
             "confidence": 80,
             "capture_group": 1,
@@ -132,7 +140,7 @@ class LegalPIIRecognizer:
         {
             "entity_type": "PERSON",
             "regex": re.compile(
-                r"(?i)\b(?:son\s+of|daughter\s+of|wife\s+of|s/o|w/o|d/o)[\s\:\-\.]*(?:LT\.?\s*)?(?:Sh\.?|Smt\.?|Mr\.?|Dr\.?)?\s*([A-Za-z]{3,}(?:\s+[A-Za-z]{2,}){1,4})\b"
+                r"(?i)\b(?:son\s+of|daughter\s+of|wife\s+of|s/o|w/o|d/o)[\s\:\-\.]*(?:LT\.?\s*)?(?:Sh\.?|Smt\.?|Mr\.?|Dr\.?)?\s*([A-Za-z]{3,}(?:\s+(?!\w+\s*[:\-])[A-Za-z]{2,}){1,4})\b"
             ),
             "confidence": 80,
             "capture_group": 1,
@@ -212,25 +220,51 @@ class CredentialIDRecognizer:
 
 
 def _resolve_overlapping_spans(spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Sorts spans by start offset and resolves overlapping matches by higher confidence."""
+    """Resolves overlapping matches in favour of the higher-confidence span,
+    then returns the survivors in document order.
+
+    The previous implementation sorted by (span_start, -length, -confidence)
+    and walked forward with a cursor, which decided overlaps purely by which
+    span started first — confidence was only ever consulted to break a tie
+    between two spans starting at the same offset with the same length. A
+    PERSON guess at confidence 60 therefore beat a PAN match at confidence 95
+    whenever it happened to start one character earlier, and the entity was
+    recorded under the wrong type. The docstring claimed confidence ordering
+    that the code did not implement.
+
+    Entity *type* accuracy matters even though both spans get masked either
+    way: the type is what lands in the audit trail, and it is what any future
+    per-type access rule would key on. Masking "ABCDE1234F" as a PERSON is
+    not the same record as masking it as a PAN.
+
+    Ranking by confidence first, then by length, means the strongest claim on
+    a region wins and weaker overlapping claims are dropped. Ties fall back to
+    document order so the result stays deterministic — important, because
+    these spans feed a hash-chained audit trail.
+    """
     if not spans:
         return []
 
-    sorted_spans = sorted(
+    ranked = sorted(
         spans,
-        key=lambda s: (s["span_start"], -(s["span_end"] - s["span_start"]), -s["confidence"]),
+        key=lambda s: (
+            -s["confidence"],
+            -(s["span_end"] - s["span_start"]),
+            s["span_start"],
+        ),
     )
 
-    resolved: List[Dict[str, Any]] = []
-    current_cursor = -1
-
-    for s in sorted_spans:
-        if s["span_start"] < current_cursor:
+    kept: List[Dict[str, Any]] = []
+    for cand in ranked:
+        if any(
+            cand["span_start"] < k["span_end"] and k["span_start"] < cand["span_end"]
+            for k in kept
+        ):
             continue
-        resolved.append(s)
-        current_cursor = s["span_end"]
+        kept.append(cand)
 
-    return resolved
+    # Masking walks the text in order, so hand back document order, not rank.
+    return sorted(kept, key=lambda s: s["span_start"])
 
 
 _analyzer_engine = None
