@@ -36,7 +36,28 @@ RUN pip install --no-cache-dir -r requirements.txt
 # (Issue #37) — without this, the first real OCR request in a fresh
 # container pays the full model-download cost inline (confirmed live: ~80s
 # on first use) instead of at build time where it belongs.
-RUN python -c "from paddleocr import PaddleOCR; PaddleOCR(use_angle_cls=True, lang='en', show_log=False); PaddleOCR(use_angle_cls=True, lang='hi', show_log=False)"
+#
+# This MUST run a real .ocr() pass, not just construct PaddleOCR(...).
+# Constructing the object eagerly fetches only the detection and angle-
+# classification models; the *recognition* model is fetched lazily on the
+# first actual recognition call. Confirmed live: an image built with
+# construction alone had det/ and cls/ cached but no rec/ at all — in fact
+# no /root/.paddleocr directory whatsoever — so the first scanned-image job
+# in a fresh container stalled for minutes mid-task downloading
+# devanagari_PP-OCRv4_rec_infer.tar from the internet, and the document sat
+# at status "processing" the whole time. At a demo venue with no outbound
+# internet that is not a delay, it is a hard failure.
+#
+# The synthetic image needs actual glyphs: detection must find a box for the
+# recognizer to be invoked at all, and a blank canvas would find none.
+RUN python -c "\
+import numpy as np;\
+from PIL import Image, ImageDraw;\
+from paddleocr import PaddleOCR;\
+_img = Image.new('RGB', (320, 96), 'white');\
+ImageDraw.Draw(_img).text((12, 36), 'Test 123', fill='black');\
+_arr = np.array(_img);\
+[PaddleOCR(use_angle_cls=True, lang=_l, show_log=False).ocr(_arr, cls=True) for _l in ('en', 'hi')]"
 
 COPY workers/ocr_worker/worker.py .
 # worker.py imports this as a bare module (`from layout_reconstruction

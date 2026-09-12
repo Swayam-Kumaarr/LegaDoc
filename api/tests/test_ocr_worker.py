@@ -500,3 +500,45 @@ def test_pure_hindi_fir_extraction_up_police():
     assert "लंका चौराहा" in fields["place_of_occurrence"]
     assert "मोबाइल फोन" in fields["incident_description"]
 
+
+
+def test_line_level_read_is_not_duplicated_by_its_own_word_fragments():
+    """A line and the word boxes detected under it are the same text at two
+    granularities, and spatial NMS cannot separate them: when a fragment wins
+    on confidence it is kept first, and the containing line then measures as
+    overlap/area_of_line — too small to trip either threshold — so both
+    survive and the line is emitted twice ("Priya Menon Menon").
+
+    Reproduces the geometry seen live from PaddleOCR's bilingual pass: the
+    English engine returns one box per line, the Devanagari engine one per
+    word, and the fragments score higher.
+    """
+    boxes = [
+        {"text": "Complainant: Priya Menon", "confidence": 0.97, "box": [60, 280, 400, 310]},
+        {"text": "Priya", "confidence": 1.00, "box": [240, 283, 306, 309]},
+        {"text": "Menon", "confidence": 1.00, "box": [315, 283, 402, 309]},
+    ]
+
+    text = layout_mod.process_ocr_boxes_to_layout(boxes)["reconstructed_text"]
+
+    assert "Priya Menon" in text
+    assert text.count("Menon") == 1, f"fragment duplicated the line: {text!r}"
+    assert text.count("Priya") == 1, f"fragment duplicated the line: {text!r}"
+
+
+def test_devanagari_numerals_alone_do_not_outrank_a_confident_latin_read():
+    """has_devanagari matches the whole block, numerals included, so the Hindi
+    pass's Indic-numeral guess over printed Latin digits counted as authentic
+    script and outranked a more confident Latin read of the same region.
+    Only Devanagari *letters* are evidence the text is genuinely Hindi.
+    """
+    assert layout_mod.has_devanagari_letters("थाना")
+    assert not layout_mod.has_devanagari_letters("४१")
+    assert not layout_mod.has_devanagari_letters("15४")
+    assert layout_mod.has_devanagari("४१"), "block-level check should still match numerals"
+
+    latin = {"text": "Section 154", "confidence": 0.98, "box": [60, 100, 390, 128]}
+    ghost = {"text": "15४", "confidence": 0.89, "box": [252, 104, 302, 127]}
+
+    kept = layout_mod.deduplicate_boxes_nms([ghost, latin])
+    assert [b["text"] for b in kept] == ["Section 154"]
