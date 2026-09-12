@@ -208,6 +208,19 @@ OFFICIAL_TEST_USERS = [
         "role": "records_ncrb_analyst",
         "org_name": "National Crime Records Bureau",
         "org_type": "ncrb"
+    },
+    # The role carries audit:read_full, unrestricted case access, and
+    # unredacted PII — the widest privilege in the system. Until this
+    # persona existed no account held it, so none of that was ever
+    # exercised by a test or reachable in a demo (see issue #72).
+    {
+        "email": "auditor.rajan@vigilance.gov.in",
+        "name": "K. Rajan",
+        "service_id": "CVC-AUD-07",
+        "designation": "Chief Vigilance Officer (Systems Audit)",
+        "role": "security_auditor",
+        "org_name": "Central Vigilance Commission",
+        "org_type": "audit"
     }
 ]
 

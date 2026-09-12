@@ -25,9 +25,13 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ## Test Credentials (password for all: `GovSecure@2026`)
 
 These are the personas the seeder actually creates, and they match
-`OFFICIAL_TEST_CREDENTIALS` in `web/src/contexts/AuthContext.jsx` — the same list
-the login page's **Show Personas** drawer offers. Every one is verified to
-return HTTP 200 from `POST /auth/login`.
+`SEEDED_ACCOUNTS` in `web/src/dev/seededAccounts.js` — the list the dev-only
+quick-login helper (`routes/DevLogin.jsx`) offers. That helper still submits
+through the real `POST /auth/login`; it does not authenticate anyone by
+itself. Every persona is verified to return HTTP 200.
+
+(The older `OFFICIAL_TEST_CREDENTIALS` constant in `AuthContext.jsx` is gone —
+it backed the client-side login fallback that was removed as an auth bypass.)
 
 | Role | Email | `role` claim |
 | :--- | :--- | :--- |
@@ -39,6 +43,7 @@ return HTTP 200 from `POST /auth/login`.
 | External Authority (FSL) | `fsl.director@fsl.gov.in` | `external_authority` |
 | Defense Counsel | `defense.advocate@bar.in` | `defense` |
 | NCRB Analyst | `analyst.ncrb@nic.in` | `records_ncrb_analyst` |
+| Independent Security Auditor | `auditor.rajan@vigilance.gov.in` | `security_auditor` |
 
 Before adding a persona to this table, confirm it logs in. An earlier revision
 of this file listed nine invented addresses (`io.kumar@delhipolice.gov.in`,
@@ -52,9 +57,10 @@ docker exec legadoc-db-1 psql -U postgres -d legadoc \
   -c "SELECT email, role FROM users WHERE role_id IS NOT NULL ORDER BY role;"
 ```
 
-**No `security_auditor` user is seeded.** The role exists in the `roles` table and
-carries unrestricted case access, but no account holds it, so any flow written
-around a Security Auditor cannot be run as written.
+The `security_auditor` persona is seeded as of issue #72. It is the widest
+privilege in the system — `audit:read_full`, unrestricted case access, and
+unredacted PII — so treat it as the one persona whose access should be
+re-checked whenever the Access Model changes.
 
 ---
 

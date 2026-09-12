@@ -355,3 +355,46 @@ def test_person_capture_stops_at_the_next_field_label():
 
     assert found["PERSON"] == "Priya Menon"
     assert found["PHONE_NUMBER"] == "9812345678"
+
+
+def test_security_auditor_privilege_is_actually_exercised(client, db_session, make_org, make_user):
+    """The security_auditor role sits in both _UNRESTRICTED_CASE_ROLES and
+    FULL_TEXT_ACCESS_ROLES — the widest privilege the system grants — but no
+    account held it until issue #72, so none of that access had ever been
+    walked through. This pins the two things that privilege actually means.
+    """
+    raw_text = "Complainant Shri Amit Verma, phone 9123456780, resident of Delhi."
+    case, io_user, document = _setup_case_and_doc(db_session, make_org, make_user, raw_text=raw_text)
+    assert ai_worker.process_tag_document(str(document.id), db=db_session) == "ready"
+
+    # A different organisation entirely, and no CaseAssignment to this case.
+    auditor = make_user(
+        "security_auditor",
+        email="auditor@vigilance.gov.in",
+        password="pw",
+        org=make_org(name="Central Vigilance Commission", org_type="audit"),
+    )
+    token = login(client, auditor.email, "pw").json()["access_token"]
+
+    # 1. Unrestricted case access: opens a case it was never assigned to.
+    assert client.get(f"/cases/{case.id}", headers=auth_headers(token)).status_code == 200
+
+    # 2. Full-text access: sees the PII other roles get masked.
+    resp = client.get(f"/documents/{document.id}", headers=auth_headers(token))
+    assert resp.status_code == 200
+    text = resp.json()["text"]
+    assert "Amit Verma" in text
+    assert "9123456780" in text
+    assert "[REDACTED:" not in text
+
+
+def test_security_auditor_persona_is_seeded():
+    """Guards the seed itself. The role existing in CANONICAL_ROLES while no
+    user holds it is the exact state issue #72 describes, and it is invisible
+    until someone tries to run a Security Auditor flow.
+    """
+    from app.seed_data import OFFICIAL_TEST_USERS
+
+    auditors = [u for u in OFFICIAL_TEST_USERS if u["role"] == "security_auditor"]
+    assert len(auditors) == 1, "exactly one security_auditor persona expected"
+    assert auditors[0]["email"] == "auditor.rajan@vigilance.gov.in"
