@@ -22,7 +22,7 @@ export default defineConfig({
       "/api": {
         // Service name on the compose network. Falls back to localhost for a
         // bare `npm run dev` outside Docker.
-        target: process.env.VITE_PROXY_TARGET || "http://api:8000",
+        target: process.env.VITE_PROXY_TARGET || "http://127.0.0.1:8000",
         changeOrigin: true,
         // The API mounts its routes at the root (/auth/login, /cases), so the
         // /api marker is stripped before forwarding.
