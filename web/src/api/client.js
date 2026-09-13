@@ -1,3 +1,5 @@
+import { handleDevMockRequest } from "../dev/mockApi";
+
 // Same-origin by default: '/api' is proxied to the FastAPI service by the dev
 // server (see web/vite.config.js) or by whatever fronts the app in a real
 // deployment. This must not be an absolute http://localhost URL — that
@@ -95,6 +97,9 @@ export async function apiClient(endpoint, { body, ...customConfig } = {}) {
   try {
     response = await fetch(`${API_BASE}${endpoint}`, config);
   } catch (error) {
+    if (import.meta.env.DEV) {
+      return handleDevMockRequest(endpoint, config);
+    }
     console.error("Network error:", error);
     throw new Error(
       "Unable to connect to the server. Please check that the API service is running.",
@@ -105,6 +110,17 @@ export async function apiClient(endpoint, { body, ...customConfig } = {}) {
     if (response.status === 204) return null;
     return await response.json();
   } else {
+    // If dev proxy returned a gateway or server error because the backend is offline,
+    // fallback gracefully to dev mock handlers so the UI can be tested.
+    if (
+      import.meta.env.DEV &&
+      (response.status === 500 ||
+        response.status === 502 ||
+        response.status === 504)
+    ) {
+      return handleDevMockRequest(endpoint, config);
+    }
+
     let errDetail = "";
     try {
       errDetail = await response.text();
