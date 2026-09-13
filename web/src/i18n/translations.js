@@ -1,9 +1,9 @@
 export const SUPPORTED_LANGUAGES = [
-  { code: 'en', label: 'English', native: 'English' },
-  { code: 'hi', label: 'Hindi', native: 'हिन्दी' },
-  { code: 'mr', label: 'Marathi', native: 'मराठी' },
-  { code: 'ta', label: 'Tamil', native: 'தமிழ்' },
-  { code: 'bn', label: 'Bengali', native: 'বাংলা' },
+  { code: "en", label: "English", native: "English" },
+  { code: "hi", label: "Hindi", native: "हिन्दी" },
+  { code: "mr", label: "Marathi", native: "मराठी" },
+  { code: "ta", label: "Tamil", native: "தமிழ்" },
+  { code: "bn", label: "Bengali", native: "বাংলা" },
 ];
 
 export const translations = {
@@ -19,7 +19,8 @@ export const translations = {
     choose_language: "Language",
     system_status: "System Status",
     degraded_mode: "Operating in degraded mode",
-    offline_mode: "API Gateway unreachable. Operating in offline verification mode.",
+    offline_mode:
+      "API Gateway unreachable. Operating in offline verification mode.",
 
     // Navigation
     nav_dashboard: "Dashboard Hub",
@@ -51,9 +52,12 @@ export const translations = {
     password_label: "Password / Authentication Secret",
     signin_btn: "Sign In & Authorize",
     signin_loading: "Verifying Authoritative Credentials...",
-    auth_notice: "Notice: Access is strictly audited. Role and permissions are authoritatively retrieved from the Government Identity Directory upon verification.",
-    test_accounts_header: "Pre-Registered Official Test Credentials (Evaluation)",
-    test_accounts_sub: "Click any official identity to auto-fill credentials and verify authoritative server-side role resolution:",
+    auth_notice:
+      "Notice: Access is strictly audited. Role and permissions are authoritatively retrieved from the Government Identity Directory upon verification.",
+    test_accounts_header:
+      "Pre-Registered Official Test Credentials (Evaluation)",
+    test_accounts_sub:
+      "Click any official identity to auto-fill credentials and verify authoritative server-side role resolution:",
 
     // Dashboard
     dash_officer_profile: "Officer Identity Profile",
@@ -79,7 +83,7 @@ export const translations = {
     tag_verified: "Verified",
     tag_active: "Active",
     tag_system: "System Protected",
-    tag_custom: "Custom Role"
+    tag_custom: "Custom Role",
   },
 
   hi: {
@@ -87,7 +91,8 @@ export const translations = {
     official_system: "आधिकारिक प्रणाली",
     gov_title: "भारत सरकार · सुरक्षित डिजिटल दस्तावेज़ प्रबंधन प्रणाली",
     gov_subtitle: "SIH26190 · हाइपरलेजर फैब्रिक क्रिप्टोग्राफ़िक लेज़र",
-    gov_footer_org: "भारत सरकार · राष्ट्रीय सूचना विज्ञान केंद्र / गृह मंत्रालय",
+    gov_footer_org:
+      "भारत सरकार · राष्ट्रीय सूचना विज्ञान केंद्र / गृह मंत्रालय",
     gov_footer_note: "केवल आधिकारिक उपयोग हेतु · SIH26190 सुरक्षित डिजिटल DMS",
     sign_in: "साइन इन करें",
     sign_out: "साइन आउट करें",
@@ -120,15 +125,19 @@ export const translations = {
 
     // Login
     login_portal_title: "सुरक्षित डिजिटल DMS प्रवेश पोर्टल",
-    login_portal_sub: "आधिकारिक इलेक्ट्रॉनिक रिकॉर्ड एवं कस्टडी-श्रृंखला प्रणाली",
+    login_portal_sub:
+      "आधिकारिक इलेक्ट्रॉनिक रिकॉर्ड एवं कस्टडी-श्रृंखला प्रणाली",
     service_id_label: "आधिकारिक ईमेल या सरकारी सेवा आईडी / बैज संख्या",
     service_id_placeholder: "उदा. officer.rao@police.gov.in या DL-POL-4921",
     password_label: "पासवर्ड / प्रमाणीकरण क्रेडेंशियल",
     signin_btn: "साइन इन एवं अधिकृत करें",
     signin_loading: "प्रमाणपत्रों का सत्यापन जारी है...",
-    auth_notice: "सूचना: सभी प्रवेश प्रयासों का ऑडिट किया जाता है। सत्यापन पर आपकी भूमिका सरकारी पहचान निर्देशिका से स्वचालित रूप से निर्धारित होती है।",
-    test_accounts_header: "पूर्व-पंजीकृत आधिकारिक परीक्षण क्रेडेंशियल (मूल्यांकन)",
-    test_accounts_sub: "सर्वर-साइड भूमिका सत्यापन के लिए किसी भी आधिकारिक खाते पर क्लिक करें:",
+    auth_notice:
+      "सूचना: सभी प्रवेश प्रयासों का ऑडिट किया जाता है। सत्यापन पर आपकी भूमिका सरकारी पहचान निर्देशिका से स्वचालित रूप से निर्धारित होती है।",
+    test_accounts_header:
+      "पूर्व-पंजीकृत आधिकारिक परीक्षण क्रेडेंशियल (मूल्यांकन)",
+    test_accounts_sub:
+      "सर्वर-साइड भूमिका सत्यापन के लिए किसी भी आधिकारिक खाते पर क्लिक करें:",
 
     // Dashboard
     dash_officer_profile: "अधिकारी पहचान प्रोफ़ाइल",
@@ -154,14 +163,15 @@ export const translations = {
     tag_verified: "सत्यापित",
     tag_active: "सक्रिय",
     tag_system: "प्रणाली सुरक्षित",
-    tag_custom: "कस्टम भूमिका"
+    tag_custom: "कस्टम भूमिका",
   },
 
   mr: {
     official_system: "अधिकृत प्रणाली",
     gov_title: "भारत सरकार · सुरक्षित डिजिटल दस्तऐवज व्यवस्थापन प्रणाली",
     gov_subtitle: "SIH26190 · हायपरलेजर फॅब्रिक ब्लॉकचेन लेजर",
-    gov_footer_org: "भारत सरकार · राष्ट्रीय माहिती विज्ञान केंद्र / गृह मंत्रालय",
+    gov_footer_org:
+      "भारत सरकार · राष्ट्रीय माहिती विज्ञान केंद्र / गृह मंत्रालय",
     gov_footer_note: "केवळ अधिकृत वापरासाठी · SIH26190 सुरक्षित डिजिटल DMS",
     sign_in: "साइन इन करा",
     sign_out: "साइन आउट करा",
@@ -197,7 +207,8 @@ export const translations = {
     password_label: "पासवर्ड",
     signin_btn: "साइन इन करा",
     signin_loading: "पडताळणी सुरू आहे...",
-    auth_notice: "सूचना: अनधिकृत प्रवेशास बंदी आहे. तुमची भूमिका सर्व्हरवरून निश्चित केली जाते.",
+    auth_notice:
+      "सूचना: अनधिकृत प्रवेशास बंदी आहे. तुमची भूमिका सर्व्हरवरून निश्चित केली जाते.",
     test_accounts_header: "चाचणी क्रेडेंशियल्स (मूल्यांकन)",
     test_accounts_sub: "अधिकृत चाचणी खात्यावर क्लिक करा:",
 
@@ -223,21 +234,24 @@ export const translations = {
     tag_verified: "पडताळणी पूर्ण",
     tag_active: "सक्रिय",
     tag_system: "प्रणाली संरक्षित",
-    tag_custom: "सानुकूल भूमिका"
+    tag_custom: "सानुकूल भूमिका",
   },
 
   ta: {
     official_system: "அதிகாரப்பூர்வ அமைப்பு",
     gov_title: "இந்திய அரசு · பாதுகாப்பான டிஜிட்டல் ஆவண மேலாண்மை அமைப்பு",
-    gov_subtitle: "SIH26190 · ஹைப்பர்லெட்ஜர் ஃபேப்ரிக் கிரிப்டோகிராஃபிக் லெட்ஜர்",
+    gov_subtitle:
+      "SIH26190 · ஹைப்பர்லெட்ஜர் ஃபேப்ரிக் கிரிப்டோகிராஃபிக் லெட்ஜர்",
     gov_footer_org: "இந்திய அரசு · தேசிய தகவலியல் மையம் / உள்துறை அமைச்சகம்",
-    gov_footer_note: "அதிகாரப்பூர்வ பயன்பாட்டிற்கு மட்டுமே · SIH26190 பாதுகாப்பான டிஜிட்டல் DMS",
+    gov_footer_note:
+      "அதிகாரப்பூர்வ பயன்பாட்டிற்கு மட்டுமே · SIH26190 பாதுகாப்பான டிஜிட்டல் DMS",
     sign_in: "உள்நுழைக",
     sign_out: "வெளியேறுக",
     choose_language: "மொழியைத் தேர்ந்தெடுக்கவும்",
     system_status: "அமைப்பு நிலை",
     degraded_mode: "மெதுவான பயன்முறையில் இயங்குகிறது",
-    offline_mode: "இணைப்பு இல்லை. ஆஃப்லைன் சரிபார்ப்பு பயன்முறையில் இயங்குகிறது.",
+    offline_mode:
+      "இணைப்பு இல்லை. ஆஃப்லைன் சரிபார்ப்பு பயன்முறையில் இயங்குகிறது.",
 
     nav_dashboard: "டாஷ்போர்டு",
     nav_cases: "விசாரணை & வழக்குகள்",
@@ -260,13 +274,17 @@ export const translations = {
     role_records_ncrb_analyst: "என்.சி.ஆர்.பி ஆய்வாளர்",
 
     login_portal_title: "பாதுகாப்பான டிஜிட்டல் DMS நுழைவு வாயில்",
-    login_portal_sub: "அதிகாரப்பூர்வ மின்னணு பதிவுகள் & சங்கிலி பாதுகாப்பு அமைப்பு",
-    service_id_label: "அதிகாரப்பூர்வ மின்னஞ்சல் அல்லது அரசு சேவை அடையாள எண் (Service ID)",
-    service_id_placeholder: "எ.கா: officer.rao@police.gov.in அல்லது DL-POL-4921",
+    login_portal_sub:
+      "அதிகாரப்பூர்வ மின்னணு பதிவுகள் & சங்கிலி பாதுகாப்பு அமைப்பு",
+    service_id_label:
+      "அதிகாரப்பூர்வ மின்னஞ்சல் அல்லது அரசு சேவை அடையாள எண் (Service ID)",
+    service_id_placeholder:
+      "எ.கா: officer.rao@police.gov.in அல்லது DL-POL-4921",
     password_label: "கடவுச்சொல்",
     signin_btn: "உள்நுழைக",
     signin_loading: "சரிபார்க்கிறது...",
-    auth_notice: "அறிவிப்பு: அணுகல் கண்காணிக்கப்படுகிறது. உள்நுழைந்த பிறகு சர்வரால் உங்கள் பங்கு தீர்மானிக்கப்படுகிறது.",
+    auth_notice:
+      "அறிவிப்பு: அணுகல் கண்காணிக்கப்படுகிறது. உள்நுழைந்த பிறகு சர்வரால் உங்கள் பங்கு தீர்மானிக்கப்படுகிறது.",
     test_accounts_header: "அதிகாரப்பூர்வ சோதனை கணக்குகள்",
     test_accounts_sub: "சோதனை கணக்கை தேர்ந்தெடுக்க கிளிக் செய்யவும்:",
 
@@ -292,15 +310,17 @@ export const translations = {
     tag_verified: "சரிபார்க்கப்பட்டது",
     tag_active: "செயலில் உள்ளது",
     tag_system: "அமைப்பு பாதுகாக்கப்பட்டது",
-    tag_custom: "தனிப்பயன் பங்கு"
+    tag_custom: "தனிப்பயன் பங்கு",
   },
 
   bn: {
     official_system: "অফিসিয়াল সিস্টেম",
     gov_title: "ভারত সরকার · নিরাপদ ডিজিটাল নথি ব্যবস্থাপনা ব্যবস্থা",
     gov_subtitle: "SIH26190 · হাইপারলেজার ফ্যাব্রিক ক্রিপ্টোগ্রাফিক লেজার",
-    gov_footer_org: "ভারত সরকার · জাতীয় তথ্যবিজ্ঞান কেন্দ্র / স্বরাষ্ট্র মন্ত্রক",
-    gov_footer_note: "শুধুমাত্র সরকারি ব্যবহারের জন্য · SIH26190 সিকিউর ডিজিটাল DMS",
+    gov_footer_org:
+      "ভারত সরকার · জাতীয় তথ্যবিজ্ঞান কেন্দ্র / স্বরাষ্ট্র মন্ত্রক",
+    gov_footer_note:
+      "শুধুমাত্র সরকারি ব্যবহারের জন্য · SIH26190 সিকিউর ডিজিটাল DMS",
     sign_in: "সাইন ইন করুন",
     sign_out: "সাইন আউট করুন",
     choose_language: "ভাষা নির্বাচন করুন",
@@ -335,9 +355,11 @@ export const translations = {
     password_label: "পাসওয়ার্ড",
     signin_btn: "সাইন ইন করুন",
     signin_loading: "যাচাই করা হচ্ছে...",
-    auth_notice: "বিজ্ঞপ্তি: অ্যাক্সেস নিরীক্ষিত। যাচাইকরণের পর সার্ভার থেকে স্বয়ংক্রিয়ভাবে ভূমিকা নির্ধারিত হয়।",
+    auth_notice:
+      "বিজ্ঞপ্তি: অ্যাক্সেস নিরীক্ষিত। যাচাইকরণের পর সার্ভার থেকে স্বয়ংক্রিয়ভাবে ভূমিকা নির্ধারিত হয়।",
     test_accounts_header: "পূর্ব-নিবন্ধিত অফিসিয়াল টেস্ট অ্যাকাউন্ট",
-    test_accounts_sub: "সার্ভার যাচাইকরণের জন্য যেকোনো টেস্ট আইডেন্টিটিতে ক্লিক করুন:",
+    test_accounts_sub:
+      "সার্ভার যাচাইকরণের জন্য যেকোনো টেস্ট আইডেন্টিটিতে ক্লিক করুন:",
 
     dash_officer_profile: "অফিসারের পরিচয় প্রোফাইল",
     dash_service_id: "সার্ভিস ব্যাজ আইডি",
@@ -361,6 +383,6 @@ export const translations = {
     tag_verified: "যাচাইকৃত",
     tag_active: "সক্রিয়",
     tag_system: "সিস্টেম সংরক্ষিত",
-    tag_custom: "কাস্টম ভূমিকা"
-  }
+    tag_custom: "কাস্টম ভূমিকা",
+  },
 };

@@ -1,29 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { useI18n } from '../contexts/I18nContext';
-import { apiClient } from '../api/client';
-import StatusChip from '../components/StatusChip';
-import HashCell from '../components/HashCell';
+import React, { useState, useEffect } from "react";
+import { useI18n } from "../contexts/I18nContext";
+import { apiClient } from "../api/client";
+import StatusChip from "../components/StatusChip";
+import HashCell from "../components/HashCell";
 
 // err.detail comes straight from the backend's JSON body (see client.js
 // handleApiError) — usually a plain string for this router's errors.
 function formatError(err) {
   const detail = err?.detail;
-  if (typeof detail === 'string') return detail;
-  if (detail && typeof detail === 'object') {
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") {
     try {
       return JSON.stringify(detail);
     } catch {
       // fall through
     }
   }
-  return err?.message || 'Request failed.';
+  return err?.message || "Request failed.";
 }
 
 export default function PlatformAdmin() {
-  const { user } = useAuth();
   const { t } = useI18n();
-  const [activeTab, setActiveTab] = useState('roles'); // 'roles' | 'schemas' | 'orgs' | 'chain_recovery' | 'audit_trail'
+  const [activeTab, setActiveTab] = useState("roles"); // 'roles' | 'schemas' | 'orgs' | 'chain_recovery' | 'audit_trail'
   const [alert, setAlert] = useState(null);
 
   // ---------- Dynamic Role Management State ----------
@@ -34,28 +32,27 @@ export default function PlatformAdmin() {
 
   // Create Role Modal State
   const [showCreateRoleModal, setShowCreateRoleModal] = useState(false);
-  const [newRoleCode, setNewRoleCode] = useState('');
-  const [newRoleName, setNewRoleName] = useState('');
-  const [newRoleDesc, setNewRoleDesc] = useState('');
+  const [newRoleCode, setNewRoleCode] = useState("");
+  const [newRoleName, setNewRoleName] = useState("");
+  const [newRoleDesc, setNewRoleDesc] = useState("");
   const [selectedPermissions, setSelectedPermissions] = useState([]);
 
   // User Role Assignment Modal State
   const [selectedUserForAssign, setSelectedUserForAssign] = useState(null);
-  const [assignedRoleCode, setAssignedRoleCode] = useState('');
+  const [assignedRoleCode, setAssignedRoleCode] = useState("");
 
   // ---------- Organization Management State ----------
   const [orgs, setOrgs] = useState([]);
-  const [loadingOrgs, setLoadingOrgs] = useState(false);
-  const [newOrgName, setNewOrgName] = useState('');
-  const [newOrgType, setNewOrgType] = useState('police');
+  const [newOrgName, setNewOrgName] = useState("");
+  const [newOrgType, setNewOrgType] = useState("police");
 
   // ---------- Audit Trail State ----------
   const [auditLogs, setAuditLogs] = useState([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
 
   // ---------- Chain Recovery State ----------
-  const [retryDocId, setRetryDocId] = useState('');
-  const [confirmInput, setConfirmInput] = useState('');
+  const [retryDocId, setRetryDocId] = useState("");
+  const [confirmInput, setConfirmInput] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [chainRetrying, setChainRetrying] = useState(false);
 
@@ -66,19 +63,19 @@ export default function PlatformAdmin() {
   const [schemas, setSchemas] = useState([]);
   const [loadingSchemas, setLoadingSchemas] = useState(false);
   const [schemasError, setSchemasError] = useState(null);
-  const [newSchemaDocType, setNewSchemaDocType] = useState('');
+  const [newSchemaDocType, setNewSchemaDocType] = useState("");
   const [newSchemaTier, setNewSchemaTier] = useState(1);
-  const [newSchemaFields, setNewSchemaFields] = useState(''); // comma-separated field names
+  const [newSchemaFields, setNewSchemaFields] = useState(""); // comma-separated field names
 
   const loadRoleData = async () => {
     setLoadingRoles(true);
     setRoleDataError(null);
     try {
       const [rData, pData, uData, oData] = await Promise.all([
-        apiClient('/admin/roles'),
-        apiClient('/admin/permissions'),
-        apiClient('/admin/users'),
-        apiClient('/admin/orgs'),
+        apiClient("/admin/roles"),
+        apiClient("/admin/permissions"),
+        apiClient("/admin/users"),
+        apiClient("/admin/orgs"),
       ]);
       setRoles(Array.isArray(rData) ? rData : []);
       setPermissions(Array.isArray(pData) ? pData : []);
@@ -99,7 +96,7 @@ export default function PlatformAdmin() {
     setLoadingAudit(true);
     setAuditError(null);
     try {
-      const logs = await apiClient('/admin/audit-logs?limit=50');
+      const logs = await apiClient("/admin/audit-logs?limit=50");
       setAuditLogs(Array.isArray(logs) ? logs : []);
     } catch (err) {
       setAuditLogs([]);
@@ -113,7 +110,7 @@ export default function PlatformAdmin() {
     setLoadingSchemas(true);
     setSchemasError(null);
     try {
-      const data = await apiClient('/admin/document-schemas');
+      const data = await apiClient("/admin/document-schemas");
       setSchemas(Array.isArray(data) ? data : []);
     } catch (err) {
       setSchemas([]);
@@ -128,7 +125,7 @@ export default function PlatformAdmin() {
     if (!newSchemaDocType.trim()) return;
 
     const fieldNames = newSchemaFields
-      .split(',')
+      .split(",")
       .map((f) => f.trim())
       .filter(Boolean);
 
@@ -142,14 +139,22 @@ export default function PlatformAdmin() {
     };
 
     try {
-      const created = await apiClient('/admin/document-schemas', { body: payload });
+      const created = await apiClient("/admin/document-schemas", {
+        body: payload,
+      });
       setSchemas([...schemas, created]);
-      setAlert({ type: 'success', msg: `Document schema "${created.doc_type}" (Tier ${created.tier}) created.` });
-      setNewSchemaDocType('');
-      setNewSchemaFields('');
+      setAlert({
+        type: "success",
+        msg: `Document schema "${created.doc_type}" (Tier ${created.tier}) created.`,
+      });
+      setNewSchemaDocType("");
+      setNewSchemaFields("");
       setNewSchemaTier(1);
     } catch (err) {
-      setAlert({ type: 'error', msg: `Failed to create schema: ${formatError(err)}` });
+      setAlert({
+        type: "error",
+        msg: `Failed to create schema: ${formatError(err)}`,
+      });
     }
   };
 
@@ -161,7 +166,7 @@ export default function PlatformAdmin() {
 
   const handleTogglePermission = (permCode) => {
     if (selectedPermissions.includes(permCode)) {
-      setSelectedPermissions(selectedPermissions.filter(p => p !== permCode));
+      setSelectedPermissions(selectedPermissions.filter((p) => p !== permCode));
     } else {
       setSelectedPermissions([...selectedPermissions, permCode]);
     }
@@ -172,42 +177,62 @@ export default function PlatformAdmin() {
     if (!newRoleCode || !newRoleName) return;
 
     const payload = {
-      code: newRoleCode.trim().toLowerCase().replace(/\s+/g, '_'),
+      code: newRoleCode.trim().toLowerCase().replace(/\s+/g, "_"),
       name: newRoleName.trim(),
       description: newRoleDesc.trim(),
-      permission_codes: selectedPermissions
+      permission_codes: selectedPermissions,
     };
 
     try {
-      const created = await apiClient('/admin/roles', { body: payload });
+      const created = await apiClient("/admin/roles", { body: payload });
       setRoles([...roles, created]);
-      setAlert({ type: 'success', msg: `Custom role "${payload.name}" successfully provisioned with ${selectedPermissions.length} permissions.` });
+      setAlert({
+        type: "success",
+        msg: `Custom role "${payload.name}" successfully provisioned with ${selectedPermissions.length} permissions.`,
+      });
       loadAuditData();
     } catch (err) {
-      setAlert({ type: 'error', msg: `Failed to create role: ${formatError(err)}` });
+      setAlert({
+        type: "error",
+        msg: `Failed to create role: ${formatError(err)}`,
+      });
     } finally {
       setShowCreateRoleModal(false);
-      setNewRoleCode('');
-      setNewRoleName('');
-      setNewRoleDesc('');
+      setNewRoleCode("");
+      setNewRoleName("");
+      setNewRoleDesc("");
       setSelectedPermissions([]);
     }
   };
 
   const handleDeleteRole = async (role) => {
     if (role.is_system) {
-      setAlert({ type: 'warning', msg: 'System-protected roles cannot be deleted.' });
+      setAlert({
+        type: "warning",
+        msg: "System-protected roles cannot be deleted.",
+      });
       return;
     }
-    if (!window.confirm(`Are you sure you want to delete custom role "${role.name}"? This action will be permanently audited.`)) return;
+    if (
+      !window.confirm(
+        `Are you sure you want to delete custom role "${role.name}"? This action will be permanently audited.`,
+      )
+    )
+      return;
 
     try {
-      await apiClient(`/admin/roles/${role.id}`, { method: 'DELETE' });
-      setRoles(roles.filter(r => r.id !== role.id));
-      setAlert({ type: 'success', msg: `Role "${role.name}" deleted. Audit record recorded.` });
+      await apiClient(`/admin/roles/${role.id}`, { method: "DELETE" });
+      setRoles(roles.filter((r) => r.id !== role.id));
+      setAlert({
+        type: "success",
+        msg: `Role "${role.name}" deleted. Audit record recorded.`,
+      });
       loadAuditData();
     } catch (err) {
-      setAlert({ type: 'error', msg: `Failed to delete role: ${formatError(err)}` });
+      setAlert({
+        type: "error",
+        msg: `Failed to delete role: ${formatError(err)}`,
+      });
     }
   };
 
@@ -217,29 +242,58 @@ export default function PlatformAdmin() {
 
     try {
       await apiClient(`/admin/users/${selectedUserForAssign.id}/assign-role`, {
-        body: { role_code: assignedRoleCode }
+        body: { role_code: assignedRoleCode },
       });
-      setUsersList(usersList.map(u => u.id === selectedUserForAssign.id ? { ...u, role: assignedRoleCode } : u));
-      setAlert({ type: 'success', msg: `Role "${assignedRoleCode}" authoritatively assigned to ${selectedUserForAssign.name}. Audit trail updated.` });
+      setUsersList(
+        usersList.map((u) =>
+          u.id === selectedUserForAssign.id
+            ? { ...u, role: assignedRoleCode }
+            : u,
+        ),
+      );
+      setAlert({
+        type: "success",
+        msg: `Role "${assignedRoleCode}" authoritatively assigned to ${selectedUserForAssign.name}. Audit trail updated.`,
+      });
       loadAuditData();
     } catch (err) {
-      setAlert({ type: 'error', msg: `Role assignment failed: ${formatError(err)}` });
+      setAlert({
+        type: "error",
+        msg: `Role assignment failed: ${formatError(err)}`,
+      });
     } finally {
       setSelectedUserForAssign(null);
-      setAssignedRoleCode('');
+      setAssignedRoleCode("");
     }
   };
 
   const handleRevokeRole = async (targetUser) => {
-    if (!window.confirm(`Revoke assigned role from ${targetUser.name}? User role will be set to 'unassigned' and this sensitive administrative action will be recorded in the tamper-evident audit trail.`)) return;
+    if (
+      !window.confirm(
+        `Revoke assigned role from ${targetUser.name}? User role will be set to 'unassigned' and this sensitive administrative action will be recorded in the tamper-evident audit trail.`,
+      )
+    )
+      return;
 
     try {
-      await apiClient(`/admin/users/${targetUser.id}/remove-role`, { method: 'POST' });
-      setUsersList(usersList.map(u => u.id === targetUser.id ? { ...u, role: 'unassigned' } : u));
-      setAlert({ type: 'success', msg: `Role revoked for ${targetUser.name}. Logged to tamper-evident audit trail.` });
+      await apiClient(`/admin/users/${targetUser.id}/remove-role`, {
+        method: "POST",
+      });
+      setUsersList(
+        usersList.map((u) =>
+          u.id === targetUser.id ? { ...u, role: "unassigned" } : u,
+        ),
+      );
+      setAlert({
+        type: "success",
+        msg: `Role revoked for ${targetUser.name}. Logged to tamper-evident audit trail.`,
+      });
       loadAuditData();
     } catch (err) {
-      setAlert({ type: 'error', msg: `Failed to revoke role: ${formatError(err)}` });
+      setAlert({
+        type: "error",
+        msg: `Failed to revoke role: ${formatError(err)}`,
+      });
     }
   };
 
@@ -248,35 +302,44 @@ export default function PlatformAdmin() {
     if (!newOrgName.trim()) return;
 
     try {
-      const created = await apiClient('/admin/orgs', {
-        body: { name: newOrgName.trim(), org_type: newOrgType }
+      const created = await apiClient("/admin/orgs", {
+        body: { name: newOrgName.trim(), org_type: newOrgType },
       });
       setOrgs([...orgs, created]);
-      setAlert({ type: 'success', msg: `Organization "${created.name}" onboarded and persisted to database.` });
-      setNewOrgName('');
+      setAlert({
+        type: "success",
+        msg: `Organization "${created.name}" onboarded and persisted to database.`,
+      });
+      setNewOrgName("");
       loadAuditData();
     } catch (err) {
-      setAlert({ type: 'error', msg: `Failed to onboard organization: ${formatError(err)}` });
+      setAlert({
+        type: "error",
+        msg: `Failed to onboard organization: ${formatError(err)}`,
+      });
     }
   };
 
   const handleExecuteChainRetry = async () => {
     setShowConfirmModal(false);
-    setConfirmInput('');
+    setConfirmInput("");
     if (!retryDocId.trim()) return;
 
     setChainRetrying(true);
     try {
-      const res = await apiClient(`/documents/${retryDocId.trim()}/retry-chain-write`, { method: 'POST' });
+      const res = await apiClient(
+        `/documents/${retryDocId.trim()}/retry-chain-write`,
+        { method: "POST" },
+      );
       setAlert({
-        type: 'success',
-        msg: `Retry chain write completed for Document ${retryDocId}. Ledger Status: ${res.chain_status || 'dispatched'}.`
+        type: "success",
+        msg: `Retry chain write completed for Document ${retryDocId}. Ledger Status: ${res.chain_status || "dispatched"}.`,
       });
       loadAuditData();
     } catch (err) {
       setAlert({
-        type: 'warning',
-        msg: `Chain write retry: ${formatError(err)}`
+        type: "warning",
+        msg: `Chain write retry: ${formatError(err)}`,
       });
     } finally {
       setChainRetrying(false);
@@ -293,7 +356,7 @@ export default function PlatformAdmin() {
   return (
     <div>
       <div className="gov-breadcrumb-bar">
-        <span>{t('nav_admin', 'Platform Administration')}</span>
+        <span>{t("nav_admin", "Platform Administration")}</span>
         <span className="gov-breadcrumb-separator">›</span>
         <span>Governance, Roles & Audit Integrity</span>
       </div>
@@ -301,25 +364,34 @@ export default function PlatformAdmin() {
       <div className="page-container">
         <div className="page-header">
           <div>
-            <h1 className="page-title">Platform Administration & Security Governance</h1>
+            <h1 className="page-title">
+              Platform Administration & Security Governance
+            </h1>
             <p className="page-desc">
-              Authoritative RBAC role governance, tenant organization management, tamper-evident audit inspection, and ledger operations.
+              Authoritative RBAC role governance, tenant organization
+              management, tamper-evident audit inspection, and ledger
+              operations.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <StatusChip status="neutral" label="Role: Config Admin" />
             <StatusChip status="confirmed" label="Authoritative RBAC Engine" />
           </div>
         </div>
 
         <div className="domain-notice">
-          <strong>Security Standard (Audit Section 1.6 & 5.0):</strong> Only authorized administrators with
-          <code>admin:roles_manage</code> clearance can modify roles or assign permissions. Normal users cannot elevate
-          their own privileges. All assignment changes and administrative actions are logged to the immutable SHA-256 hash chain.
+          <strong>Administrative Governance & Access Protocol:</strong> Only
+          authorized administrators with
+          <code>admin:roles_manage</code> clearance can modify roles or assign
+          permissions. Normal users cannot elevate their own privileges. All
+          assignment changes and administrative actions are logged to the
+          immutable SHA-256 hash chain.
         </div>
 
         {alert && (
-          <div className={`alert ${alert.type === 'success' ? 'alert-success' : alert.type === 'error' ? 'alert-error' : 'alert-warning'}`}>
+          <div
+            className={`alert ${alert.type === "success" ? "alert-success" : alert.type === "error" ? "alert-error" : "alert-warning"}`}
+          >
             {alert.msg}
           </div>
         )}
@@ -327,33 +399,33 @@ export default function PlatformAdmin() {
         {/* Navigation Tabs */}
         <div className="gov-tabs">
           <button
-            className={`gov-tab-btn ${activeTab === 'roles' ? 'active' : ''}`}
-            onClick={() => setActiveTab('roles')}
+            className={`gov-tab-btn ${activeTab === "roles" ? "active" : ""}`}
+            onClick={() => setActiveTab("roles")}
           >
             Role & Permission Management
           </button>
           <button
-            className={`gov-tab-btn ${activeTab === 'schemas' ? 'active' : ''}`}
-            onClick={() => setActiveTab('schemas')}
+            className={`gov-tab-btn ${activeTab === "schemas" ? "active" : ""}`}
+            onClick={() => setActiveTab("schemas")}
           >
             Document Schemas & Recognizers
           </button>
           <button
-            className={`gov-tab-btn ${activeTab === 'orgs' ? 'active' : ''}`}
-            onClick={() => setActiveTab('orgs')}
+            className={`gov-tab-btn ${activeTab === "orgs" ? "active" : ""}`}
+            onClick={() => setActiveTab("orgs")}
           >
             Organization Onboarding
           </button>
           <button
-            className={`gov-tab-btn ${activeTab === 'chain_recovery' ? 'active' : ''}`}
-            onClick={() => setActiveTab('chain_recovery')}
+            className={`gov-tab-btn ${activeTab === "chain_recovery" ? "active" : ""}`}
+            onClick={() => setActiveTab("chain_recovery")}
           >
             Chain-Write Recovery
           </button>
           <button
-            className={`gov-tab-btn ${activeTab === 'audit_trail' ? 'active' : ''}`}
+            className={`gov-tab-btn ${activeTab === "audit_trail" ? "active" : ""}`}
             onClick={() => {
-              setActiveTab('audit_trail');
+              setActiveTab("audit_trail");
               loadAuditData();
             }}
           >
@@ -362,30 +434,57 @@ export default function PlatformAdmin() {
         </div>
 
         {/* Tab 1: Dynamic Role & Permission Management */}
-        {activeTab === 'roles' && (
+        {activeTab === "roles" && (
           <div>
             {roleDataError && (
-              <div className="alert alert-error" style={{ marginBottom: '16px' }}>
+              <div
+                className="alert alert-error"
+                style={{ marginBottom: "16px" }}
+              >
                 Could not load role/user/org data: {roleDataError}
               </div>
             )}
 
             {/* Roles Summary Table */}
-            <div className="card" style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div className="card" style={{ marginBottom: "20px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "12px",
+                }}
+              >
                 <div>
-                  <h2 className="card-title" style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>
+                  <h2
+                    className="card-title"
+                    style={{
+                      borderBottom: "none",
+                      marginBottom: 0,
+                      paddingBottom: 0,
+                    }}
+                  >
                     Authoritative Roles Registry
                   </h2>
                   <span className="table-caption" style={{ marginBottom: 0 }}>
-                    {roles.length} system and custom roles provisioned in database.
+                    {roles.length} system and custom roles provisioned in
+                    database.
                   </span>
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button className="btn btn-secondary" onClick={loadRoleData} disabled={loadingRoles} style={{ height: '32px', fontSize: '12px' }}>
-                    {loadingRoles ? 'Refreshing...' : 'Refresh'}
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={loadRoleData}
+                    disabled={loadingRoles}
+                    style={{ height: "32px", fontSize: "12px" }}
+                  >
+                    {loadingRoles ? "Refreshing..." : "Refresh"}
                   </button>
-                  <button className="btn btn-primary" onClick={() => setShowCreateRoleModal(true)} style={{ height: '32px', fontSize: '12px' }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setShowCreateRoleModal(true)}
+                    style={{ height: "32px", fontSize: "12px" }}
+                  >
                     + Create Role
                   </button>
                 </div>
@@ -407,26 +506,63 @@ export default function PlatformAdmin() {
                     {roles.map((r) => (
                       <tr key={r.id || r.code}>
                         <td>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.name}</div>
-                          <span className="mono-text" style={{ fontSize: '11px' }}>{r.code}</span>
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              color: "var(--text-primary)",
+                            }}
+                          >
+                            {r.name}
+                          </div>
+                          <span
+                            className="mono-text"
+                            style={{ fontSize: "11px" }}
+                          >
+                            {r.code}
+                          </span>
                         </td>
-                        <td style={{ fontSize: '12px', color: 'var(--text-secondary)', maxWidth: '280px' }}>
-                          {r.description || 'Standard operational role'}
+                        <td
+                          style={{
+                            fontSize: "12px",
+                            color: "var(--text-secondary)",
+                            maxWidth: "280px",
+                          }}
+                        >
+                          {r.description || "Standard operational role"}
                         </td>
                         <td>
-                          <StatusChip status={r.is_system ? 'neutral' : 'success'} label={r.is_system ? 'System Protected' : 'Custom Role'} />
+                          <StatusChip
+                            status={r.is_system ? "neutral" : "success"}
+                            label={
+                              r.is_system ? "System Protected" : "Custom Role"
+                            }
+                          />
                         </td>
                         <td>
-                          <StatusChip status="neutral" label={`${r.permission_codes?.length || 0} permissions`} />
+                          <StatusChip
+                            status="neutral"
+                            label={`${r.permission_codes?.length || 0} permissions`}
+                          />
                         </td>
                         <td style={{ fontWeight: 600 }}>{r.user_count || 0}</td>
                         <td>
                           {r.is_system ? (
-                            <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Protected</span>
+                            <span
+                              style={{
+                                fontSize: "11px",
+                                color: "var(--text-tertiary)",
+                              }}
+                            >
+                              Protected
+                            </span>
                           ) : (
                             <button
                               className="btn btn-destructive"
-                              style={{ height: '26px', fontSize: '11px', padding: '0 8px' }}
+                              style={{
+                                height: "26px",
+                                fontSize: "11px",
+                                padding: "0 8px",
+                              }}
                               onClick={() => handleDeleteRole(r)}
                             >
                               Delete
@@ -442,17 +578,37 @@ export default function PlatformAdmin() {
 
             {/* Users Directory Table */}
             <div className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "12px",
+                }}
+              >
                 <div>
-                  <h2 className="card-title" style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>
+                  <h2
+                    className="card-title"
+                    style={{
+                      borderBottom: "none",
+                      marginBottom: 0,
+                      paddingBottom: 0,
+                    }}
+                  >
                     Official Personnel Directory & Role Assignments
                   </h2>
                   <span className="table-caption" style={{ marginBottom: 0 }}>
-                    Officers and external authorities with authoritative government roles.
+                    Officers and external authorities with authoritative
+                    government roles.
                   </span>
                 </div>
-                <button className="btn btn-secondary" onClick={loadRoleData} disabled={loadingRoles} style={{ height: '32px', fontSize: '12px' }}>
-                  {loadingRoles ? 'Syncing...' : 'Sync Personnel'}
+                <button
+                  className="btn btn-secondary"
+                  onClick={loadRoleData}
+                  disabled={loadingRoles}
+                  style={{ height: "32px", fontSize: "12px" }}
+                >
+                  {loadingRoles ? "Syncing..." : "Sync Personnel"}
                 </button>
               </div>
 
@@ -473,23 +629,46 @@ export default function PlatformAdmin() {
                       <tr key={u.id}>
                         <td>
                           <div style={{ fontWeight: 600 }}>{u.name}</div>
-                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{u.email}</span>
-                        </td>
-                        <td>
-                          <span className="mono-text" style={{ fontSize: '12px', fontWeight: 600 }}>
-                            {u.service_id || '—'}
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {u.email}
                           </span>
                         </td>
-                        <td style={{ fontSize: '12px' }}>{u.org_name || 'Government Agency'}</td>
-                        <td style={{ fontSize: '12px' }}>{u.designation || 'Officer'}</td>
                         <td>
-                          <StatusChip status={u.role === 'unassigned' ? 'neutral' : 'success'} label={u.role} />
+                          <span
+                            className="mono-text"
+                            style={{ fontSize: "12px", fontWeight: 600 }}
+                          >
+                            {u.service_id || "—"}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: "12px" }}>
+                          {u.org_name || "Government Agency"}
+                        </td>
+                        <td style={{ fontSize: "12px" }}>
+                          {u.designation || "Officer"}
                         </td>
                         <td>
-                          <div style={{ display: 'flex', gap: '6px' }}>
+                          <StatusChip
+                            status={
+                              u.role === "unassigned" ? "neutral" : "success"
+                            }
+                            label={u.role}
+                          />
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: "6px" }}>
                             <button
                               className="btn btn-secondary"
-                              style={{ height: '26px', fontSize: '11px', padding: '0 8px' }}
+                              style={{
+                                height: "26px",
+                                fontSize: "11px",
+                                padding: "0 8px",
+                              }}
                               onClick={() => {
                                 setSelectedUserForAssign(u);
                                 setAssignedRoleCode(u.role);
@@ -497,10 +676,15 @@ export default function PlatformAdmin() {
                             >
                               Assign Role
                             </button>
-                            {u.role !== 'unassigned' && (
+                            {u.role !== "unassigned" && (
                               <button
                                 className="btn btn-secondary"
-                                style={{ height: '26px', fontSize: '11px', padding: '0 6px', color: 'var(--status-rejected-text)' }}
+                                style={{
+                                  height: "26px",
+                                  fontSize: "11px",
+                                  padding: "0 6px",
+                                  color: "var(--status-rejected-text)",
+                                }}
                                 onClick={() => handleRevokeRole(u)}
                                 title="Revoke Role Assignment"
                               >
@@ -520,22 +704,54 @@ export default function PlatformAdmin() {
 
         {/* Create Role Modal Dialog */}
         {showCreateRoleModal && (
-          <div style={{
-            position: 'fixed',
-            top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(16, 24, 40, 0.45)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1000
-          }}>
-            <div className="card" style={{ maxWidth: '640px', width: '92%', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-default)', paddingBottom: '12px' }}>
-                <h3 style={{ fontSize: '17px', fontWeight: 600, color: 'var(--ink-900)', margin: 0 }}>
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(16, 24, 40, 0.45)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+            }}
+          >
+            <div
+              className="card"
+              style={{
+                maxWidth: "640px",
+                width: "92%",
+                maxHeight: "90vh",
+                overflowY: "auto",
+                padding: "24px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "16px",
+                  borderBottom: "1px solid var(--border-default)",
+                  paddingBottom: "12px",
+                }}
+              >
+                <h3
+                  style={{
+                    fontSize: "17px",
+                    fontWeight: 600,
+                    color: "var(--ink-900)",
+                    margin: 0,
+                  }}
+                >
                   Create New Authoritative Role
                 </h3>
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  style={{ height: '26px', padding: '0 8px', fontSize: '12px' }}
+                  style={{ height: "26px", padding: "0 8px", fontSize: "12px" }}
                   onClick={() => setShowCreateRoleModal(false)}
                 >
                   ✕ Close
@@ -543,9 +759,17 @@ export default function PlatformAdmin() {
               </div>
 
               <form onSubmit={handleCreateRoleSubmit}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "12px",
+                  }}
+                >
                   <div className="form-group">
-                    <label className="form-label">Role Code (System Identifier)</label>
+                    <label className="form-label">
+                      Role Code (System Identifier)
+                    </label>
                     <input
                       type="text"
                       className="form-input"
@@ -569,7 +793,9 @@ export default function PlatformAdmin() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Official Role Description</label>
+                  <label className="form-label">
+                    Official Role Description
+                  </label>
                   <textarea
                     className="form-textarea"
                     rows={2}
@@ -579,34 +805,75 @@ export default function PlatformAdmin() {
                   />
                 </div>
 
-                <div style={{ marginTop: '16px', marginBottom: '8px' }}>
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '13px', color: 'var(--ink-900)' }}>
+                <div style={{ marginTop: "16px", marginBottom: "8px" }}>
+                  <label
+                    className="form-label"
+                    style={{
+                      fontWeight: 600,
+                      fontSize: "13px",
+                      color: "var(--ink-900)",
+                    }}
+                  >
                     Permissions Matrix (Select Allowed Capabilities)
                   </label>
-                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '2px 0 12px 0' }}>
-                    Permissions define what API operations officers with this role are authorized to perform.
+                  <p
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--text-secondary)",
+                      margin: "2px 0 12px 0",
+                    }}
+                  >
+                    Permissions define what API operations officers with this
+                    role are authorized to perform.
                   </p>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--border-default)', padding: '12px', borderRadius: '4px', background: 'var(--surface-sunken)' }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "14px",
+                      maxHeight: "280px",
+                      overflowY: "auto",
+                      border: "1px solid var(--border-default)",
+                      padding: "12px",
+                      borderRadius: "4px",
+                      background: "var(--surface-sunken)",
+                    }}
+                  >
                     {Object.entries(groupedPermissions).map(([cat, perms]) => (
                       <div key={cat}>
-                        <div style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 600, color: 'var(--ink-900)', letterSpacing: '0.04em', marginBottom: '6px' }}>
+                        <div
+                          style={{
+                            fontSize: "11px",
+                            textTransform: "uppercase",
+                            fontWeight: 600,
+                            color: "var(--ink-900)",
+                            letterSpacing: "0.04em",
+                            marginBottom: "6px",
+                          }}
+                        >
                           Category: {cat}
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                          {perms.map(p => (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "6px",
+                          }}
+                        >
+                          {perms.map((p) => (
                             <label
                               key={p.code}
                               style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                fontSize: '12px',
-                                background: 'var(--surface-panel)',
-                                padding: '6px 8px',
-                                borderRadius: '4px',
-                                border: '1px solid var(--border-default)',
-                                cursor: 'pointer'
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                fontSize: "12px",
+                                background: "var(--surface-panel)",
+                                padding: "6px 8px",
+                                borderRadius: "4px",
+                                border: "1px solid var(--border-default)",
+                                cursor: "pointer",
                               }}
                             >
                               <input
@@ -616,7 +883,12 @@ export default function PlatformAdmin() {
                               />
                               <div>
                                 <div style={{ fontWeight: 500 }}>{p.name}</div>
-                                <span className="mono-text" style={{ fontSize: '10px' }}>{p.code}</span>
+                                <span
+                                  className="mono-text"
+                                  style={{ fontSize: "10px" }}
+                                >
+                                  {p.code}
+                                </span>
                               </div>
                             </label>
                           ))}
@@ -626,11 +898,26 @@ export default function PlatformAdmin() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' }}>
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowCreateRoleModal(false)}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "8px",
+                    marginTop: "20px",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowCreateRoleModal(false)}
+                  >
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary" disabled={!newRoleCode || !newRoleName}>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={!newRoleCode || !newRoleName}
+                  >
                     Provision Role & Permissions
                   </button>
                 </div>
@@ -641,31 +928,58 @@ export default function PlatformAdmin() {
 
         {/* Reassign User Role Modal Dialog */}
         {selectedUserForAssign && (
-          <div style={{
-            position: 'fixed',
-            top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(16, 24, 40, 0.45)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1000
-          }}>
-            <div className="card" style={{ maxWidth: '440px', width: '90%', padding: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--ink-900)', margin: '0 0 8px 0' }}>
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(16, 24, 40, 0.45)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+            }}
+          >
+            <div
+              className="card"
+              style={{ maxWidth: "440px", width: "90%", padding: "24px" }}
+            >
+              <h3
+                style={{
+                  fontSize: "16px",
+                  fontWeight: 600,
+                  color: "var(--ink-900)",
+                  margin: "0 0 8px 0",
+                }}
+              >
                 Assign Authoritative Role
               </h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-                Updating role assignment for <strong>{selectedUserForAssign.name}</strong> ({selectedUserForAssign.service_id}).
+              <p
+                style={{
+                  color: "var(--text-secondary)",
+                  fontSize: "13px",
+                  marginBottom: "16px",
+                }}
+              >
+                Updating role assignment for{" "}
+                <strong>{selectedUserForAssign.name}</strong> (
+                {selectedUserForAssign.service_id}).
               </p>
 
               <form onSubmit={handleAssignRoleSubmit}>
                 <div className="form-group">
-                  <label className="form-label">Select Authoritative Role</label>
+                  <label className="form-label">
+                    Select Authoritative Role
+                  </label>
                   <select
                     className="form-select"
                     value={assignedRoleCode}
                     onChange={(e) => setAssignedRoleCode(e.target.value)}
                     required
                   >
-                    {roles.map(r => (
+                    {roles.map((r) => (
                       <option key={r.code} value={r.code}>
                         {r.name} ({r.code})
                       </option>
@@ -673,12 +987,27 @@ export default function PlatformAdmin() {
                   </select>
                 </div>
 
-                <div className="domain-notice" style={{ fontSize: '11px', marginTop: '12px' }}>
-                  Audit Notice: This role change is authoritatively verified and appended to the tamper-evident audit hash chain.
+                <div
+                  className="domain-notice"
+                  style={{ fontSize: "11px", marginTop: "12px" }}
+                >
+                  Official Record Notice: All administrative role reassignments
+                  are cryptographically sealed in the electronic audit register.
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
-                  <button type="button" className="btn btn-secondary" onClick={() => setSelectedUserForAssign(null)}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "8px",
+                    marginTop: "16px",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setSelectedUserForAssign(null)}
+                  >
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-primary">
@@ -691,33 +1020,56 @@ export default function PlatformAdmin() {
         )}
 
         {/* Tab 2: Document Schemas & Recognizers — real CRUD against /admin/document-schemas */}
-        {activeTab === 'schemas' && (
+        {activeTab === "schemas" && (
           <div className="grid-2">
             <div className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "12px",
+                }}
+              >
                 <div>
-                  <h2 className="card-title" style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>
+                  <h2
+                    className="card-title"
+                    style={{
+                      borderBottom: "none",
+                      marginBottom: 0,
+                      paddingBottom: 0,
+                    }}
+                  >
                     Document Schema Registry
                   </h2>
                   <span className="table-caption" style={{ marginBottom: 0 }}>
-                    {schemas.length} schema{schemas.length === 1 ? '' : 's'} configured in database.
+                    {schemas.length} schema{schemas.length === 1 ? "" : "s"}{" "}
+                    configured in database.
                   </span>
                 </div>
-                <button className="btn btn-secondary" onClick={loadSchemas} disabled={loadingSchemas} style={{ height: '32px', fontSize: '12px' }}>
-                  {loadingSchemas ? 'Refreshing...' : 'Refresh'}
+                <button
+                  className="btn btn-secondary"
+                  onClick={loadSchemas}
+                  disabled={loadingSchemas}
+                  style={{ height: "32px", fontSize: "12px" }}
+                >
+                  {loadingSchemas ? "Refreshing..." : "Refresh"}
                 </button>
               </div>
 
               {schemasError && (
-                <div className="alert alert-error" style={{ marginBottom: '12px' }}>
+                <div
+                  className="alert alert-error"
+                  style={{ marginBottom: "12px" }}
+                >
                   Could not load schemas: {schemasError}
                 </div>
               )}
 
               {!schemasError && !loadingSchemas && schemas.length === 0 && (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-                  No document schemas configured yet. Create one to define a sensitivity tier
-                  and protected fields for a document type.
+                <p style={{ color: "var(--text-secondary)", fontSize: "13px" }}>
+                  No document schemas configured yet. Create one to define a
+                  sensitivity tier and protected fields for a document type.
                 </p>
               )}
 
@@ -735,20 +1087,58 @@ export default function PlatformAdmin() {
                     <tbody>
                       {schemas.map((s) => (
                         <tr key={s.id}>
-                          <td><strong style={{ color: 'var(--text-primary)' }}>{s.doc_type}</strong></td>
                           <td>
-                            <StatusChip status={s.tier === 1 ? 'critical' : s.tier === 2 ? 'pending' : 'neutral'} label={`Tier ${s.tier}`} />
+                            <strong style={{ color: "var(--text-primary)" }}>
+                              {s.doc_type}
+                            </strong>
                           </td>
                           <td>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            <StatusChip
+                              status={
+                                s.tier === 1
+                                  ? "critical"
+                                  : s.tier === 2
+                                    ? "pending"
+                                    : "neutral"
+                              }
+                              label={`Tier ${s.tier}`}
+                            />
+                          </td>
+                          <td>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: "4px",
+                              }}
+                            >
                               {(s.sensitivity_fields || []).map((f) => (
-                                <span key={f.field_name} className="mono-text" style={{ fontSize: '11px' }}>{f.field_name}</span>
+                                <span
+                                  key={f.field_name}
+                                  className="mono-text"
+                                  style={{ fontSize: "11px" }}
+                                >
+                                  {f.field_name}
+                                </span>
                               ))}
-                              {!s.sensitivity_fields && <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Generic default profile</span>}
+                              {!s.sensitivity_fields && (
+                                <span
+                                  style={{
+                                    fontSize: "12px",
+                                    color: "var(--text-secondary)",
+                                  }}
+                                >
+                                  Generic default profile
+                                </span>
+                              )}
                             </div>
                           </td>
-                          <td style={{ fontSize: '12px' }}>
-                            {s.recognizer_mappings?.length ? s.recognizer_mappings.map(m => m.entity_type).join(', ') : '—'}
+                          <td style={{ fontSize: "12px" }}>
+                            {s.recognizer_mappings?.length
+                              ? s.recognizer_mappings
+                                  .map((m) => m.entity_type)
+                                  .join(", ")
+                              : "—"}
                           </td>
                         </tr>
                       ))}
@@ -760,9 +1150,16 @@ export default function PlatformAdmin() {
 
             <div className="card">
               <h2 className="card-title">Register Document Schema</h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-                Persists a sensitivity tier for a document type. Tier 1/2 require named sensitivity
-                fields; Tier 3 inherits the generic default profile and takes none.
+              <p
+                style={{
+                  color: "var(--text-secondary)",
+                  fontSize: "13px",
+                  marginBottom: "16px",
+                }}
+              >
+                Persists a sensitivity tier for a document type. Tier 1/2
+                require named sensitivity fields; Tier 3 inherits the generic
+                default profile and takes none.
               </p>
 
               <form onSubmit={handleCreateSchema}>
@@ -793,7 +1190,9 @@ export default function PlatformAdmin() {
 
                 {Number(newSchemaTier) !== 3 && (
                   <div className="form-group">
-                    <label className="form-label">Sensitivity Fields (comma-separated)</label>
+                    <label className="form-label">
+                      Sensitivity Fields (comma-separated)
+                    </label>
                     <input
                       type="text"
                       className="form-input"
@@ -804,7 +1203,11 @@ export default function PlatformAdmin() {
                   </div>
                 )}
 
-                <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ width: "100%" }}
+                >
                   Create Schema
                 </button>
               </form>
@@ -813,53 +1216,82 @@ export default function PlatformAdmin() {
         )}
 
         {/* Tab 3: Organization Onboarding (Real Database Integration) */}
-        {activeTab === 'orgs' && (
+        {activeTab === "orgs" && (
           <div className="grid-2">
             <div className="card">
               <span className="table-caption">
-                {roleDataError ? 'Could not load organizations.' : `${orgs.length} registered tenant organization${orgs.length === 1 ? '' : 's'} in database.`}
+                {roleDataError
+                  ? "Could not load organizations."
+                  : `${orgs.length} registered tenant organization${orgs.length === 1 ? "" : "s"} in database.`}
               </span>
               {roleDataError && (
-                <div className="alert alert-error" style={{ marginTop: '8px' }}>{roleDataError}</div>
+                <div className="alert alert-error" style={{ marginTop: "8px" }}>
+                  {roleDataError}
+                </div>
               )}
               {!roleDataError && orgs.length === 0 && (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '8px' }}>
+                <p
+                  style={{
+                    color: "var(--text-secondary)",
+                    fontSize: "13px",
+                    marginTop: "8px",
+                  }}
+                >
                   No organizations onboarded yet.
                 </p>
               )}
               {orgs.length > 0 && (
-              <div className="table-container">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Organization Name</th>
-                      <th>Classification</th>
-                      <th>Active Officers</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orgs.map((o) => (
-                      <tr key={o.id}>
-                        <td>
-                          <div style={{ fontWeight: 500 }}>{o.name}</div>
-                          <span className="mono-text" style={{ fontSize: '11px' }}>{o.id}</span>
-                        </td>
-                        <td><StatusChip status="neutral" label={o.org_type?.toUpperCase()} /></td>
-                        <td>{o.user_count || 0}</td>
-                        <td><StatusChip status="confirmed" label="Active" /></td>
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Organization Name</th>
+                        <th>Classification</th>
+                        <th>Active Officers</th>
+                        <th>Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {orgs.map((o) => (
+                        <tr key={o.id}>
+                          <td>
+                            <div style={{ fontWeight: 500 }}>{o.name}</div>
+                            <span
+                              className="mono-text"
+                              style={{ fontSize: "11px" }}
+                            >
+                              {o.id}
+                            </span>
+                          </td>
+                          <td>
+                            <StatusChip
+                              status="neutral"
+                              label={o.org_type?.toUpperCase()}
+                            />
+                          </td>
+                          <td>{o.user_count || 0}</td>
+                          <td>
+                            <StatusChip status="confirmed" label="Active" />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
 
             <div className="card">
               <h2 className="card-title">Onboard New Organization</h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-                Persist new tenant authority or agency to the system database with cryptographic tenancy.
+              <p
+                style={{
+                  color: "var(--text-secondary)",
+                  fontSize: "13px",
+                  marginBottom: "16px",
+                }}
+              >
+                Persist new tenant authority or agency to the system database
+                with cryptographic tenancy.
               </p>
 
               <form onSubmit={handleCreateOrg}>
@@ -882,16 +1314,26 @@ export default function PlatformAdmin() {
                     value={newOrgType}
                     onChange={(e) => setNewOrgType(e.target.value)}
                   >
-                    <option value="police">Police (Precinct / Crime Branch)</option>
-                    <option value="court">Judiciary (Court Bench / Sessions)</option>
-                    <option value="fsl">Forensic Science Laboratory (FSL)</option>
+                    <option value="police">
+                      Police (Precinct / Crime Branch)
+                    </option>
+                    <option value="court">
+                      Judiciary (Court Bench / Sessions)
+                    </option>
+                    <option value="fsl">
+                      Forensic Science Laboratory (FSL)
+                    </option>
                     <option value="bank">Financial / Banking Nodal Unit</option>
                     <option value="telecom">Telecom Service Provider</option>
                     <option value="admin">Administrative Agency</option>
                   </select>
                 </div>
 
-                <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ width: "100%" }}
+                >
                   Onboard Organization to Database
                 </button>
               </form>
@@ -900,12 +1342,20 @@ export default function PlatformAdmin() {
         )}
 
         {/* Tab 4: Chain Recovery */}
-        {activeTab === 'chain_recovery' && (
-          <div className="card" style={{ maxWidth: '600px', margin: '0 auto' }}>
+        {activeTab === "chain_recovery" && (
+          <div className="card" style={{ maxWidth: "600px", margin: "0 auto" }}>
             <h2 className="card-title">Manual Blockchain Retry Recovery</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-              In the event of a peer disconnect or network timeout, this dispatches a retry for the document's SHA-256 hash.
-              The original deterministic idempotency key is reused to guarantee zero duplicate ledger entries.
+            <p
+              style={{
+                color: "var(--text-secondary)",
+                fontSize: "13px",
+                marginBottom: "16px",
+              }}
+            >
+              In the event of a peer disconnect or network timeout, this
+              dispatches a retry for the document's SHA-256 hash. The original
+              deterministic idempotency key is reused to guarantee zero
+              duplicate ledger entries.
             </p>
 
             <div className="form-group">
@@ -919,38 +1369,67 @@ export default function PlatformAdmin() {
               />
             </div>
 
-            <div className="domain-notice" style={{ borderLeftColor: 'var(--status-pending-text)' }}>
-              <strong>Two-Person Control Requirement (Section 7.8):</strong> Chain recovery is a high-privilege administrative operation.
-              You will be required to type the confirmation code before dispatching.
+            <div
+              className="domain-notice"
+              style={{ borderLeftColor: "var(--status-pending-text)" }}
+            >
+              <strong>Dual-Authorization Administrative Protocol:</strong>{" "}
+              Ledger chain recovery is a restricted supervisory operation
+              requiring multi-step electronic confirmation before dispatch.
             </div>
 
             <button
               type="button"
               className="btn btn-primary"
-              style={{ width: '100%' }}
+              style={{ width: "100%" }}
               disabled={!retryDocId.trim() || chainRetrying}
               onClick={() => setShowConfirmModal(true)}
             >
-              {chainRetrying ? 'Dispatching...' : 'Initiate Chain Retry'}
+              {chainRetrying ? "Dispatching..." : "Initiate Chain Retry"}
             </button>
           </div>
         )}
 
         {/* Section 7.8 Two-Person Control Confirmation Modal */}
         {showConfirmModal && (
-          <div style={{
-            position: 'fixed',
-            top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(16, 24, 40, 0.4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1000
-          }}>
-            <div className="card" style={{ maxWidth: '440px', width: '90%', padding: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(16, 24, 40, 0.4)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+            }}
+          >
+            <div
+              className="card"
+              style={{ maxWidth: "440px", width: "90%", padding: "24px" }}
+            >
+              <h3
+                style={{
+                  fontSize: "16px",
+                  fontWeight: 600,
+                  color: "var(--text-primary)",
+                  marginBottom: "8px",
+                }}
+              >
                 Confirm Administrative Operation
               </h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-                To proceed with manual chain retry for <strong>{retryDocId}</strong>, type <code>CONFIRM</code> in the field below:
+              <p
+                style={{
+                  color: "var(--text-secondary)",
+                  fontSize: "13px",
+                  marginBottom: "16px",
+                }}
+              >
+                To proceed with manual chain retry for{" "}
+                <strong>{retryDocId}</strong>, type <code>CONFIRM</code> in the
+                field below:
               </p>
 
               <div className="form-group">
@@ -963,13 +1442,26 @@ export default function PlatformAdmin() {
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
-                <button className="btn btn-secondary" onClick={() => { setShowConfirmModal(false); setConfirmInput(''); }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  justifyContent: "flex-end",
+                  marginTop: "16px",
+                }}
+              >
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    setConfirmInput("");
+                  }}
+                >
                   Cancel
                 </button>
                 <button
                   className="btn btn-primary"
-                  disabled={confirmInput !== 'CONFIRM'}
+                  disabled={confirmInput !== "CONFIRM"}
                   onClick={handleExecuteChainRetry}
                 >
                   Confirm & Dispatch
@@ -980,30 +1472,55 @@ export default function PlatformAdmin() {
         )}
 
         {/* Tab 5: Administrative & Role Audit Trail (Real SHA-256 Hash Chain) */}
-        {activeTab === 'audit_trail' && (
+        {activeTab === "audit_trail" && (
           <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "12px",
+              }}
+            >
               <div>
-                <h2 className="card-title" style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>
+                <h2
+                  className="card-title"
+                  style={{
+                    borderBottom: "none",
+                    marginBottom: 0,
+                    paddingBottom: 0,
+                  }}
+                >
                   Tamper-Evident Administrative & Role Audit Trail
                 </h2>
                 <span className="table-caption" style={{ marginBottom: 0 }}>
-                  Cryptographically chained SHA-256 audit records for administrative, role, and security events.
+                  Cryptographically chained SHA-256 audit records for
+                  administrative, role, and security events.
                 </span>
               </div>
-              <button className="btn btn-secondary" onClick={loadAuditData} disabled={loadingAudit} style={{ height: '32px', fontSize: '12px' }}>
-                {loadingAudit ? 'Refreshing...' : 'Refresh Audit Log'}
+              <button
+                className="btn btn-secondary"
+                onClick={loadAuditData}
+                disabled={loadingAudit}
+                style={{ height: "32px", fontSize: "12px" }}
+              >
+                {loadingAudit ? "Refreshing..." : "Refresh Audit Log"}
               </button>
             </div>
 
-            <div className="domain-notice" style={{ marginBottom: '16px' }}>
-              <strong>Hash-Chain Verification:</strong> Every administrative action computes
-              <code>row_hash = SHA256(prev_row_hash + row_content)</code>, guaranteeing that reordering, deleting,
-              or modifying records is immediately detectable.
+            <div className="domain-notice" style={{ marginBottom: "16px" }}>
+              <strong>Electronic Evidence Audit Standard:</strong> In accordance
+              with Section 65B of the Indian Evidence Act / Section 63 of the
+              Bharatiya Sakshya Adhiniyam, every administrative event generates
+              a sequential cryptographic digest guaranteeing tamper-evident
+              audit integrity.
             </div>
 
             {auditError && (
-              <div className="alert alert-error" style={{ marginBottom: '16px' }}>
+              <div
+                className="alert alert-error"
+                style={{ marginBottom: "16px" }}
+              >
                 Could not load audit log: {auditError}
               </div>
             )}
@@ -1023,84 +1540,172 @@ export default function PlatformAdmin() {
                 <tbody>
                   {auditLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
-                        {loadingAudit ? 'Loading audit records...' : 'No administrative audit events recorded yet. Assign a role or onboard an organization to generate an audit entry.'}
+                      <td
+                        colSpan={6}
+                        style={{
+                          textAlign: "center",
+                          padding: "24px",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {loadingAudit
+                          ? "Loading audit records..."
+                          : "No administrative audit events recorded yet. Assign a role or onboard an organization to generate an audit entry."}
                       </td>
                     </tr>
                   ) : (
                     auditLogs.map((log) => (
                       <tr key={log.id}>
-                        <td style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>
-                          {new Date(log.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+                        <td style={{ fontSize: "11px", whiteSpace: "nowrap" }}>
+                          {new Date(log.created_at).toLocaleString("en-IN", {
+                            timeZone: "Asia/Kolkata",
+                          })}
                         </td>
                         <td>
-                          <div style={{ fontWeight: 500 }}>{log.actor_name || 'Administrator'}</div>
-                          <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{log.actor_email || 'System'}</span>
+                          <div style={{ fontWeight: 500 }}>
+                            {log.actor_name || "Administrator"}
+                          </div>
+                          <span
+                            style={{
+                              fontSize: "10px",
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {log.actor_email || "System"}
+                          </span>
                         </td>
                         <td>
                           <StatusChip
                             status={
-                              log.action === 'role_assigned' ? 'success' :
-                              (log.action === 'role_removed' || log.action === 'role_deleted') ? 'error' : 'neutral'
+                              log.action === "role_assigned"
+                                ? "success"
+                                : log.action === "role_removed" ||
+                                    log.action === "role_deleted"
+                                  ? "error"
+                                  : "neutral"
                             }
                             label={
-                              log.action === 'role_assigned' ? 'Role Assigned' :
-                              log.action === 'role_removed' ? 'Role Revoked' :
-                              log.action === 'role_created' ? 'Role Created' :
-                              log.action === 'role_deleted' ? 'Role Deleted' :
-                              log.action === 'role_updated' ? 'Role Updated' :
-                              log.action === 'organization_onboarded' ? 'Org Onboarded' :
-                              (log.action || 'system').replace(/_/g, ' ')
+                              log.action === "role_assigned"
+                                ? "Role Assigned"
+                                : log.action === "role_removed"
+                                  ? "Role Revoked"
+                                  : log.action === "role_created"
+                                    ? "Role Created"
+                                    : log.action === "role_deleted"
+                                      ? "Role Deleted"
+                                      : log.action === "role_updated"
+                                        ? "Role Updated"
+                                        : log.action ===
+                                            "organization_onboarded"
+                                          ? "Org Onboarded"
+                                          : (log.action || "system").replace(
+                                              /_/g,
+                                              " ",
+                                            )
                             }
                           />
                         </td>
                         <td>
-                          <StatusChip status="neutral" label={(log.target_type || 'system').toUpperCase()} />
+                          <StatusChip
+                            status="neutral"
+                            label={(log.target_type || "system").toUpperCase()}
+                          />
                         </td>
-                        <td style={{ fontSize: '12px' }}>
-                          {log.action === 'role_assigned' && (
+                        <td style={{ fontSize: "12px" }}>
+                          {log.action === "role_assigned" && (
                             <div>
-                              <span><strong>{log.action_metadata?.target_user_name}</strong>: </span>
-                              <span className="mono-text" style={{ textDecoration: 'line-through', color: 'var(--color-text-tertiary)' }}>
+                              <span>
+                                <strong>
+                                  {log.action_metadata?.target_user_name}
+                                </strong>
+                                :{" "}
+                              </span>
+                              <span
+                                className="mono-text"
+                                style={{
+                                  textDecoration: "line-through",
+                                  color: "var(--color-text-tertiary)",
+                                }}
+                              >
                                 {log.action_metadata?.previous_role}
                               </span>
                               <span> → </span>
-                              <span className="mono-text" style={{ fontWeight: 600, color: 'var(--color-primary)' }}>
+                              <span
+                                className="mono-text"
+                                style={{
+                                  fontWeight: 600,
+                                  color: "var(--color-primary)",
+                                }}
+                              >
                                 {log.action_metadata?.new_role}
                               </span>
                             </div>
                           )}
-                          {log.action === 'role_removed' && (
+                          {log.action === "role_removed" && (
                             <div>
-                              <span><strong>{log.action_metadata?.target_user_name}</strong>: </span>
-                              <span className="mono-text" style={{ textDecoration: 'line-through' }}>
+                              <span>
+                                <strong>
+                                  {log.action_metadata?.target_user_name}
+                                </strong>
+                                :{" "}
+                              </span>
+                              <span
+                                className="mono-text"
+                                style={{ textDecoration: "line-through" }}
+                              >
                                 {log.action_metadata?.previous_role}
                               </span>
                               <span> → revoked</span>
                             </div>
                           )}
-                          {log.action === 'role_created' && (
+                          {log.action === "role_created" && (
                             <div>
-                              <span>Created role: <strong>{log.action_metadata?.role_name}</strong> (<code>{log.action_metadata?.role_code}</code>)</span>
+                              <span>
+                                Created role:{" "}
+                                <strong>
+                                  {log.action_metadata?.role_name}
+                                </strong>{" "}
+                                (<code>{log.action_metadata?.role_code}</code>)
+                              </span>
                             </div>
                           )}
-                          {log.action === 'role_deleted' && (
+                          {log.action === "role_deleted" && (
                             <div>
-                              <span>Deleted role: <code>{log.action_metadata?.role_code}</code></span>
+                              <span>
+                                Deleted role:{" "}
+                                <code>{log.action_metadata?.role_code}</code>
+                              </span>
                             </div>
                           )}
-                          {log.action === 'role_updated' && (
+                          {log.action === "role_updated" && (
                             <div>
-                              <span>Updated role: <code>{log.action_metadata?.role_code}</code></span>
+                              <span>
+                                Updated role:{" "}
+                                <code>{log.action_metadata?.role_code}</code>
+                              </span>
                             </div>
                           )}
-                          {log.action === 'organization_onboarded' && (
+                          {log.action === "organization_onboarded" && (
                             <div>
-                              <span>Onboarded org: <strong>{log.action_metadata?.org_name}</strong> ({log.action_metadata?.org_type})</span>
+                              <span>
+                                Onboarded org:{" "}
+                                <strong>{log.action_metadata?.org_name}</strong>{" "}
+                                ({log.action_metadata?.org_type})
+                              </span>
                             </div>
                           )}
-                          {!['role_assigned', 'role_removed', 'role_created', 'role_deleted', 'role_updated', 'organization_onboarded'].includes(log.action) && (
-                            <span className="mono-text" style={{ fontSize: '11px' }}>
+                          {![
+                            "role_assigned",
+                            "role_removed",
+                            "role_created",
+                            "role_deleted",
+                            "role_updated",
+                            "organization_onboarded",
+                          ].includes(log.action) && (
+                            <span
+                              className="mono-text"
+                              style={{ fontSize: "11px" }}
+                            >
                               {JSON.stringify(log.action_metadata || {})}
                             </span>
                           )}

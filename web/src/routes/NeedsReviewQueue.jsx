@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { apiClient } from '../api/client';
-import StatusChip from '../components/StatusChip';
-import HashCell from '../components/HashCell';
+import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { apiClient } from "../api/client";
+import StatusChip from "../components/StatusChip";
+import HashCell from "../components/HashCell";
 
 export default function NeedsReviewQueue() {
   const [items, setItems] = useState([]);
@@ -15,20 +15,31 @@ export default function NeedsReviewQueue() {
       setLoading(true);
       setError(null);
       try {
-        const data = await apiClient('/documents?status=needs_review');
+        const data = await apiClient("/documents?status=needs_review");
         if (isMounted) setItems(data || []);
       } catch (e) {
-        if (isMounted) setError(e.message || 'Could not load the review queue.');
+        if (isMounted)
+          setError(e.message || "Could not load the review queue.");
       } finally {
         if (isMounted) setLoading(false);
       }
     }
     load();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const ageHours = (createdAt) => Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60)));
-  const oldestAge = items.length ? Math.max(...items.map((i) => ageHours(i.created_at))) : 0;
+  const ageHours = (createdAt) =>
+    Math.max(
+      0,
+      Math.round(
+        (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60),
+      ),
+    );
+  const oldestAge = items.length
+    ? Math.max(...items.map((i) => ageHours(i.created_at)))
+    : 0;
 
   return (
     <div>
@@ -41,29 +52,43 @@ export default function NeedsReviewQueue() {
       <div className="page-container">
         <div className="page-header">
           <div>
-            <h1 className="page-title">Needs-Review Redaction Queue</h1>
+            <h1 className="page-title">
+              Evidentiary Verification & Privacy Review Queue
+            </h1>
             <p className="page-desc">
-              Documents the AI Parser flagged with low-confidence tagging or couldn't process at
-              all — held in fail-closed state until a human confirms them.
+              Evidentiary documents flagged for manual verification due to
+              optical character recognition thresholds or critical privacy
+              markers. Verification clearance is required prior to official
+              docket generation.
             </p>
           </div>
           {!loading && !error && (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <StatusChip status="pending" label={`Queue Depth: ${items.length}`} />
-              {items.length > 0 && <StatusChip status="critical" label={`Oldest: ${oldestAge}h`} />}
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <StatusChip
+                status="pending"
+                label={`Queue Depth: ${items.length}`}
+              />
+              {items.length > 0 && (
+                <StatusChip status="critical" label={`Oldest: ${oldestAge}h`} />
+              )}
             </div>
           )}
         </div>
 
         <div className="domain-notice">
-          <strong>Fail-Closed Safety:</strong> Documents remain in this state (all sensitive spans
-          masked) until an Investigating Officer or Config Admin reviews them — this queue is the
-          only way to clear that state.
+          <strong>Confidentiality Hold Notice:</strong> Flagged records remain
+          under restricted custody with privacy protection active until formally
+          verified and cleared by the designated Investigating Officer or
+          Supervisory Authority.
         </div>
 
         <div className="card">
           <span className="table-caption">
-            {error ? '' : loading ? 'Loading…' : `${items.length} document${items.length === 1 ? '' : 's'} requiring review.`}
+            {error
+              ? ""
+              : loading
+                ? "Loading…"
+                : `${items.length} document${items.length === 1 ? "" : "s"} requiring review.`}
           </span>
           <div className="table-container">
             <table className="data-table">
@@ -74,39 +99,91 @@ export default function NeedsReviewQueue() {
                   <th>Chain Status</th>
                   <th>Doc Hash</th>
                   <th>Age</th>
-                  <th style={{ textAlign: 'right' }}>Action</th>
+                  <th style={{ textAlign: "right" }}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {error ? (
                   <tr>
-                    <td colSpan="6" style={{ textAlign: 'center', padding: '32px', color: 'var(--color-status-error, #b91c1c)' }}>
-                      {error.includes('permission') || error.includes('403')
+                    <td
+                      colSpan="6"
+                      style={{
+                        textAlign: "center",
+                        padding: "32px",
+                        color: "var(--color-status-error, #b91c1c)",
+                      }}
+                    >
+                      {error.includes("permission") || error.includes("403")
                         ? "Your role doesn't have access to the review queue — this is restricted to Investigating Officers and Config Admins."
                         : error}
                     </td>
                   </tr>
                 ) : loading ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '32px', color: 'var(--color-text-secondary)' }}>Loading…</td></tr>
+                  <tr>
+                    <td
+                      colSpan="6"
+                      style={{
+                        textAlign: "center",
+                        padding: "32px",
+                        color: "var(--color-text-secondary)",
+                      }}
+                    >
+                      Loading…
+                    </td>
+                  </tr>
                 ) : items.length === 0 ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '32px', color: 'var(--color-text-secondary)' }}>Nothing needs review right now.</td></tr>
+                  <tr>
+                    <td
+                      colSpan="6"
+                      style={{
+                        textAlign: "center",
+                        padding: "32px",
+                        color: "var(--color-text-secondary)",
+                      }}
+                    >
+                      Nothing needs review right now.
+                    </td>
+                  </tr>
                 ) : (
                   items.map((item) => (
                     <tr key={item.id}>
                       <td>
-                        <span className="mono-text" style={{ fontSize: '11px' }}>{item.id}</span>
+                        <span
+                          className="mono-text"
+                          style={{ fontSize: "11px" }}
+                        >
+                          {item.id}
+                        </span>
                       </td>
                       <td>{item.doc_type}</td>
-                      <td><StatusChip status={item.chain_status} label={item.chain_status.replace(/_/g, ' ')} /></td>
-                      <td><HashCell hash={item.doc_hash} prefix="SHA256" /></td>
                       <td>
-                        <StatusChip status={ageHours(item.created_at) >= 24 ? 'error' : 'neutral'} label={`${ageHours(item.created_at)} hrs`} />
+                        <StatusChip
+                          status={item.chain_status}
+                          label={item.chain_status.replace(/_/g, " ")}
+                        />
                       </td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td>
+                        <HashCell hash={item.doc_hash} prefix="SHA256" />
+                      </td>
+                      <td>
+                        <StatusChip
+                          status={
+                            ageHours(item.created_at) >= 24
+                              ? "error"
+                              : "neutral"
+                          }
+                          label={`${ageHours(item.created_at)} hrs`}
+                        />
+                      </td>
+                      <td style={{ textAlign: "right" }}>
                         <Link
                           to={`/cases/${item.case_id}`}
                           className="btn btn-primary"
-                          style={{ height: '28px', fontSize: '12px', padding: '0 8px' }}
+                          style={{
+                            height: "28px",
+                            fontSize: "12px",
+                            padding: "0 8px",
+                          }}
                         >
                           Inspect Case
                         </Link>

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "LegalDoc DMS — Judicial & Evidence Portal",
+  "version": "1.0.0",
+  "description": "Secure Digital Document Management System, Case Ledger, and Judicial Docketing",
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "LegalDoc DMS"
+  },
+  "permissions": ["storage"]
+}
