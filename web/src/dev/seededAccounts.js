@@ -17,4 +17,5 @@ export const SEEDED_ACCOUNTS = [
   { role_label: 'Forensic Lab (FSL)', email: 'fsl.director@fsl.gov.in', designation: 'Senior Scientific Officer' },
   { role_label: 'Defense Counsel', email: 'defense.advocate@bar.in', designation: 'Advocate-on-Record' },
   { role_label: 'NCRB Analyst', email: 'analyst.ncrb@nic.in', designation: 'Senior Statistical Officer' },
+  { role_label: 'Independent Security Auditor', email: 'auditor.rajan@vigilance.gov.in', designation: 'Chief Vigilance Officer (Systems Audit)' },
 ];

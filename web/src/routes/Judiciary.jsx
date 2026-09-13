@@ -28,6 +28,7 @@ export default function Judiciary() {
   const [selectedCaseId, setSelectedCaseId] = useState('');
   const [bailRecords, setBailRecords] = useState([]);
   const [bailPathway, setBailPathway] = useState(null);
+  const [counselEmail, setCounselEmail] = useState('');
   const [bailAlert, setBailAlert] = useState(null);
   const [bailDecision, setBailDecision] = useState(true);
   const [bailConditions, setBailConditions] = useState('');
@@ -95,6 +96,21 @@ export default function Judiciary() {
       setBailPathway(null);
     }
   }, [selectedCaseId]);
+
+  const handleRecordCounsel = async (e) => {
+    e.preventDefault();
+    if (!selectedCaseId || !counselEmail.trim()) return;
+    setBailAlert(null);
+    try {
+      await apiClient(`/cases/${selectedCaseId}/parties`, {
+        body: { email: counselEmail.trim() },
+      });
+      setBailAlert({ type: 'success', msg: `${counselEmail.trim()} recorded as defence counsel on this case.` });
+      setCounselEmail('');
+    } catch (err) {
+      setBailAlert({ type: 'error', msg: `Could not record counsel: ${formatError(err)}` });
+    }
+  };
 
   const handleScheduleHearing = async () => {
     if (!selectedCaseId) return;
@@ -340,6 +356,30 @@ export default function Judiciary() {
                       ))}
                     </div>
                   )}
+
+                  {/* Recording counsel is what grants a defence account access
+                      to this case at all — without it their case list is empty
+                      and every bail endpoint 403s. It is deliberately done from
+                      the bench rather than self-claimed by the advocate. */}
+                  <form onSubmit={handleRecordCounsel} style={{ marginBottom: '14px' }}>
+                    <label className="form-label">Record Defence Counsel</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="email"
+                        className="form-input"
+                        placeholder="advocate@bar.in"
+                        value={counselEmail}
+                        onChange={(e) => setCounselEmail(e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <button type="submit" className="btn btn-secondary" disabled={!counselEmail.trim()}>
+                        Record on Docket
+                      </button>
+                    </div>
+                    <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                      Grants this advocate access to this case only. Documents remain redacted for them.
+                    </p>
+                  </form>
 
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
                     <button

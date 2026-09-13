@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas, security
 from app.config import settings
 from app.database import get_db
-from app.rate_limit import login_rate_limiter
+from app.rate_limit import login_ip_limiter, login_rate_limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -18,18 +18,41 @@ def login(request: Request, body: schemas.LoginRequest, db: Session = Depends(ge
     token (7 days). Accepts either official government email or Government Service ID.
 
     Hardened with:
-    1. Sliding window IP rate limiting (10 attempts / 60 seconds)
+    1. Sliding-window rate limiting on FAILED attempts only — 10 per account
+       and 30 per source address, both per 60 seconds. A successful sign-in
+       costs nothing and clears the account's recorded failures.
     2. Constant-time dummy bcrypt check preventing user enumeration
     3. Multi-Factor Authentication (MFA) enforcement for high-privilege roles
        and users with mfa_enabled=True.
     """
     client_ip = request.client.host if request.client else "127.0.0.1"
-    login_rate_limiter.check(
-        client_ip,
-        detail="Login rate limit exceeded. Maximum 10 attempts per minute. Please retry later."
+    ident = body.email.strip()
+
+    # Only FAILED attempts consume quota, and the primary bucket is the
+    # account, not the caller's address.
+    #
+    # Both of those were wrong before, and together they made the limiter fire
+    # on ordinary use. Every browser request reaches the API through the Vite
+    # dev server's /api proxy and uvicorn runs without --proxy-headers, so
+    # request.client.host is the proxy container's address for every user —
+    # one shared bucket for the whole application. Counting successes on top
+    # of that meant signing in as the nine seeded personas spent nine of ten
+    # attempts, and the tenth locked everyone out for a minute.
+    ident_key = f"user:{ident.lower()}"
+    ip_key = f"ip:{client_ip}"
+    login_rate_limiter.peek(
+        ident_key,
+        detail="Too many failed sign-in attempts for this account. Please wait a minute and try again."
+    )
+    login_ip_limiter.peek(
+        ip_key,
+        detail="Too many failed sign-in attempts from this location. Please wait a minute and try again."
     )
 
-    ident = body.email.strip()
+    def _record_failure() -> None:
+        login_rate_limiter.record(ident_key)
+        login_ip_limiter.record(ip_key)
+
     user = (
         db.query(models.User)
         .filter((models.User.email == ident) | (models.User.service_id == ident))
@@ -38,24 +61,34 @@ def login(request: Request, body: schemas.LoginRequest, db: Session = Depends(ge
 
     if user is None:
         security.dummy_password_check(body.password)
+        _record_failure()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     if not security.verify_password(body.password, user.hashed_password):
+        _record_failure()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     # MFA evaluation: enforced when user.mfa_enabled is True
     if user.mfa_enabled:
         if not body.mfa_code:
+            # Not a failed credential attempt — the password was right and the
+            # client is being challenged. Charging quota here would mean a user
+            # with MFA on burns an attempt every single sign-in.
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="MFA code required",
             )
         secret = security.get_user_mfa_secret(str(user.id), user.email, settings.JWT_SECRET)
         if not security.verify_totp_code(secret, body.mfa_code):
+            _record_failure()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid MFA code",
             )
+
+    # Authenticated: forget this account's failures so a few mistyped
+    # passwords followed by the right one don't leave it near the limit.
+    login_rate_limiter.clear(ident_key)
 
     org_id = str(user.org_id)
     return schemas.TokenResponse(
