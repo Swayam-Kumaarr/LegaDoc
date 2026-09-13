@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint src",
+    "format": "prettier --write \"src/**/*.{js,jsx,css}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,css}\"",
+    "test": "vitest run"
   },
   "dependencies": {
     "react": "^19.2.8",
@@ -14,7 +18,16 @@
     "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.7",
+    "@testing-library/react": "^16.3.3",
     "@vitejs/plugin-react": "^6.1.1",
-    "vite": "^8.2.2"
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "jsdom": "^30.0.1",
+    "prettier": "^3.9.6",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
   }
 }

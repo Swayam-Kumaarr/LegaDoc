@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useI18n } from '../contexts/I18nContext';
+import React, { useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import { useI18n } from "../contexts/I18nContext";
 
 // Famous GeeksforGeeks Run-Length Encoded India Map String
 // Reference: https://www.geeksforgeeks.org/cpp/code-to-generate-the-map-of-india-with-explanation/
@@ -12,7 +12,9 @@ const GFG_ENCODED_STR =
   "SOn TNn ULo0ULo#ULo-WHq!WFs XDt!";
 
 function decodeGfgIndiaMap() {
-  let a = 10, b = 0, c = 10;
+  let a = 10,
+    b = 0,
+    c = 10;
   const dots = [];
   let row = 0;
   let col = 0;
@@ -34,7 +36,7 @@ function decodeGfgIndiaMap() {
           dots.push({
             cx: Number(cx.toFixed(1)),
             cy: Number(cy.toFixed(1)),
-            r
+            r,
           });
         }
         col++;
@@ -49,17 +51,17 @@ const GFG_DOTS = decodeGfgIndiaMap();
 
 // Regional judicial nodes (Delhi, Mumbai, Kolkata, Chennai) mapped on GfG grid
 const REGIONAL_NODES = [
-  { name: 'DEL (North)', x: 165, y: 128 },
-  { name: 'BOM (West)',  x: 110, y: 231 },
-  { name: 'CCU (East)',  x: 257, y: 205 },
-  { name: 'MAA (South)', x: 165, y: 334 },
+  { name: "DEL (North)", x: 165, y: 128 },
+  { name: "BOM (West)", x: 110, y: 231 },
+  { name: "CCU (East)", x: 257, y: 205 },
+  { name: "MAA (South)", x: 165, y: 334 },
 ];
 
 const NODE_ARCS = [
-  { from: 0, to: 1, d: 'M 165 128 Q 115 160 110 231', delay: '0s' },
-  { from: 0, to: 2, d: 'M 165 128 Q 220 150 257 205', delay: '0.8s' },
-  { from: 1, to: 3, d: 'M 110 231 Q 120 295 165 334', delay: '1.6s' },
-  { from: 2, to: 3, d: 'M 257 205 Q 225 280 165 334', delay: '2.4s' },
+  { from: 0, to: 1, d: "M 165 128 Q 115 160 110 231", delay: "0s" },
+  { from: 0, to: 2, d: "M 165 128 Q 220 150 257 205", delay: "0.8s" },
+  { from: 1, to: 3, d: "M 110 231 Q 120 295 165 334", delay: "1.6s" },
+  { from: 2, to: 3, d: "M 257 205 Q 225 280 165 334", delay: "2.4s" },
 ];
 
 export default function Login() {
@@ -68,8 +70,8 @@ export default function Login() {
   const { login } = useAuth();
   const { language, setLanguage, t, supportedLanguages } = useI18n();
 
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -82,9 +84,13 @@ export default function Login() {
     setLoading(false);
 
     if (result.success) {
-      navigate('/dashboard', { replace: true });
+      const destination = location.state?.from?.pathname || "/dashboard";
+      navigate(destination, { replace: true });
     } else {
-      setError(result.error || "Authentication failed. Please verify your government credentials.");
+      setError(
+        result.error ||
+          "Authentication failed. Please verify your government credentials.",
+      );
     }
   };
 
@@ -93,7 +99,9 @@ export default function Login() {
       {/* ================= LEFT PANEL (Institutional Sovereign Dark Theme) ================= */}
       <div className="left">
         <h1 className="title">
-          Secure Digital Document<br />Management System
+          Secure Digital Document
+          <br />
+          Management System
         </h1>
 
         <p className="desc">
@@ -104,7 +112,11 @@ export default function Login() {
 
         {/* Authentic India Dot Map via GeeksforGeeks C Run-Length Algorithm */}
         <div className="map-wrap">
-          <svg className="india-map" viewBox="0 0 380 430" xmlns="http://www.w3.org/2000/svg">
+          <svg
+            className="india-map"
+            viewBox="0 0 380 430"
+            xmlns="http://www.w3.org/2000/svg"
+          >
             {/* GfG Algorithm Dot Layer */}
             <g id="dotLayer" fill="#334155">
               {GFG_DOTS.map((d, i) => (
@@ -135,10 +147,26 @@ export default function Login() {
                 </g>
               ))}
               {/* Node Geographical Labels matching reference */}
-              <text x={152} y={124} textAnchor="end" fill="#93C5FD" fontSize="10" fontWeight="500" fontFamily="var(--font-sans)">
+              <text
+                x={152}
+                y={124}
+                textAnchor="end"
+                fill="#93C5FD"
+                fontSize="10"
+                fontWeight="500"
+                fontFamily="var(--font-sans)"
+              >
                 Delhi NCR
               </text>
-              <text x={152} y={340} textAnchor="end" fill="#93C5FD" fontSize="10" fontWeight="500" fontFamily="var(--font-sans)">
+              <text
+                x={152}
+                y={340}
+                textAnchor="end"
+                fill="#93C5FD"
+                fontSize="10"
+                fontWeight="500"
+                fontFamily="var(--font-sans)"
+              >
                 Bengaluru
               </text>
             </g>
@@ -165,7 +193,8 @@ export default function Login() {
               "यतो धर्मस्ततो जयः"
             </p>
             <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
-              Securing admissible judicial custody across State Police Directorates, Forensic Laboratories, and High Court registries.
+              Securing admissible judicial custody across State Police
+              Directorates, Forensic Laboratories, and High Court registries.
             </p>
           </div>
         </div>
@@ -175,44 +204,85 @@ export default function Login() {
       <div className="login-right-panel">
         <div className="login-card">
           {/* Header & Language Selection */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <span className="text-label" style={{ fontSize: '11px' }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "16px",
+            }}
+          >
+            <span className="text-label" style={{ fontSize: "11px" }}>
               Official Identity Verification
             </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <label htmlFor="login-lang-select" className="text-caption" style={{ fontWeight: 600 }}>
-                {t('choose_language', 'Lang')}:
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <label
+                htmlFor="login-lang-select"
+                className="text-caption"
+                style={{ fontWeight: 600 }}
+              >
+                {t("choose_language", "Lang")}:
               </label>
               <select
                 id="login-lang-select"
                 className="form-select"
-                style={{ width: 'auto', height: '26px', fontSize: '11px', padding: '1px 22px 1px 6px' }}
+                style={{
+                  width: "auto",
+                  height: "26px",
+                  fontSize: "11px",
+                  padding: "1px 22px 1px 6px",
+                }}
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
               >
-                {supportedLanguages.map(l => (
-                  <option key={l.code} value={l.code}>{l.native} ({l.label})</option>
+                {supportedLanguages.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.native} ({l.label})
+                  </option>
                 ))}
               </select>
             </div>
           </div>
 
-          <h2 className="text-heading" style={{ fontSize: '22px', marginBottom: '6px' }}>
+          <h2
+            className="text-heading"
+            style={{ fontSize: "22px", marginBottom: "6px" }}
+          >
             Sign In to Officer Portal
           </h2>
-          <p className="text-caption" style={{ marginBottom: '20px' }}>
-            Enter your authoritative badge number or official department email address. Access is logged and audited.
+          <p className="text-caption" style={{ marginBottom: "20px" }}>
+            Enter your authoritative badge number or official department email
+            address. Access is logged and audited.
           </p>
 
-          {error && <div className="alert alert-error" role="alert">{error}</div>}
+          {error && (
+            <div className="alert alert-error" role="alert">
+              {error}
+            </div>
+          )}
 
           {/* --- Security Clearance Advisory --- */}
           <div className="flex gap-2.5 p-3 mb-5 rounded-md border border-amber-200 bg-amber-50 text-amber-900 text-left">
-            <svg className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            <svg
+              className="h-4 w-4 text-amber-700 shrink-0 mt-0.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
             </svg>
             <p className="text-[11px] leading-relaxed text-amber-800">
-              <strong className="font-semibold text-amber-900">Official Access Only:</strong> All access attempts are cryptographically stamped and logged. Unauthorized access is punishable under <span className="font-medium">Sec. 66 IT Act</span>.
+              <strong className="font-semibold text-amber-900">
+                Official Access Only:
+              </strong>{" "}
+              All access attempts are cryptographically stamped and logged.
+              Unauthorized access is punishable under{" "}
+              <span className="font-medium">Sec. 66 IT Act</span>.
             </p>
           </div>
 
@@ -220,7 +290,8 @@ export default function Login() {
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="form-label" htmlFor="badge-identifier">
-                Badge ID / Official Email <span className="form-required">*</span>
+                Badge ID / Official Email{" "}
+                <span className="form-required">*</span>
               </label>
               <input
                 id="badge-identifier"
@@ -253,16 +324,24 @@ export default function Login() {
             <button
               type="submit"
               className="btn btn-primary"
-              style={{ width: '100%', marginTop: '8px' }}
+              style={{ width: "100%", marginTop: "8px" }}
               disabled={loading}
             >
-              {loading ? 'Verifying Authoritative Credentials...' : 'Sign In & Authorize'}
+              {loading
+                ? "Verifying Authoritative Credentials..."
+                : "Sign In & Authorize"}
             </button>
 
-            <div style={{ marginTop: '14px', textAlign: 'center' }}>
+            <div style={{ marginTop: "14px", textAlign: "center" }}>
               <span className="text-caption">
-                Credential issues? Contact your{' '}
-                <span style={{ color: 'var(--color-text-secondary)', textDecoration: 'underline', cursor: 'pointer' }}>
+                Credential issues? Contact your{" "}
+                <span
+                  style={{
+                    color: "var(--color-text-secondary)",
+                    textDecoration: "underline",
+                    cursor: "pointer",
+                  }}
+                >
                   Precinct Systems Administrator
                 </span>
               </span>
