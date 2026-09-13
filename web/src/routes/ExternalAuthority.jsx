@@ -68,7 +68,7 @@ export default function ExternalAuthority() {
       );
       setStatusMessage({
         type: "success",
-        msg: `Report submitted and hashed to Case ${selectedReq.case_number}'s chain of custody. Requisition status: ${updated.status}.`,
+        msg: `Statutory report successfully transmitted and entered into official evidence record for Case No. ${selectedReq.case_number}. Requisition status: ${updated.status}.`,
       });
       setAttachment(null);
       setSelectedReq(null);
@@ -111,9 +111,10 @@ export default function ExternalAuthority() {
         </div>
 
         <div className="domain-notice">
-          <strong>Security Standard (Audit Section 1.8 & 2.0):</strong> Access
-          is strictly restricted to requisitions routed to your organization.
-          You have no access to the broader case docket.
+          <strong>Statutory Jurisdiction Notice:</strong> Access is confined to
+          official requisitions issued under Section 91 CrPC / Section 94 BNSS
+          addressed to your designated agency. General case docket records
+          remain protected.
         </div>
 
         {statusMessage && (

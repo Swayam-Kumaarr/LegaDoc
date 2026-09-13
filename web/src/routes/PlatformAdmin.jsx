@@ -380,7 +380,7 @@ export default function PlatformAdmin() {
         </div>
 
         <div className="domain-notice">
-          <strong>Security Standard (Audit Section 1.6 & 5.0):</strong> Only
+          <strong>Administrative Governance & Access Protocol:</strong> Only
           authorized administrators with
           <code>admin:roles_manage</code> clearance can modify roles or assign
           permissions. Normal users cannot elevate their own privileges. All
@@ -991,8 +991,8 @@ export default function PlatformAdmin() {
                   className="domain-notice"
                   style={{ fontSize: "11px", marginTop: "12px" }}
                 >
-                  Audit Notice: This role change is authoritatively verified and
-                  appended to the tamper-evident audit hash chain.
+                  Official Record Notice: All administrative role reassignments
+                  are cryptographically sealed in the electronic audit register.
                 </div>
 
                 <div
@@ -1373,9 +1373,9 @@ export default function PlatformAdmin() {
               className="domain-notice"
               style={{ borderLeftColor: "var(--status-pending-text)" }}
             >
-              <strong>Two-Person Control Requirement (Section 7.8):</strong>{" "}
-              Chain recovery is a high-privilege administrative operation. You
-              will be required to type the confirmation code before dispatching.
+              <strong>Dual-Authorization Administrative Protocol:</strong>{" "}
+              Ledger chain recovery is a restricted supervisory operation
+              requiring multi-step electronic confirmation before dispatch.
             </div>
 
             <button
@@ -1509,11 +1509,11 @@ export default function PlatformAdmin() {
             </div>
 
             <div className="domain-notice" style={{ marginBottom: "16px" }}>
-              <strong>Hash-Chain Verification:</strong> Every administrative
-              action computes
-              <code>row_hash = SHA256(prev_row_hash + row_content)</code>,
-              guaranteeing that reordering, deleting, or modifying records is
-              immediately detectable.
+              <strong>Electronic Evidence Audit Standard:</strong> In accordance
+              with Section 65B of the Indian Evidence Act / Section 63 of the
+              Bharatiya Sakshya Adhiniyam, every administrative event generates
+              a sequential cryptographic digest guaranteeing tamper-evident
+              audit integrity.
             </div>
 
             {auditError && (

@@ -13,7 +13,7 @@ describe("Crawler Component", () => {
     expect(
       screen.getByPlaceholderText(/State vs. Kumar, Section 420/i),
     ).toBeTruthy();
-    expect(screen.getByText("Initiate Crawl")).toBeTruthy();
+    expect(screen.getByText("Search Docket Index")).toBeTruthy();
   });
 
   it("submits crawl request and renders result table with hash and status", async () => {
@@ -36,7 +36,7 @@ describe("Crawler Component", () => {
     const input = screen.getByPlaceholderText(/State vs. Kumar, Section 420/i);
     fireEvent.change(input, { target: { value: "State vs. Test Subject" } });
 
-    const crawlBtn = screen.getByText("Initiate Crawl");
+    const crawlBtn = screen.getByText("Search Docket Index");
     fireEvent.click(crawlBtn);
 
     await waitFor(() => {
@@ -54,7 +54,7 @@ describe("Crawler Component", () => {
     });
 
     render(<Crawler />);
-    const crawlBtn = screen.getByText("Initiate Crawl");
+    const crawlBtn = screen.getByText("Search Docket Index");
     fireEvent.click(crawlBtn);
 
     await waitFor(() => {
@@ -70,7 +70,7 @@ describe("Crawler Component", () => {
     );
 
     render(<Crawler />);
-    const crawlBtn = screen.getByText("Initiate Crawl");
+    const crawlBtn = screen.getByText("Search Docket Index");
     fireEvent.click(crawlBtn);
 
     await waitFor(() => {

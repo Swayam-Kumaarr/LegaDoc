@@ -130,7 +130,7 @@ export default function Judiciary() {
       });
       setBailAlert({
         type: "success",
-        msg: `Bail order recorded (stage: ${record.stage}).`,
+        msg: `Bail order pronounced and uploaded to the judicial docket (Reference Stage: ${record.stage || "Official Record"}).`,
       });
       setBailConditions("");
       fetchCases();
@@ -150,7 +150,10 @@ export default function Judiciary() {
       await apiClient(`/cases/${trialCaseId}/trial/hearing-notice`, {
         method: "POST",
       });
-      setTrialAlert({ type: "success", msg: "Trial hearing scheduled." });
+      setTrialAlert({
+        type: "success",
+        msg: "Summons and Trial Hearing Notice officially issued to all parties on record.",
+      });
       fetchCases();
     } catch (err) {
       setTrialAlert({
@@ -170,7 +173,7 @@ export default function Judiciary() {
       });
       setTrialAlert({
         type: "success",
-        msg: `Judgment recorded: case status is now ${updated.investigation_status}.`,
+        msg: `Final Judgment and Order signed and entered into the judicial register (Case Status: ${updated.investigation_status}).`,
       });
       setVerdictSummary("");
       fetchCases();
@@ -227,10 +230,10 @@ export default function Judiciary() {
         </div>
 
         <div className="domain-notice">
-          <strong>Judicial Authority Note (Flows 4 & 5):</strong> The court
-          bench receives the complete evidentiary file including unredacted
-          sensitive markers and full audit trail — enforced server-side per
-          role, not by this page.
+          <strong>Judicial Bench Statutory Authority:</strong> Under the
+          Bharatiya Sakshya Adhiniyam, 2023 and CrPC / BNSS, the judicial bench
+          retains inherent jurisdiction to inspect the complete unredacted
+          evidentiary record and the immutable audit trail of proceedings.
         </div>
 
         {casesError && (

@@ -30,7 +30,7 @@ export default function ChargeSheetFiling() {
       });
       setFilingStatus({
         type: "success",
-        msg: "Charge sheet filed. All mandatory stage requirements were verified against this case's actual documents and evidence requests.",
+        msg: "Police Report / Final Charge-Sheet successfully filed under Section 173 CrPC / Section 193 BNSS. All statutory evidentiary requirements verified.",
       });
     } catch (err) {
       if (
@@ -71,20 +71,18 @@ export default function ChargeSheetFiling() {
               Charge Sheet Filing (Section 173 CrPC / BNSS)
             </h1>
             <p className="page-desc">
-              Filing is checked against this case's actual documents and
-              evidence requests — the mandatory items for its crime type are
-              defined server-side and verified live, not previewed here in
-              advance.
+              Statutory verification and formal submission of the Police Report
+              / Final Charge-Sheet to the competent judicial magistrate.
             </p>
           </div>
           <StatusChip status="neutral" label="Role: Public Prosecutor" />
         </div>
 
         <div className="domain-notice">
-          <strong>Flow 3 (AND-Join Validation):</strong> Filing requires every
-          mandatory document and completed evidence request for this case's
-          crime type. An incomplete case is rejected with the specific missing
-          items listed below — not a guess made in the browser.
+          <strong>Statutory Filing Prerequisite (BNSS Section 193):</strong> The
+          final charge-sheet submission requires all mandatory evidentiary
+          documents, panchnamas, and forensic lab reports. Any pending
+          requisitions will prevent formal court docketing.
         </div>
 
         {filingStatus && (

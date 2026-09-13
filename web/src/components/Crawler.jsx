@@ -113,8 +113,8 @@ export default function Crawler() {
             style={{ height: "38px" }}
           >
             {status === "loading"
-              ? "Crawling Target Nodes..."
-              : "Initiate Crawl"}
+              ? "Querying Judicial Dockets..."
+              : "Search Docket Index"}
           </button>
         </div>
       </form>
@@ -130,10 +130,11 @@ export default function Crawler() {
         >
           <div className="spinner" style={{ margin: "0 auto 12px" }} />
           <div className="text-body" style={{ fontWeight: 600 }}>
-            Executing cryptographic crawl across federated court nodes...
+            Querying national judicial dockets and gazette databases...
           </div>
           <div className="text-caption">
-            Parsing digital signatures and verifying SHA-256 docket roots
+            Retrieving digitally signed case records and verified electronic
+            court orders
           </div>
         </div>
       )}

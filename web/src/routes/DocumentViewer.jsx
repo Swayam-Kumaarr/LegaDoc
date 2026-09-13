@@ -161,10 +161,11 @@ export default function DocumentViewer() {
 
         {/* Security Rule Callout */}
         <div className="domain-notice">
-          <strong>Security Requirement (Section 6.5):</strong> Redacted spans
-          are enforced server-side. The browser renders solid unrevealed blocks
-          with entity categorization. No underlying sensitive data is present in
-          the DOM.
+          <strong>Official Confidentiality Protocol:</strong> Redacted spans are
+          protected under Section 72A of the Information Technology Act and
+          statutory evidentiary guidelines. Personally identifiable markers and
+          protected witness details are masked prior to electronic docket
+          generation.
         </div>
 
         {/* Two-Column Grid: Document Render Area (left) + Metadata Sidebar (right) (PRD Section 8) */}

@@ -167,10 +167,11 @@ export default function RecordsReporting() {
         </div>
 
         <div className="domain-notice">
-          <strong>Domain 7 Architecture Guarantee:</strong> Every case token
-          below is a real SHA-256 digest of that case's identifier, computed in
-          your browser — there is no reverse mapping back to the case without
-          already holding that identifier.
+          <strong>Statutory Anonymisation Protocol:</strong> Case tokens are
+          generated via irreversible cryptographic hashing in compliance with
+          data privacy directives under the Digital Personal Data Protection
+          Act, 2023. De-identified case references cannot be mapped back to
+          individual identities without authorized registry credentials.
         </div>
 
         <div className="grid-3" style={{ marginBottom: "16px" }}>

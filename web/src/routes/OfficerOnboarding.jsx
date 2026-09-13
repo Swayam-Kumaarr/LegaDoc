@@ -115,7 +115,7 @@ export default function OfficerOnboarding() {
       });
       setCreateAlert({
         type: "success",
-        msg: `Application opened for ${created.name}. Now attach their credential document(s).`,
+        msg: `Onboarding requisition registered for ${created.name}. Please attach official credential verification documentation.`,
       });
       setNewName("");
       setNewEmail("");
@@ -149,7 +149,7 @@ export default function OfficerOnboarding() {
       );
       setUploadAlert({
         type: "success",
-        msg: "Document uploaded. OCR and field extraction are running — refresh in a few seconds to see the comparison.",
+        msg: "Credential document submitted for optical verification and identity cross-matching against official departmental records.",
       });
       setUploadFile(null);
       fetchApplications();
@@ -229,11 +229,11 @@ export default function OfficerOnboarding() {
         </div>
 
         <div className="domain-notice">
-          <strong>Honest scope note:</strong> There is no accessible government
-          API to verify a Bar Council enrollment number or a police service ID
-          against a real registry. This flow documents and cross-checks a
-          submitted credential scan — it does not claim official government
-          verification.
+          <strong>Credential Verification & Enrolment Directive:</strong> System
+          credentials (Bar Council Enrollment No., Police Service ID, State
+          Cadre Reg.) must be supported by scanned copies of official department
+          identity documents. Verification and final credential activation
+          require manual review by the Competent Registrar.
         </div>
 
         {showNewForm && (

@@ -52,11 +52,14 @@ export default function NeedsReviewQueue() {
       <div className="page-container">
         <div className="page-header">
           <div>
-            <h1 className="page-title">Needs-Review Redaction Queue</h1>
+            <h1 className="page-title">
+              Evidentiary Verification & Privacy Review Queue
+            </h1>
             <p className="page-desc">
-              Documents the AI Parser flagged with low-confidence tagging or
-              couldn't process at all — held in fail-closed state until a human
-              confirms them.
+              Evidentiary documents flagged for manual verification due to
+              optical character recognition thresholds or critical privacy
+              markers. Verification clearance is required prior to official
+              docket generation.
             </p>
           </div>
           {!loading && !error && (
@@ -73,9 +76,10 @@ export default function NeedsReviewQueue() {
         </div>
 
         <div className="domain-notice">
-          <strong>Fail-Closed Safety:</strong> Documents remain in this state
-          (all sensitive spans masked) until an Investigating Officer or Config
-          Admin reviews them — this queue is the only way to clear that state.
+          <strong>Confidentiality Hold Notice:</strong> Flagged records remain
+          under restricted custody with privacy protection active until formally
+          verified and cleared by the designated Investigating Officer or
+          Supervisory Authority.
         </div>
 
         <div className="card">

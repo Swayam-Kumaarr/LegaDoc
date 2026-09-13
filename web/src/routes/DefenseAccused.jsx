@@ -66,7 +66,7 @@ export default function DefenseAccused() {
       });
       setSubmissionAlert({
         type: "success",
-        msg: "Bail application filed for this case.",
+        msg: "Formal Application for Regular/Anticipatory Bail under Section 437/439 CrPC (BNSS 480/482) successfully submitted to the Judicial Bench.",
       });
       refreshBailRecords();
     } catch (err) {
@@ -90,7 +90,7 @@ export default function DefenseAccused() {
       });
       setSubmissionAlert({
         type: "success",
-        msg: `Surety undertaking by ${suretyName} registered for this case.`,
+        msg: `Surety Bond & Bail Undertaking by ${suretyName} in the amount of ₹${suretyAmount} officially recorded on judicial file.`,
       });
       setSuretyName("");
       setSuretyAmount("");
@@ -126,10 +126,11 @@ export default function DefenseAccused() {
         </div>
 
         <div className="domain-notice">
-          <strong>Privacy Boundary:</strong> Defense counsel accounts have
-          submission-only privileges. Prosecution investigative dossiers,
-          confidential witness statements, and internal diaries are not
-          accessible.
+          <strong>Counsel Representation & Submission Notice:</strong> Defense
+          counsel submission privileges are governed under Section 303 CrPC /
+          BNSS Section 340. Prosecution investigative dossiers, confidential
+          witness statements, and case diaries remain protected under statutory
+          confidentiality pending formal committal.
         </div>
 
         <div className="card" style={{ marginBottom: "16px" }}>
