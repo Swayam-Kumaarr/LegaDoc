@@ -48,3 +48,6 @@ Thumbs.db
 
 # Go vendor directory — regenerable via 'go mod vendor', not our code
 fabric-network/chaincode/*/vendor/
+
+# scripts/staged_test.sh run state and reports
+.staged-test/
