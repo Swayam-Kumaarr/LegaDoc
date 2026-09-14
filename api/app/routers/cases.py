@@ -33,6 +33,15 @@ from app.storage import ObjectStorage, get_storage, object_key, sha256_hex
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
+# Who a SHO may attach to a case through assign-io. CaseAssignment is what
+# assert_case_access checks for the IO and for the police specialist units
+# (cyber cell, women cell, ...), so all of them are assignable. The Duty
+# Officer is not: its access comes from the fir_registered audit row, and an
+# assignment row would grant nothing. Every other role (defense, court,
+# prosecutor, external authorities, admins) is refused — before this check a
+# defense advocate could be recorded as a case's IO.
+_ASSIGNABLE_ROLES = ({"io"} | _POLICE_SPECIALIST_ROLES) - {"duty_officer"}
+
 
 def _generate_case_number(crime_type: str) -> str:
     """Not cryptographically meaningful — just a human-readable, collision-
@@ -214,7 +223,14 @@ def get_case(case_id: str, claims: dict = Depends(verify_case_access), db: Sessi
     (documents, evidence requests, bail record) are each their own endpoint
     and aren't joined in here yet.
     """
-    case = db.get(models.Case, UUID(case_id))
+    try:
+        case_uuid = UUID(case_id)
+    except ValueError:
+        # verify_case_access returns early for unrestricted roles (SHO, court,
+        # prosecutor, admins) without parsing the id, so a malformed id used to
+        # reach UUID() here and surface as an unhandled 500.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    case = db.get(models.Case, case_uuid)
     if case is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
     return case
@@ -230,11 +246,27 @@ def assign_io(
     """POST /cases/:id/assign-io — SHO. Assign investigating officer.
     Creates a CaseAssignment row — this is what verify_case_access checks,
     so an IO has no case access at all until this has run for them."""
-    case_uuid = UUID(case_id)
+    try:
+        case_uuid = UUID(case_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
     if db.get(models.Case, case_uuid) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
-    if db.get(models.User, body.io_user_id) is None:
+    target = db.get(models.User, body.io_user_id)
+    if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IO user not found")
+    if target.role not in _ASSIGNABLE_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A user with role '{target.role}' cannot be assigned to investigate a case",
+        )
+    already_assigned = (
+        db.query(models.CaseAssignment)
+        .filter(models.CaseAssignment.case_id == case_uuid, models.CaseAssignment.io_user_id == target.id)
+        .first()
+    )
+    if already_assigned is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already assigned to this case")
 
     assignment = models.CaseAssignment(case_id=case_uuid, io_user_id=body.io_user_id)
     db.add(assignment)
