@@ -255,6 +255,16 @@ def preprocess_image_bytes(image_bytes: bytes) -> bytes:
 _OCR_EN = None
 _OCR_HI = None
 
+# PaddleOCR defaults to 10 CPU threads and recognition batches of 6, and every
+# thread keeps its own working buffers. Measured on one 768x1024 FIR scan with
+# both engines loaded (scripts/ocr_mem_probe.py): at the defaults the process
+# was OOM-killed above a 2.2 GB cap; with 2 threads and batch 1 both passes
+# peaked at 1,707 MiB and found the same 138 text boxes. That OOM is what
+# SIGKILLed this worker on 8 GB machines. Override per deployment if a larger
+# VM should trade memory for speed.
+_OCR_CPU_THREADS = int(os.environ.get("OCR_CPU_THREADS", "2"))
+_OCR_REC_BATCH_NUM = int(os.environ.get("OCR_REC_BATCH_NUM", "1"))
+
 
 def get_paddle_ocr_engines():
     """Initializes and caches PaddleOCR engines for English and Hindi.
@@ -265,14 +275,21 @@ def get_paddle_ocr_engines():
     if not _HAS_PADDLE:
         raise RuntimeError("PaddleOCR engine not installed")
 
+    engine_kwargs = {
+        "use_angle_cls": True,
+        "show_log": False,
+        "cpu_threads": _OCR_CPU_THREADS,
+        "rec_batch_num": _OCR_REC_BATCH_NUM,
+    }
+
     if _OCR_EN is None:
         logger.info("Initializing PaddleOCR English model (lang='en')...")
-        _OCR_EN = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+        _OCR_EN = PaddleOCR(lang="en", **engine_kwargs)
 
     if _OCR_HI is None:
         logger.info("Initializing PaddleOCR Hindi model (lang='hi')...")
         try:
-            _OCR_HI = PaddleOCR(use_angle_cls=True, lang="hi", show_log=False)
+            _OCR_HI = PaddleOCR(lang="hi", **engine_kwargs)
         except Exception as exc:
             logger.error(f"Failed to load PaddleOCR Hindi language pack: {exc}")
             raise RuntimeError(f"PaddleOCR Hindi language pack failed to initialize: {exc}")
