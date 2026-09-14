@@ -55,7 +55,7 @@ def test_upload_text_document_enqueues_both_tracks(client, make_user, db_session
 
     assert resp.status_code == 202, resp.text
     body = resp.json()
-    assert body["status"] == "processing"  # text-bearing, waiting on OCR
+    assert body["status"] == "processing"  # text-bearing, waiting on the AI parser
     assert body["chain_status"] == "pending"
     assert body["version"] == 1
 
@@ -65,7 +65,11 @@ def test_upload_text_document_enqueues_both_tracks(client, make_user, db_session
     # unrelated to this upload's tracks, but present in the same fake_queue.
     own_jobs = [j for j in fake_queue.enqueued if j["kwargs"].get("document_id") == body["id"]]
     task_names = {job["task_name"] for job in own_jobs}
-    assert task_names == {"chain_worker.write_hash", "ocr_worker.extract_document"}
+    # Typed text skips OCR: OCR decodes every non-PDF payload as an image,
+    # so a .txt statement used to fail both engines and never become readable.
+    assert task_names == {"chain_worker.write_hash", "ai_parser_worker.tag_document"}
+    stored = db_session.get(models.Document, UUID(body["id"]))
+    assert stored.raw_text == "The witness said hello."
 
     chain_job = next(j for j in own_jobs if j["task_name"] == "chain_worker.write_hash")
     assert chain_job["kwargs"]["idempotency_key"] == f"{body['id']}:v1"
@@ -659,7 +663,7 @@ def test_end_to_end_pipeline_flow_and_artifact_generation(client, make_user, mak
     # Verify queue dispatch artifacts
     enqueued_tasks = {job["task_name"] for job in fake_queue.enqueued}
     assert "chain_worker.write_hash" in enqueued_tasks
-    assert "ocr_worker.extract_document" in enqueued_tasks
+    assert "ai_parser_worker.tag_document" in enqueued_tasks  # typed text needs no OCR
 
     # 3. Simulate Worker Extraction & AI Parser Tagging artifacts
     doc_uuid = UUID(doc_id)
@@ -1040,3 +1044,23 @@ def test_malformed_document_id_returns_404_not_500(client, make_user):
             kwargs["json"] = body
         resp = getattr(client, method)(path, **kwargs)
         assert resp.status_code == 404, f"{method.upper()} {path} returned {resp.status_code}: {resp.text}"
+
+
+def test_scanned_image_upload_still_goes_to_ocr_with_no_text_yet(client, make_user, db_session, fake_queue):
+    """Only typed text skips OCR — a scan still needs extraction first."""
+    import struct
+
+    case, io, io_token = _setup_case_with_io(client, make_user, db_session)
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + struct.pack(">II", 800, 1000) + b"\x00" * 64
+
+    resp = client.post(
+        "/documents",
+        data={"case_id": case["id"], "doc_type": "FIR_Scan"},
+        files={"file": ("scan.png", png, "image/png")},
+        headers=auth_headers(io_token),
+    )
+
+    assert resp.status_code == 202, resp.text
+    own = {j["task_name"] for j in fake_queue.enqueued if j["kwargs"].get("document_id") == resp.json()["id"]}
+    assert own == {"chain_worker.write_hash", "ocr_worker.extract_document"}
+    assert db_session.get(models.Document, UUID(resp.json()["id"])).raw_text is None

@@ -1,6 +1,8 @@
 """Tests for Flow 3 — Parallel Evidence Requests & Charge Sheet AND-Join Gate."""
 
 import io
+from uuid import UUID
+
 from app import models
 from tests.conftest import auth_headers, login
 
@@ -286,3 +288,36 @@ def test_charge_sheet_and_join_gate(client, make_user, make_org, db_session):
     )
     assert cs_success.status_code == 200
     assert cs_success.json()["investigation_status"] == "Charge_Sheet_Filed"
+
+
+def test_typed_text_report_is_readable_without_ocr(client, make_user, make_org, db_session, fake_queue):
+    """An FSL report submitted as .txt must not go through OCR. OCR decodes
+    every non-PDF payload as an image, so a typed report used to fail both
+    engines, land in needs_review with no text, and never be readable."""
+    case, io_user, io_token = _register_and_assign_case(client, make_user)
+    fsl_org = make_org(name="Digital Forensics Lab", org_type="fsl")
+    req_id = client.post(
+        f"/cases/{case['id']}/evidence-requests",
+        json={"requested_org_id": str(fsl_org.id), "doc_type_expected": "FSL Report"},
+        headers=auth_headers(io_token),
+    ).json()["id"]
+
+    make_user("external_authority", email="fsl_txt@fsl.gov.in", password="pw", org=fsl_org)
+    fsl_token = login(client, "fsl_txt@fsl.gov.in", "pw").json()["access_token"]
+    report = b"CFSL report: tool marks on the lock are consistent with a flat-head screwdriver."
+
+    resp = client.post(
+        f"/evidence-requests/{req_id}/submit",
+        files={"file": ("report.txt", io.BytesIO(report), "text/plain")},
+        headers=auth_headers(fsl_token),
+    )
+
+    assert resp.status_code == 200, resp.text
+    doc = (
+        db_session.query(models.Document)
+        .filter(models.Document.case_id == UUID(case["id"]), models.Document.doc_type == "FSL Report")
+        .one()
+    )
+    assert doc.raw_text == report.decode()
+    tasks = {j["task_name"] for j in fake_queue.enqueued if j["kwargs"].get("document_id") == str(doc.id)}
+    assert tasks == {"chain_worker.write_hash", "ai_parser_worker.tag_document"}
