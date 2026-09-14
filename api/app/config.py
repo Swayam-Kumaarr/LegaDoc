@@ -4,7 +4,18 @@ for every variable this expects. Nothing here should ever hold a real secret —
 production values come from a secrets manager (see SYSTEM_DESIGN.md, "Key management").
 """
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+# Development defaults that must never reach a deployment. They are public:
+# they sit in this file and in .env.example, so a server running with any of
+# them hands out admin tokens (JWT_SECRET) or raw evidence files (MinIO) to
+# anyone who has read the repository.
+_DEFAULT_JWT_SECRET = "change-me-in-every-env-except-local"
+_DEFAULT_OBJECT_STORAGE_SECRET = "minioadmin"
+_DEFAULT_DATABASE_URL = "postgresql://postgres:postgres@db:5432/legadoc"
+_DEV_ENVIRONMENTS = {"local", "dev", "test"}
+_MIN_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -14,7 +25,7 @@ class Settings(BaseSettings):
     # the local default. A short access-token TTL is the actual revocation
     # mechanism here; pair it with a longer-lived refresh token rather than
     # extending this.
-    JWT_SECRET: str = "change-me-in-every-env-except-local"
+    JWT_SECRET: str = _DEFAULT_JWT_SECRET
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -29,7 +40,7 @@ class Settings(BaseSettings):
     AUDIT_LOG_AI_PARSER_RATE_LIMIT: str = "20/minute"  # per user — the most sensitive read path in the system
 
     # Database
-    DATABASE_URL: str = "postgresql://postgres:postgres@db:5432/legadoc"
+    DATABASE_URL: str = _DEFAULT_DATABASE_URL
 
     # Object storage (MinIO / S3-compatible, or disk-backed local for bare-metal dev)
     OBJECT_STORAGE_BACKEND: str = "local"
@@ -42,7 +53,7 @@ class Settings(BaseSettings):
     # (put/get/head, server-to-server) keeps using OBJECT_STORAGE_ENDPOINT.
     OBJECT_STORAGE_PUBLIC_ENDPOINT: str = "http://localhost:9000"
     OBJECT_STORAGE_ACCESS_KEY: str = "minioadmin"
-    OBJECT_STORAGE_SECRET_KEY: str = "minioadmin"
+    OBJECT_STORAGE_SECRET_KEY: str = _DEFAULT_OBJECT_STORAGE_SECRET
     OBJECT_STORAGE_BUCKET: str = "legadoc-documents"
 
     # Upload & Ingestion Controls
@@ -68,6 +79,30 @@ class Settings(BaseSettings):
     # Queue
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/1"
+
+    @model_validator(mode="after")
+    def _refuse_public_defaults_outside_dev(self):
+        """Fail at startup, not at the first breach. Outside local/dev/test,
+        refuse to run with any credential whose value is published in this
+        repository. The API and every worker import these settings, so none
+        of them can start half-configured."""
+        if self.ENV.strip().lower() in _DEV_ENVIRONMENTS:
+            return self
+        problems = []
+        if self.JWT_SECRET == _DEFAULT_JWT_SECRET or len(self.JWT_SECRET) < _MIN_JWT_SECRET_LENGTH:
+            problems.append(
+                f"JWT_SECRET is the repository default or shorter than {_MIN_JWT_SECRET_LENGTH} characters "
+                "(generate one with: openssl rand -hex 32)"
+            )
+        if self.OBJECT_STORAGE_SECRET_KEY == _DEFAULT_OBJECT_STORAGE_SECRET:
+            problems.append("OBJECT_STORAGE_SECRET_KEY is the MinIO default 'minioadmin'")
+        if self.DATABASE_URL == _DEFAULT_DATABASE_URL:
+            problems.append("DATABASE_URL uses the default postgres/postgres credentials")
+        if problems:
+            raise ValueError(
+                f"Refusing to start with ENV={self.ENV!r} and public default credentials: " + "; ".join(problems)
+            )
+        return self
 
     class Config:
         env_file = ".env"
