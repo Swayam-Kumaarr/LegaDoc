@@ -134,6 +134,40 @@ moment a branch adds or removes tests.
 
 ---
 
+## Database migrations
+
+There is no migration tool. `init_db` runs `create_all()`, which creates
+missing **tables** but never alters an existing one — so an existing database
+silently falls behind the models, and the first request touching a new column
+or table returns 500 (this is how `/admin/api-keys` and
+`/admin/document-schemas` broke). Check for drift before debugging anything:
+
+```bash
+docker exec legadoc-api-1 python -c "
+from sqlalchemy import inspect; from app.database import engine; from app.models import Base
+i=inspect(engine); t=set(i.get_table_names())
+print('missing tables :', [n for n in Base.metadata.tables if n not in t] or 'none')
+print('missing columns:', [f'{n}.{c.name}' for n,tb in Base.metadata.tables.items() if n in t
+      for c in tb.columns if c.name not in {x['name'] for x in i.get_columns(n)}] or 'none')"
+```
+
+Apply the additive SQL in `db/migrations/` in order. Each is `IF NOT EXISTS`
+and safe to re-run:
+
+```bash
+for f in db/migrations/*.sql; do docker exec -i legadoc-db-1 psql -U postgres -d legadoc < "$f"; done
+```
+
+After `004_case_diary_sensitivity_tags.sql`, run the one-time backfill. Diary
+entries tagged before spans were stored have nothing to redact with; this
+hides them from restricted roles until they are re-tagged (issue #92):
+
+```bash
+docker compose exec api python -m app.retag_case_diary
+```
+
+---
+
 ## Windows: always run `docker compose` from inside WSL2
 
 `chain_worker` bind-mounts `${HOME}/fabric-samples` (the `peer` binary and

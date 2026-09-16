@@ -524,7 +524,33 @@ def process_tag_case_diary_entry(case_diary_entry_id: str, db: Optional[Any] = N
         # Analyze text
         spans = parse_text_for_sensitive_spans(entry.text)
 
-        # Mark ready
+        # Persist the spans. They used to be computed and discarded — only a
+        # count reached the audit log — so an entry went "ready" with nothing
+        # to mask and the list endpoint returned raw witness names and phone
+        # numbers to every role that could open the case (issue #92).
+        #
+        # Replace rather than append, so a re-tag after a parser change does
+        # not stack duplicate spans. Officer corrections, if they are ever
+        # added for diaries, keep a different source and are left alone.
+        session.query(models.CaseDiarySensitivityTag).filter(
+            models.CaseDiarySensitivityTag.case_diary_entry_id == entry.id,
+            models.CaseDiarySensitivityTag.source == "ai_parser",
+        ).delete()
+        for s in spans:
+            session.add(
+                models.CaseDiarySensitivityTag(
+                    case_diary_entry_id=entry.id,
+                    entity_type=s["entity_type"],
+                    span_start=s["span_start"],
+                    span_end=s["span_end"],
+                    confidence=s["confidence"],
+                    source="ai_parser",
+                )
+            )
+
+        # Only now is it safe to expose: "ready" is the gate the list endpoint
+        # uses for every role outside IO/SHO, so it must never be set before
+        # the spans that make it safe are committed alongside it.
         entry.status = "ready"
         session.commit()
         session.refresh(entry)

@@ -398,3 +398,78 @@ def test_security_auditor_persona_is_seeded():
     auditors = [u for u in OFFICIAL_TEST_USERS if u["role"] == "security_auditor"]
     assert len(auditors) == 1, "exactly one security_auditor persona expected"
     assert auditors[0]["email"] == "auditor.rajan@vigilance.gov.in"
+
+
+def test_case_diary_tagging_persists_spans(db_session, make_org, make_user):
+    """Issue #92. The parser found the spans and discarded them — only a count
+    reached the audit log — so a "ready" entry had nothing to mask with."""
+    case, io_user, _ = _setup_case_and_doc(db_session, make_org, make_user, raw_text="Sample")
+    entry = models.CaseDiaryEntry(
+        case_id=case.id,
+        author_user_id=io_user.id,
+        text="Spoke to witness Priya Menon (9876543210) at the scene.",
+        status="processing",
+    )
+    db_session.add(entry)
+    db_session.commit()
+
+    assert ai_worker.process_tag_case_diary_entry(str(entry.id), db=db_session) == "ready"
+
+    tags = db_session.query(models.CaseDiarySensitivityTag).filter_by(case_diary_entry_id=entry.id).all()
+    found = {t.entity_type for t in tags}
+    assert "PHONE_NUMBER" in found
+    assert "PERSON" in found
+    for t in tags:
+        assert not hasattr(t, "text")  # coordinates only, never the text itself
+
+
+def test_case_diary_retag_does_not_stack_duplicate_spans(db_session, make_org, make_user):
+    case, io_user, _ = _setup_case_and_doc(db_session, make_org, make_user, raw_text="Sample")
+    entry = models.CaseDiaryEntry(
+        case_id=case.id, author_user_id=io_user.id,
+        text="Call 9876543210 regarding the seizure.", status="processing",
+    )
+    db_session.add(entry)
+    db_session.commit()
+
+    ai_worker.process_tag_case_diary_entry(str(entry.id), db=db_session)
+    first = db_session.query(models.CaseDiarySensitivityTag).filter_by(case_diary_entry_id=entry.id).count()
+    ai_worker.process_tag_case_diary_entry(str(entry.id), db=db_session)
+    second = db_session.query(models.CaseDiarySensitivityTag).filter_by(case_diary_entry_id=entry.id).count()
+
+    assert first == second > 0
+
+
+def test_retag_backfill_hides_untagged_ready_entries_until_retagged(db_session, make_org, make_user, monkeypatch):
+    """Entries marked ready before spans were stored have nothing to redact
+    with. The backfill must hide them (processing) BEFORE enqueueing, so a
+    failure partway leaves entries hidden rather than exposed."""
+    from app import retag_case_diary
+    from app.queue import InMemoryQueueClient
+
+    case, io_user, _ = _setup_case_and_doc(db_session, make_org, make_user, raw_text="Sample")
+    legacy = models.CaseDiaryEntry(
+        case_id=case.id, author_user_id=io_user.id,
+        text="Pre-fix entry naming Priya Menon, 9876543210.", status="ready",
+    )
+    already_tagged = models.CaseDiaryEntry(
+        case_id=case.id, author_user_id=io_user.id,
+        text="Post-fix entry, 9123456780.", status="processing",
+    )
+    db_session.add_all([legacy, already_tagged])
+    db_session.commit()
+    ai_worker.process_tag_case_diary_entry(str(already_tagged.id), db=db_session)
+
+    fake_queue = InMemoryQueueClient()
+    monkeypatch.setattr(retag_case_diary, "SessionLocal", lambda: db_session)
+    monkeypatch.setattr(retag_case_diary, "get_queue", lambda: fake_queue)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+
+    retag_case_diary.main()
+
+    db_session.refresh(legacy)
+    db_session.refresh(already_tagged)
+    assert legacy.status == "processing"          # hidden from restricted roles
+    assert already_tagged.status == "ready"       # had spans — untouched
+    queued = [j["kwargs"]["case_diary_entry_id"] for j in fake_queue.enqueued]
+    assert queued == [str(legacy.id)]

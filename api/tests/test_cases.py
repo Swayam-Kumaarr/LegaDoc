@@ -853,3 +853,86 @@ def test_case_party_requires_exactly_one_identifier(client, make_user):
     )
     assert neither.status_code == 422
     assert both.status_code == 422
+
+
+def _diary_case_with_tagged_entry(client, make_user, db_session, text):
+    """Duty officer registers a case, SHO assigns an IO, the IO writes a diary
+    entry, and the AI parser tags it exactly as the worker would."""
+    import importlib.util, os, sys
+    duty = make_user("duty_officer", email="duty_diary92@example.com", password="pw")
+    make_user("sho", email="sho_diary92@example.com", password="pw", org=duty.organization)
+    io = make_user("io", email="io_diary92@example.com", password="pw", org=duty.organization)
+
+    duty_token = login(client, "duty_diary92@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+    sho_token = login(client, "sho_diary92@example.com", "pw").json()["access_token"]
+    client.post(f"/cases/{case['id']}/assign-io", json={"io_user_id": str(io.id)}, headers=auth_headers(sho_token))
+    io_token = login(client, "io_diary92@example.com", "pw").json()["access_token"]
+
+    entry_id = client.post(
+        f"/cases/{case['id']}/case-diary", json={"text": text}, headers=auth_headers(io_token)
+    ).json()["id"]
+
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "workers", "ai_parser_worker", "worker.py")
+    spec = importlib.util.spec_from_file_location("ai_parser_worker_for_diary", path)
+    worker = importlib.util.module_from_spec(spec)
+    sys.modules["ai_parser_worker_for_diary"] = worker
+    spec.loader.exec_module(worker)
+    assert worker.process_tag_case_diary_entry(entry_id, db=db_session) == "ready"
+
+    return case, duty_token, io_token
+
+
+def test_case_diary_is_redacted_for_roles_without_full_text_access(client, make_user, db_session):
+    """Issue #92, the reported leak: the registering Duty Officer can open the
+    case but is outside FULL_TEXT_ACCESS_ROLES, and received the diary raw —
+    name and phone number included — while reading the same case's Documents
+    masked."""
+    text = "Visited scene at Karol Bagh. Spoke to witness Priya Menon (9876543210)."
+    case, duty_token, io_token = _diary_case_with_tagged_entry(client, make_user, db_session, text)
+
+    restricted = client.get(f"/cases/{case['id']}/case-diary", headers=auth_headers(duty_token))
+    assert restricted.status_code == 200, restricted.text
+    masked = restricted.json()[0]["text"]
+    assert "9876543210" not in masked
+    assert "Priya Menon" not in masked
+    assert "[REDACTED:PHONE_NUMBER]" in masked
+
+    full = client.get(f"/cases/{case['id']}/case-diary", headers=auth_headers(io_token))
+    assert full.json()[0]["text"] == text
+
+
+def test_reading_a_redacted_diary_does_not_overwrite_the_stored_text(client, make_user, db_session):
+    """The redacted view is built on fresh response objects. Masking the live
+    ORM row in place would flush the masked text over the original evidence
+    on the next commit, destroying the diary for every role."""
+    text = "Recovered phone 9876543210 from the accused."
+    case, duty_token, io_token = _diary_case_with_tagged_entry(client, make_user, db_session, text)
+
+    client.get(f"/cases/{case['id']}/case-diary", headers=auth_headers(duty_token))
+    # Any later write in the process must not persist a masked value.
+    client.post(f"/cases/{case['id']}/case-diary", json={"text": "Follow-up visit."}, headers=auth_headers(io_token))
+
+    stored = db_session.query(models.CaseDiaryEntry).filter(models.CaseDiaryEntry.case_id == UUID(case["id"])).all()
+    assert text in [e.text for e in stored]
+
+
+def test_defense_counsel_cannot_read_the_case_diary(client, make_user, db_session):
+    """Section 172(3) CrPC / Section 192(3) BNSS: the accused and their agents
+    are not entitled to the police case diary. Defence counsel can open an
+    engaged case through CaseParty, so that alone must not expose the diary."""
+    case, duty_token, io_token = _diary_case_with_tagged_entry(
+        client, make_user, db_session, "Interrogation notes, confidential."
+    )
+    make_user("defense", email="adv_diary92@bar.in", password="pw")
+    make_user("court", email="bench_diary92@court.gov.in", password="pw")
+    court_token = login(client, "bench_diary92@court.gov.in", "pw").json()["access_token"]
+    client.post(f"/cases/{case['id']}/parties", json={"email": "adv_diary92@bar.in"}, headers=auth_headers(court_token))
+    def_token = login(client, "adv_diary92@bar.in", "pw").json()["access_token"]
+
+    # Engaged, so the case itself opens...
+    assert client.get(f"/cases/{case['id']}", headers=auth_headers(def_token)).status_code == 200
+    # ...but the diary does not.
+    resp = client.get(f"/cases/{case['id']}/case-diary", headers=auth_headers(def_token))
+    assert resp.status_code == 403
+    assert "172" in resp.json()["detail"]

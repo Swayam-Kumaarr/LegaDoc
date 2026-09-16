@@ -234,6 +234,33 @@ class CaseDiaryEntry(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class CaseDiarySensitivityTag(Base):
+    """Sensitive spans the AI Parser found in a case-diary entry — coordinates
+    and entity type only, never the text itself. The diary counterpart of
+    DocumentSensitivityTag.
+
+    Before this table existed the parser computed these spans and threw them
+    away (issue #92): process_tag_case_diary_entry kept only a count, marked
+    the entry "ready", and GET /cases/:id/case-diary returned the raw text to
+    every role that could open the case — witness names and phone numbers
+    included — while the same user reading a Document saw them masked.
+
+    A separate table rather than a nullable case_diary_entry_id on
+    DocumentSensitivityTag: that would mean loosening document_id's NOT NULL
+    on a populated table and adding an exactly-one-parent CHECK, where a new
+    table is a purely additive migration with no invariant weakened.
+    """
+    __tablename__ = "case_diary_sensitivity_tags"
+    id = uuid_pk()
+    case_diary_entry_id = Column(GUID(), ForeignKey("case_diary_entries.id"), nullable=False)
+    entity_type = Column(String, nullable=False)
+    span_start = Column(Integer, nullable=False)
+    span_end = Column(Integer, nullable=False)
+    confidence = Column(Integer, nullable=True)  # 0-100, same convention as DocumentSensitivityTag
+    source = Column(String, nullable=False, default="ai_parser")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class DocumentSchemaConfig(Base):
     """The tiered sensitivity-schema registry. Tier 1/2 types get real field
     definitions; Tier 3 types inherit the one generic default profile.
