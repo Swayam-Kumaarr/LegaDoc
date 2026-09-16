@@ -21,10 +21,12 @@ from app import models, schemas
 from app.audit import write_audit_log
 from app.database import get_db
 from app.queue import QueueClient, get_queue
+from app.redaction import apply_redaction
 from app.security import (
     _POLICE_SPECIALIST_ROLES,
     _UNRESTRICTED_CASE_ROLES,
     EXTERNAL_AUTHORITY_ROLE,
+    FULL_TEXT_ACCESS_ROLES,
     assert_case_access,
     get_current_claims,
     require_role,
@@ -548,9 +550,23 @@ def list_case_diary_entries(
     if case is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found")
 
+    role = claims.get("role", "")
+
+    # Section 172(3) CrPC — Section 192(3) BNSS — "neither the accused nor
+    # his agents shall be entitled to call for such diaries". Defence counsel
+    # can reach an engaged case through CaseParty (issue #70), so without this
+    # check the police case diary became readable by the accused's own
+    # advocate the moment counsel was recorded on the docket. Checked before
+    # assert_case_access: this is a statutory bar on the record, not a
+    # question of whether the advocate is linked to the case.
+    if role == "defense":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "The case diary is not available to the accused or their counsel (Section 172(3) CrPC / Section 192(3) BNSS)",
+        )
+
     assert_case_access(case_uuid, claims, db)
 
-    role = claims.get("role", "")
     query = db.query(models.CaseDiaryEntry).filter(models.CaseDiaryEntry.case_id == case_uuid)
 
     # Only the assigned IO/SHO see un-redacted "processing" entries — every
@@ -564,7 +580,37 @@ def list_case_diary_entries(
     if role not in ("io", "sho"):
         query = query.filter(models.CaseDiaryEntry.status == "ready")
 
-    return query.order_by(models.CaseDiaryEntry.created_at.asc()).all()
+    entries = query.order_by(models.CaseDiaryEntry.created_at.asc()).all()
+
+    if role in FULL_TEXT_ACCESS_ROLES:
+        return entries
+
+    # Everyone else reads the entry redacted, using the spans the AI Parser
+    # stored — the same apply_redaction a Document read uses (issue #92).
+    #
+    # Build fresh response objects rather than assigning to entry.text: these
+    # are live ORM rows, and a masked value written onto one would be flushed
+    # over the original diary text on the next commit in this session.
+    tags_by_entry: dict = {}
+    if entries:
+        for tag in (
+            db.query(models.CaseDiarySensitivityTag)
+            .filter(models.CaseDiarySensitivityTag.case_diary_entry_id.in_([e.id for e in entries]))
+            .all()
+        ):
+            tags_by_entry.setdefault(tag.case_diary_entry_id, []).append(tag)
+
+    return [
+        schemas.CaseDiaryResponse(
+            id=e.id,
+            case_id=e.case_id,
+            author_user_id=e.author_user_id,
+            text=apply_redaction(e.text, tags_by_entry.get(e.id, [])),
+            status=e.status,
+            created_at=e.created_at,
+        )
+        for e in entries
+    ]
 
 
 @router.post(
