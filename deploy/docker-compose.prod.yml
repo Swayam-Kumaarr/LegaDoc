@@ -1,0 +1,113 @@
+# Production-shaped overrides for ONE demo VM (Oracle A1, GCP e2-standard-2,
+# AWS m7i-flex.large). Layered on top of the dev file, from the repo root:
+#
+#   cp deploy/env.production.example .env        # then replace every CHANGE_ME
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tunnel up -d
+#
+# What changes versus local dev, and why:
+#   - Only the web container is published, and only on 127.0.0.1. Cloudflare
+#     Tunnel (profile "tunnel") or a host reverse proxy is the way in. Postgres,
+#     Redis and MinIO are no longer reachable from outside the VM.
+#   - No source bind mounts, no uvicorn --reload, no Vite dev server: every
+#     container runs exactly what its image was built with.
+#   - Every default credential must come from .env — compose refuses to start
+#     while one is missing, instead of silently falling back to postgres/postgres.
+#   - Workers take one job at a time, have memory caps, and restart on failure.
+#   - chain_worker only runs with --profile fabric: without a Fabric network it
+#     fails every hash write and retries forever.
+
+services:
+  db:
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    mem_limit: 512m
+    restart: unless-stopped
+
+  redis:
+    ports: !reset []
+    mem_limit: 128m
+    restart: unless-stopped
+
+  minio:
+    ports: !reset []
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+      # With ENV outside local/test/dev the API requests SSE-S3 (AES256) on
+      # every upload, and MinIO refuses that request unless a KMS key exists.
+      MINIO_KMS_SECRET_KEY: ${MINIO_KMS_SECRET_KEY:?set MINIO_KMS_SECRET_KEY in .env}
+    mem_limit: 384m
+    restart: unless-stopped
+
+  api:
+    ports: !reset []
+    volumes: !reset []
+    # --proxy-headers: the login rate limiter keys on the client IP, which is
+    # otherwise the proxy container's address for every user.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    mem_limit: 768m
+    restart: unless-stopped
+
+  ocr_worker:
+    environment:
+      - OMP_NUM_THREADS=2
+      - MALLOC_ARENA_MAX=2
+    # One scan with the English + Hindi models: OOM-killed above 2.2 GB at
+    # PaddleOCR's default 10 threads; 1,707 MiB peak with cpu_threads=2 and
+    # rec_batch_num=1 (worker.py defaults, OCR_CPU_THREADS / OCR_REC_BATCH_NUM).
+    # Raising OCR_CPU_THREADS for speed needs this cap raised with it.
+    mem_limit: 2500m
+    stop_grace_period: 120s
+    command: ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "ocr_worker", "--pool=solo", "--prefetch-multiplier=1"]
+    restart: unless-stopped
+
+  ai_parser_worker:
+    environment:
+      - MALLOC_ARENA_MAX=2
+    mem_limit: 1g
+    stop_grace_period: 60s
+    command: ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "ai_parser_worker", "--pool=solo", "--prefetch-multiplier=1"]
+    restart: unless-stopped
+
+  chain_worker:
+    profiles: ["fabric"]
+    mem_limit: 384m
+    stop_grace_period: 60s
+    command: ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "chain_worker", "--pool=solo", "--prefetch-multiplier=1"]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: ../deploy/web.Dockerfile
+    # !override, not !reset: !reset clears the dev value and ignores whatever
+    # follows it, which left this service with no port and no Caddyfile.
+    ports: !override ["127.0.0.1:${WEB_PORT:-8080}:80"]
+    volumes: !override
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    environment:
+      APP_HOST: ${APP_HOST:?set APP_HOST in .env}
+      FILES_HOST: ${FILES_HOST:?set FILES_HOST in .env}
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    depends_on:
+      - api
+      - minio
+    mem_limit: 128m
+    restart: unless-stopped
+
+  tunnel:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - web
+    mem_limit: 128m
+    restart: unless-stopped
+
+volumes:
+  caddy_data:

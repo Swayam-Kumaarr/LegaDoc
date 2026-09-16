@@ -1,0 +1,39 @@
+# One web server in front of everything the browser talks to.
+#
+#   {$APP_HOST}    the React build, with /api/* proxied to FastAPI (same origin, no CORS)
+#   {$FILES_HOST}  MinIO, so presigned "Download original file" links work for
+#                  visitors. It must be its own hostname: an S3 signature covers
+#                  the request path, so serving MinIO under /files/ on the app
+#                  host would break every signature.
+#
+# TLS is terminated by Cloudflare (Tunnel, or proxied DNS), so Caddy speaks
+# plain HTTP inside the VM. To let Caddy fetch certificates itself instead,
+# delete `auto_https off`, drop the `http://` prefixes, publish ports 80/443.
+
+{
+	auto_https off
+	servers {
+		# cloudflared and Caddy share a private Docker network; trust it so the
+		# real visitor IP (CF-Connecting-IP) reaches the API's rate limiter.
+		trusted_proxies static private_ranges
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
+}
+
+http://{$FILES_HOST} {
+	reverse_proxy minio:9000
+}
+
+http://{$APP_HOST} {
+	encode zstd gzip
+
+	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
