@@ -4,8 +4,10 @@ import { apiClient } from '../api/client';
 import StatusChip from '../components/StatusChip';
 import HashCell from '../components/HashCell';
 import ChainOfCustodyVisualizer from '../components/ChainOfCustodyVisualizer';
+import CaseActions from '../components/CaseActions';
+import { useAuth } from '../contexts/AuthContext';
 
-function useCaseResource(caseId, endpoint) {
+function useCaseResource(caseId, endpoint, version = 0) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -20,19 +22,24 @@ function useCaseResource(caseId, endpoint) {
       .catch((e) => { if (isMounted) setError(e.message || 'Could not load this data.'); })
       .finally(() => { if (isMounted) setLoading(false); });
     return () => { isMounted = false; };
-  }, [caseId, endpoint]);
+  }, [caseId, endpoint, version]);
 
   return { data, loading, error };
 }
 
 export default function CaseDetail() {
   const { id: caseId } = useParams();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('documents');
+  // Bumped after a case action so the header, requisitions and bail docket
+  // reflect it without a manual reload.
+  const [version, setVersion] = useState(0);
+  const refresh = () => setVersion((v) => v + 1);
 
-  const caseRes = useCaseResource(caseId, `/cases/${caseId}`);
+  const caseRes = useCaseResource(caseId, `/cases/${caseId}`, version);
   const docsRes = useCaseResource(caseId, `/cases/${caseId}/documents`);
-  const evidenceRes = useCaseResource(caseId, `/cases/${caseId}/evidence-requests`);
-  const bailRes = useCaseResource(caseId, `/cases/${caseId}/bail`);
+  const evidenceRes = useCaseResource(caseId, `/cases/${caseId}/evidence-requests`, version);
+  const bailRes = useCaseResource(caseId, `/cases/${caseId}/bail`, version);
   const diaryRes = useCaseResource(caseId, `/cases/${caseId}/case-diary`);
   const auditRes = useCaseResource(caseId, `/cases/${caseId}/audit-log`);
 
@@ -43,7 +50,11 @@ export default function CaseDetail() {
   const diaryEntries = diaryRes.data || [];
   const auditLog = auditRes.data;
 
-  if (caseRes.loading) {
+  // Only the first load replaces the page. A refresh after a case action keeps
+  // the current case on screen while it reloads — otherwise the page swaps to
+  // "Loading case…", unmounts CaseActions, and the action's confirmation
+  // message is discarded before anyone can read it.
+  if (caseRes.loading && !caseData) {
     return <div className="page-container"><p className="text-body">Loading case…</p></div>;
   }
   if (caseRes.error || !caseData) {
@@ -91,6 +102,8 @@ export default function CaseDetail() {
             </div>
           </div>
         </div>
+
+        <CaseActions caseData={caseData} role={user?.role} onChanged={refresh} />
 
         <div className="gov-tabs">
           <button className={`gov-tab-btn ${activeTab === 'documents' ? 'active' : ''}`} onClick={() => setActiveTab('documents')}>

@@ -340,6 +340,28 @@ class RecognizerMappingSetRequest(BaseModel):
 
 
 # ---------- Evidence Requests (Flow 3) ----------
+class RequisitionTarget(BaseModel):
+    """An organisation a Section 91 requisition can be addressed to."""
+    id: UUID
+    name: str
+    org_type: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AssignableOfficer(BaseModel):
+    """A police officer a SHO may assign to investigate a case. Deliberately
+    no email: the assignment is made by id, and this list is readable by
+    every SHO."""
+    id: UUID
+    name: str
+    role: str
+    designation: Optional[str] = None
+    service_id: Optional[str] = None
+    org_name: Optional[str] = None
+    already_assigned: bool = False
+
+
 class CreateEvidenceRequest(BaseModel):
     requested_org_id: UUID
     doc_type_expected: Optional[str] = None

@@ -26,6 +26,11 @@ from app.upload_validator import validate_upload_stream
 
 router = APIRouter(tags=["evidence-requests"])
 
+# Organisations a Section 91 requisition can be addressed to — the bodies that
+# hold evidence an investigation needs to compel. Police, courts, the Bar,
+# NCRB and oversight bodies are not requisition targets.
+REQUISITION_TARGET_ORG_TYPES = {"fsl", "digital_fsl", "hospital", "bank", "telecom", "rto"}
+
 
 @router.post(
     "/cases/{case_id}/evidence-requests",
@@ -54,6 +59,18 @@ def create_evidence_request(
     target_org = db.get(models.Organization, body.requested_org_id)
     if target_org is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Requested organization not found")
+
+    # Any organisation used to be accepted. A requisition addressed to a court,
+    # a police station or the Bar Association was silently orphaned: only
+    # external_authority users of the target organisation ever see a request,
+    # so it sat "requested" forever with nobody able to fulfil it. The same set
+    # drives GET /evidence-requests/requisition-targets, so the screen can never
+    # offer a target this endpoint then refuses.
+    if target_org.org_type not in REQUISITION_TARGET_ORG_TYPES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"A Section 91 requisition cannot be addressed to a '{target_org.org_type}' organisation",
+        )
 
     req = models.EvidenceRequest(
         case_id=case_uuid,
@@ -87,6 +104,30 @@ def create_evidence_request(
 # open?", and reusing it here would mean any future addition to it silently
 # gained the whole Section 91 registry as well.
 _REQUISITION_OVERSIGHT_ROLES = {"config_admin", "security_auditor", "court", "prosecutor", "sho"}
+
+
+@router.get(
+    "/evidence-requests/requisition-targets",
+    response_model=list[schemas.RequisitionTarget],
+)
+def list_requisition_targets(
+    claims: dict = Depends(require_role("io", "sho")),
+    db: Session = Depends(get_db),
+):
+    """GET /evidence-requests/requisition-targets — IO / SHO. The organisations
+    a Section 91 requisition may be addressed to.
+
+    Exists because raising a requisition needs a target organisation and no
+    role that raises one could list organisations: GET /orgs and
+    GET /admin/orgs are config_admin only (issue #89). Returns names and types
+    only — no users, no contact details.
+    """
+    return (
+        db.query(models.Organization)
+        .filter(models.Organization.org_type.in_(REQUISITION_TARGET_ORG_TYPES))
+        .order_by(models.Organization.org_type, models.Organization.name)
+        .all()
+    )
 
 
 @router.get(
