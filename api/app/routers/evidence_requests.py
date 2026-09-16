@@ -12,7 +12,7 @@ from app.audit import write_audit_log
 from app.config import settings
 from app.database import get_db
 from app.queue import QueueClient, get_queue
-from app.routers.documents import _next_version
+from app.routers.documents import _next_version, _typed_text
 from app.security import (
     _UNRESTRICTED_CASE_ROLES,
     EXTERNAL_AUTHORITY_ROLE,
@@ -232,6 +232,7 @@ async def submit_evidence_request(
     data = validation.data
     doc_hash = validation.sha256_hash
     is_binary = validation.is_binary_evidence
+    typed_text = _typed_text(data, validation.detected_mime)
 
     doc_type = req.doc_type_expected or "Evidence"
     version = _next_version(db, req.case_id, doc_type)
@@ -247,6 +248,7 @@ async def submit_evidence_request(
         version=version,
         storage_path=key,
         doc_hash=doc_hash,
+        raw_text=typed_text,
         status="ready" if is_binary else "processing",
         chain_status="pending",
         uploaded_by=UUID(claims["sub"]),
@@ -262,7 +264,10 @@ async def submit_evidence_request(
     # Deterministic worker dispatch
     idempotency_key = f"{document.id}:v{document.version}"
     queue_client.enqueue("chain_worker.write_hash", document_id=str(document.id), idempotency_key=idempotency_key)
-    if not is_binary:
+    # Typed reports skip OCR — see documents._typed_text for why.
+    if typed_text is not None:
+        queue_client.enqueue("ai_parser_worker.tag_document", document_id=str(document.id))
+    elif not is_binary:
         queue_client.enqueue("ocr_worker.extract_document", document_id=str(document.id))
 
     write_audit_log(
