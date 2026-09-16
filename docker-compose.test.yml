@@ -1,0 +1,69 @@
+# Test-only overrides for scripts/staged_test.sh — layered on top of
+# docker-compose.yml, never used for normal dev:
+#
+#   docker compose -p legadoc_staged -f docker-compose.yml -f docker-compose.test.yml ...
+#
+# Why this exists: on an 8 GB machine (Docker Desktop VM ~3.8 GB) the full
+# stack cannot run at once. The OCR worker alone needs ~1.5-2 GB, and the
+# workers had no concurrency cap at all — Celery's prefork pool defaults to
+# one child per CPU, and each child loads its own copy of the PaddleOCR /
+# spaCy models on first task. The staged runner starts one worker at a time
+# instead, and these overrides make each one's footprint bounded and visible:
+#
+#   - --pool=solo: one process, models loaded exactly once, one task at a time.
+#   - mem_limit: an over-budget container is OOM-killed *inside its cap* (and
+#     shows OOMKilled=true in `docker inspect`) instead of dragging the whole
+#     VM into swap, where every other container stalls and the failure looks
+#     like a hang rather than a memory problem.
+#   - no uvicorn --reload: the watcher costs RAM/CPU and restarts mid-test.
+#   - db/redis/minio host ports removed: the harness only talks to the API,
+#     and this avoids clashing with any other local Postgres/Redis.
+
+services:
+  db:
+    mem_limit: 384m
+    ports: !reset []
+
+  redis:
+    mem_limit: 96m
+    ports: !reset []
+
+  minio:
+    mem_limit: 256m
+    ports: !reset []
+
+  api:
+    mem_limit: 512m
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  ocr_worker:
+    mem_limit: 2200m
+    environment:
+      - OBJECT_STORAGE_BACKEND=minio
+      # Paddle/OpenCV spawn one OpenMP thread per visible CPU, each with its
+      # own scratch buffers; glibc gives each thread its own malloc arena.
+      # Both multiply resident memory for no benefit at solo concurrency.
+      - OMP_NUM_THREADS=2
+      - MALLOC_ARENA_MAX=2
+    # --prefetch-multiplier=1 + a long stop grace period: by default a worker
+    # reserves up to 4 jobs ahead. Stopped before running them, those jobs
+    # sit in Redis's "unacked" set until the visibility timeout (1 hour)
+    # expires, and the document shows "processing" for that hour with no
+    # error. This was hit live: the scan's OCR job was stranded exactly so.
+    stop_grace_period: 120s
+    command: ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "ocr_worker", "--pool=solo", "--prefetch-multiplier=1"]
+
+  ai_parser_worker:
+    mem_limit: 1g
+    environment:
+      - MALLOC_ARENA_MAX=2
+    stop_grace_period: 60s
+    command: ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "ai_parser_worker", "--pool=solo", "--prefetch-multiplier=1"]
+
+  chain_worker:
+    mem_limit: 384m
+    stop_grace_period: 60s
+    command: ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "chain_worker", "--pool=solo", "--prefetch-multiplier=1"]
+
+  web:
+    mem_limit: 512m
