@@ -664,6 +664,59 @@ def test_list_case_documents_denies_unassigned_io(client, make_user):
     assert resp.status_code == 403
 
 
+def test_get_case_malformed_id_is_404_not_500_for_unrestricted_roles(client, make_user):
+    """SHO/court/prosecutor/admins skip the assignment lookup that would
+    otherwise parse the id, so a malformed id reached UUID() and returned 500."""
+    for role in ("sho", "court", "prosecutor", "config_admin"):
+        make_user(role, email=f"{role}_badid@example.com", password="pw")
+        token = login(client, f"{role}_badid@example.com", "pw").json()["access_token"]
+        resp = client.get("/cases/not-a-uuid", headers=auth_headers(token))
+        assert resp.status_code == 404, (role, resp.text)
+        assert resp.json()["detail"] == "Case not found"
+
+
+def test_assign_io_malformed_case_id_is_404(client, make_user):
+    sho = make_user("sho", email="sho_assignbad@example.com", password="pw")
+    io = make_user("io", email="io_assignbad@example.com", password="pw", org=sho.organization)
+    token = login(client, "sho_assignbad@example.com", "pw").json()["access_token"]
+
+    resp = client.post("/cases/not-a-uuid/assign-io", json={"io_user_id": str(io.id)}, headers=auth_headers(token))
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Case not found"
+
+
+def test_assign_io_refuses_roles_that_cannot_investigate(client, make_user):
+    """A defense advocate, a judge or a Duty Officer recorded as a case's IO
+    grants nothing useful and corrupts "who is investigating this case"."""
+    duty = make_user("duty_officer", email="duty_roles@example.com", password="pw")
+    make_user("sho", email="sho_roles@example.com", password="pw", org=duty.organization)
+    duty_token = login(client, "duty_roles@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+    sho_token = login(client, "sho_roles@example.com", "pw").json()["access_token"]
+
+    for role in ("defense", "court", "prosecutor", "external_authority", "config_admin", "duty_officer"):
+        user = make_user(role, email=f"{role}_notio@example.com", password="pw", org=duty.organization)
+        resp = client.post(
+            f"/cases/{case['id']}/assign-io", json={"io_user_id": str(user.id)}, headers=auth_headers(sho_token)
+        )
+        assert resp.status_code == 400, (role, resp.text)
+
+
+def test_assign_io_refuses_assigning_the_same_user_twice(client, make_user):
+    duty = make_user("duty_officer", email="duty_twice@example.com", password="pw")
+    make_user("sho", email="sho_twice@example.com", password="pw", org=duty.organization)
+    io = make_user("io", email="io_twice@example.com", password="pw", org=duty.organization)
+    duty_token = login(client, "duty_twice@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+    sho_token = login(client, "sho_twice@example.com", "pw").json()["access_token"]
+
+    first = client.post(f"/cases/{case['id']}/assign-io", json={"io_user_id": str(io.id)}, headers=auth_headers(sho_token))
+    second = client.post(f"/cases/{case['id']}/assign-io", json={"io_user_id": str(io.id)}, headers=auth_headers(sho_token))
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 409, second.text
+
 def test_defense_sees_only_cases_it_is_engaged_on(client, make_user):
     """Issue #70. Nothing in the schema linked an advocate to a case, so
     GET /cases had no correct answer for the role: returning the registry let
