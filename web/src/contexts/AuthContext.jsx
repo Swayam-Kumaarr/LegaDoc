@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { apiClient, setAuthToken, parseJwt } from '../api/client';
+import { apiClient, setAuthToken, setRefreshToken, parseJwt } from '../api/client';
 
 const AuthContext = createContext();
 
@@ -11,8 +11,10 @@ export function AuthProvider({ children }) {
   const clearAppState = () => {
     setUser(null);
     setAuthToken(null);
+    setRefreshToken(null);
     localStorage.removeItem('auth_user');
     sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
     sessionStorage.removeItem('auth_user');
   };
 
@@ -24,10 +26,14 @@ export function AuthProvider({ children }) {
 
     // Hydrate active session
     const savedToken = sessionStorage.getItem('access_token');
+    const savedRefreshToken = sessionStorage.getItem('refresh_token');
     const savedUser = sessionStorage.getItem('auth_user');
 
     if (savedToken) {
       setAuthToken(savedToken);
+      // Restored alongside the access token so a reloaded tab can still
+      // renew an expired session instead of logging out (issue #88).
+      if (savedRefreshToken) setRefreshToken(savedRefreshToken);
       if (savedUser) {
         try {
           setUser(JSON.parse(savedUser));
@@ -46,6 +52,13 @@ export function AuthProvider({ children }) {
       if (response && response.access_token) {
         setAuthToken(response.access_token);
         sessionStorage.setItem('access_token', response.access_token);
+        // The login response has always carried a 7-day refresh token; it was
+        // dropped here, so the 15-minute access token was the whole session
+        // and users were logged out mid-flow (issue #88).
+        if (response.refresh_token) {
+          setRefreshToken(response.refresh_token);
+          sessionStorage.setItem('refresh_token', response.refresh_token);
+        }
 
         // Fetch authoritative profile and permission claims from /auth/me
         let profile = null;
