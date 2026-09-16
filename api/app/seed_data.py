@@ -224,6 +224,27 @@ OFFICIAL_TEST_USERS = [
     }
 ]
 
+# Mandatory items the charge-sheet AND-join enforces (issue #90).
+#
+# DEMO CONFIGURATION, NOT A LEGAL RULE. Which documents and requisitions are
+# mandatory for each crime type is a decision for prosecutors and legal
+# advisers, and nobody has made it yet. This is deliberately the single
+# smallest rule that lets the Flow 3 gate be seen working at all — before it,
+# no rows existed, so every charge sheet was accepted immediately and the
+# "cannot file: FSL report outstanding" moment could never be shown.
+#
+# Replace this list once the real per-crime matrix is agreed; do not extend
+# it by guesswork. Keys must match what the app actually writes:
+#   - "FIR" is the doc_type register_fir creates for every case, so it is
+#     always satisfied by registration itself.
+#   - "FSL Report" is the default "material required" on the Raise Section 91
+#     Requisition screen, and a requirement is only met once that requisition
+#     is *completed* by the authority.
+DEMO_STAGE_REQUIREMENTS = [
+    {"crime_type": "Theft", "requirement_type": "document", "requirement_key": "FIR"},
+    {"crime_type": "Theft", "requirement_type": "evidence_request", "requirement_key": "FSL Report"},
+]
+
 DEFAULT_TEST_PASSWORD = "GovSecure@2026"
 
 
@@ -299,5 +320,21 @@ def seed_all(db):
                 existing_user.designation = u_data["designation"]
             if role_obj and not existing_user.role_id:
                 existing_user.role_id = role_obj.id
+
+    # 4. Seed stage requirements — idempotent on (crime_type, type, key), so
+    # re-running never duplicates a rule and never re-enables one an admin
+    # has since marked non-mandatory.
+    for req in DEMO_STAGE_REQUIREMENTS:
+        exists = (
+            db.query(models.StageRequirement)
+            .filter(
+                models.StageRequirement.crime_type == req["crime_type"],
+                models.StageRequirement.requirement_type == req["requirement_type"],
+                models.StageRequirement.requirement_key == req["requirement_key"],
+            )
+            .first()
+        )
+        if not exists:
+            db.add(models.StageRequirement(mandatory=True, **req))
 
     db.commit()

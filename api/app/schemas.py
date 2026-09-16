@@ -572,3 +572,18 @@ class ApplicationApproveResponse(BaseModel):
     user_id: UUID
     email: str
     temporary_password: str  # shown exactly once — communicate out-of-band, never logged
+
+
+# ---------- Stage requirements (Flow 3 AND-join) ----------
+class StageRequirementResponse(BaseModel):
+    """One mandatory item the charge-sheet AND-join checks for a crime type.
+    requirement_type "document" is satisfied by a Document of that doc_type on
+    the case; "evidence_request" by a *completed* requisition whose
+    doc_type_expected matches."""
+    id: UUID
+    crime_type: str
+    requirement_type: str
+    requirement_key: str
+    mandatory: bool
+
+    model_config = ConfigDict(from_attributes=True)

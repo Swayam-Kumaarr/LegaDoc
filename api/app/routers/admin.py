@@ -671,14 +671,28 @@ def set_recognizer_mappings(
     return new_mappings
 
 
-@router.get("/stage-requirements")
-def list_stage_requirements(claims: dict = Depends(require_role("config_admin"))):
-    """GET /admin/stage-requirements — Config Admin.
-    Explicit 501: Dynamic stage requirements configuration is not implemented in this build.
+@router.get("/stage-requirements", response_model=list[schemas.StageRequirementResponse])
+def list_stage_requirements(
+    claims: dict = Depends(require_role("config_admin")),
+    db: Session = Depends(get_db),
+):
+    """GET /admin/stage-requirements — Config Admin. Every mandatory item the
+    charge-sheet AND-join enforces, grouped by crime type.
+
+    Previously an explicit 501 (issue #90). With no rows seeded and no way to
+    read them, POST /cases/:id/file-charge-sheet accepted every charge sheet at
+    once and the admin screen could not show what the gate checks. This is the
+    read side; editing requirements is still not exposed, because which items
+    are mandatory per crime type is a legal decision, not a configuration one.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Dynamic stage requirements configuration is not implemented in this build. Case stage progression rules are currently static."
+    return (
+        db.query(models.StageRequirement)
+        .order_by(
+            models.StageRequirement.crime_type,
+            models.StageRequirement.requirement_type,
+            models.StageRequirement.requirement_key,
+        )
+        .all()
     )
 
 
