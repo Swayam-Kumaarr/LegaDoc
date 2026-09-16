@@ -21,6 +21,10 @@ TEXT_BEARING_MIME_TYPES: Set[str] = {
     "image/jpeg",
     "image/png",
     "image/tiff",
+    # Phone cameras and messaging apps (WhatsApp in particular) export scans
+    # as WebP. Rejecting it turned away real FIR photos, and both committed
+    # OCR fixtures in workers/ocr_worker/test_firs are WebP themselves.
+    "image/webp",
     "text/plain",
     "text/csv",
 }
@@ -34,6 +38,10 @@ BINARY_EVIDENCE_MIME_TYPES: Set[str] = {
 }
 
 ALL_ALLOWED_MIME_TYPES = TEXT_BEARING_MIME_TYPES | BINARY_EVIDENCE_MIME_TYPES
+
+# Shown in the 415 response. The previous message said "images" are allowed,
+# which read as a contradiction when a real photo (WebP) was refused.
+ALLOWED_TYPES_DESCRIPTION = "PDF, JPEG, PNG, TIFF, WebP, plain text, CSV, MP4, MPEG video, MP3 and WAV"
 
 
 class UploadValidationResult(NamedTuple):
@@ -100,6 +108,8 @@ def detect_mime_from_bytes(header_bytes: bytes, fallback_content_type: str = "")
         return "video/mpeg"
     if len(header_bytes) >= 12 and header_bytes.startswith(b"RIFF") and header_bytes[8:12] == b"WAVE":
         return "audio/wav"
+    if len(header_bytes) >= 12 and header_bytes.startswith(b"RIFF") and header_bytes[8:12] == b"WEBP":
+        return "image/webp"
     if header_bytes.startswith(b"ID3") or (len(header_bytes) >= 2 and header_bytes[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")):
         return "audio/mpeg"
 
@@ -124,7 +134,7 @@ def detect_mime_from_bytes(header_bytes: bytes, fallback_content_type: str = "")
         return norm_content_type
 
     # 5. If claimed to be PDF or image but failed magic signature, do NOT trust extension
-    if norm_content_type in ("application/pdf", "image/jpeg", "image/png", "image/tiff"):
+    if norm_content_type in ("application/pdf", "image/jpeg", "image/png", "image/tiff", "image/webp"):
         return "application/octet-stream"
 
     return norm_content_type if norm_content_type else "application/octet-stream"
@@ -156,6 +166,24 @@ def _pdf_object_structure_bytes(data: bytes) -> bytes:
     the check specific to what could actually define a dangerous action.
     """
     return re.sub(rb"stream\r?\n.*?endstream", b"", data, flags=re.DOTALL)
+
+
+def _webp_dimensions(data: bytes):
+    """Canvas size from a WebP header without decoding the image.
+    Handles the three bitstream layouts: "VP8 " (lossy), "VP8L" (lossless)
+    and "VP8X" (extended, which carries the canvas size explicitly).
+    Returns (None, None) when the header is too short or unrecognised."""
+    if len(data) < 30 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+        return None, None
+    chunk = data[12:16]
+    if chunk == b"VP8X":
+        return 1 + int.from_bytes(data[24:27], "little"), 1 + int.from_bytes(data[27:30], "little")
+    if chunk == b"VP8 " and data[23:26] == b"\x9d\x01\x2a":
+        return int.from_bytes(data[26:28], "little") & 0x3FFF, int.from_bytes(data[28:30], "little") & 0x3FFF
+    if chunk == b"VP8L" and data[20] == 0x2F:
+        bits = int.from_bytes(data[21:25], "little")
+        return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+    return None, None
 
 
 def scan_buffer_for_exploits(data: bytes, detected_mime: str) -> None:
@@ -216,6 +244,14 @@ def scan_buffer_for_exploits(data: bytes, detected_mime: str) -> None:
             raise
         except Exception:
             pass
+
+    elif detected_mime == "image/webp":
+        width, height = _webp_dimensions(data)
+        if width and height and (width > 10000 or height > 10000 or (width * height) > 40000000):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Security validation failed: Image dimensions exceed maximum safe limit (pixel decompression bomb defense).",
+            )
 
     # 3. Script injection in plain text or CSV files
     elif detected_mime in ("text/plain", "text/csv"):
@@ -316,7 +352,7 @@ async def validate_upload_stream(
         if detected_mime not in ALL_ALLOWED_MIME_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=f"Unsupported file type '{detected_mime}'. Allowed types include PDF, images, audio, and video.",
+                detail=f"Unsupported file type '{detected_mime}'. Allowed types: {ALLOWED_TYPES_DESCRIPTION}.",
             )
 
         # 3. Write header to spooled file and update hash
