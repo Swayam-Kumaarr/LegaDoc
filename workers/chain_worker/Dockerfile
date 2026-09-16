@@ -22,4 +22,12 @@ COPY api/app /api/app
 # — without this flag every worker shares Celery's single default "celery"
 # queue and silently drops tasks it doesn't recognize instead of leaving
 # them for the worker that does.
-CMD ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "chain_worker"]
+# --pool=solo --prefetch-multiplier=1: one process, one job at a time.
+# Celery's default prefork pool starts one child per CPU, and each child
+# loads its own copy of this worker's models on first use — on an 8-core
+# laptop that is eight model sets. The default prefetch also reserves up to
+# 4 jobs ahead; a worker stopped before running them leaves those jobs in
+# Redis's "unacked" set until the 1-hour visibility timeout, and the
+# document shows "processing" for that hour with no error. Both were hit
+# live (scripts/staged_test.sh). Demo-scale throughput does not need more.
+CMD ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "chain_worker", "--pool=solo", "--prefetch-multiplier=1"]
