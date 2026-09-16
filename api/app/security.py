@@ -368,8 +368,36 @@ def assert_case_access(case_id, claims: dict, db: Session) -> None:
         if assigned is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not assigned to this case")
         return
-    # Every other role (Defense, external authorities, etc.) reaches this
-    # check only from endpoints that shouldn't be granting general case
+    # A defence advocate reaches a case only through a recorded engagement
+    # (CaseParty), never by role alone — role alone would mean any defence
+    # account may open any case in the state. The engagement is recorded by
+    # the bench or the station, not self-claimed; see routers/cases.py's
+    # add_case_party. Documents still come back redacted: defense is
+    # deliberately absent from FULL_TEXT_ACCESS_ROLES.
+    if role == "defense":
+        user_id = UUID(claims["sub"])
+        try:
+            case_uuid = case_id if isinstance(case_id, UUID) else UUID(str(case_id))
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+
+        engaged = (
+            db.query(models.CaseParty)
+            .filter(
+                models.CaseParty.case_id == case_uuid,
+                models.CaseParty.user_id == user_id,
+                models.CaseParty.party_role == "defense",
+            )
+            .first()
+        )
+        if engaged is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="No recorded engagement on this case"
+            )
+        return
+
+    # Every other role (external authorities, NCRB analyst, etc.) reaches
+    # this check only from endpoints that shouldn't be granting general case
     # access in the first place — deny by default rather than silently allow.
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Role not permitted to read case files directly")
 

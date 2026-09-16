@@ -289,3 +289,112 @@ def test_ai_parser_low_quality_ocr_resilience_and_safety(db_session, make_org, m
     db_session.refresh(doc_noise)
     assert doc_noise.status == "needs_review"
 
+
+
+def test_overlap_resolution_prefers_confidence_over_position():
+    """An earlier-starting weak guess must not outrank a stronger overlapping
+    match. Resolution used to sort by (span_start, -length, -confidence) and
+    walk forward with a cursor, so position decided the winner and confidence
+    only broke ties between spans starting at the same offset — a PERSON guess
+    at 60 beat a PAN match at 95 by starting one character earlier, and the
+    entity was recorded under the wrong type in the audit trail.
+    """
+    spans = [
+        {"entity_type": "PERSON", "span_start": 0, "span_end": 20, "confidence": 60},
+        {"entity_type": "PAN", "span_start": 5, "span_end": 15, "confidence": 95},
+    ]
+
+    resolved = ai_worker._resolve_overlapping_spans(spans)
+
+    assert [s["entity_type"] for s in resolved] == ["PAN"]
+
+
+def test_overlap_resolution_returns_document_order():
+    """Masking walks the text start-to-end, so survivors must come back in
+    document order even though they are ranked by confidence internally."""
+    spans = [
+        {"entity_type": "PHONE_NUMBER", "span_start": 40, "span_end": 50, "confidence": 85},
+        {"entity_type": "PERSON", "span_start": 10, "span_end": 20, "confidence": 80},
+        {"entity_type": "AADHAAR", "span_start": 60, "span_end": 72, "confidence": 95},
+    ]
+
+    resolved = ai_worker._resolve_overlapping_spans(spans)
+
+    assert [s["span_start"] for s in resolved] == [10, 40, 60]
+
+
+def test_bare_ten_digit_runs_are_not_phone_numbers():
+    r"""The NANP-style alternative had optional separators, which collapsed it
+    to \d{10} and matched any bare ten-digit run — Unix timestamps, case-file
+    numbers, seized amounts. Indian mobiles are covered by the [6-9]\d{9}
+    alternative, so requiring punctuation here costs nothing.
+    """
+    timestamp = ai_worker.LegalPIIRecognizer.find_spans("Recorded 1725432000 at the station")
+    assert not [s for s in timestamp if s["entity_type"] == "PHONE_NUMBER"]
+
+    case_no = ai_worker.LegalPIIRecognizer.find_spans("FIR No 2026084512 registered")
+    assert not [s for s in case_no if s["entity_type"] == "PHONE_NUMBER"]
+
+    # Genuine numbers, both bare-Indian and separator-formatted, still match.
+    real = ai_worker.LegalPIIRecognizer.find_spans("Contact 9812345678 or 123-456-7890")
+    assert len([s for s in real if s["entity_type"] == "PHONE_NUMBER"]) == 2
+
+
+def test_person_capture_stops_at_the_next_field_label():
+    """The multi-word name capture ran up to five words and swallowed the next
+    field's label — "Complainant: Priya Menon Phone: 98..." tagged
+    "Priya Menon Phone" as the PERSON, destroying the label of the following
+    field in the redacted output.
+    """
+    text = "Complainant: Priya Menon Phone: 9812345678"
+
+    resolved = ai_worker._resolve_overlapping_spans(
+        ai_worker.LegalPIIRecognizer.find_spans(text)
+    )
+    found = {s["entity_type"]: text[s["span_start"]:s["span_end"]] for s in resolved}
+
+    assert found["PERSON"] == "Priya Menon"
+    assert found["PHONE_NUMBER"] == "9812345678"
+
+
+def test_security_auditor_privilege_is_actually_exercised(client, db_session, make_org, make_user):
+    """The security_auditor role sits in both _UNRESTRICTED_CASE_ROLES and
+    FULL_TEXT_ACCESS_ROLES — the widest privilege the system grants — but no
+    account held it until issue #72, so none of that access had ever been
+    walked through. This pins the two things that privilege actually means.
+    """
+    raw_text = "Complainant Shri Amit Verma, phone 9123456780, resident of Delhi."
+    case, io_user, document = _setup_case_and_doc(db_session, make_org, make_user, raw_text=raw_text)
+    assert ai_worker.process_tag_document(str(document.id), db=db_session) == "ready"
+
+    # A different organisation entirely, and no CaseAssignment to this case.
+    auditor = make_user(
+        "security_auditor",
+        email="auditor@vigilance.gov.in",
+        password="pw",
+        org=make_org(name="Central Vigilance Commission", org_type="audit"),
+    )
+    token = login(client, auditor.email, "pw").json()["access_token"]
+
+    # 1. Unrestricted case access: opens a case it was never assigned to.
+    assert client.get(f"/cases/{case.id}", headers=auth_headers(token)).status_code == 200
+
+    # 2. Full-text access: sees the PII other roles get masked.
+    resp = client.get(f"/documents/{document.id}", headers=auth_headers(token))
+    assert resp.status_code == 200
+    text = resp.json()["text"]
+    assert "Amit Verma" in text
+    assert "9123456780" in text
+    assert "[REDACTED:" not in text
+
+
+def test_security_auditor_persona_is_seeded():
+    """Guards the seed itself. The role existing in CANONICAL_ROLES while no
+    user holds it is the exact state issue #72 describes, and it is invisible
+    until someone tries to run a Security Auditor flow.
+    """
+    from app.seed_data import OFFICIAL_TEST_USERS
+
+    auditors = [u for u in OFFICIAL_TEST_USERS if u["role"] == "security_auditor"]
+    assert len(auditors) == 1, "exactly one security_auditor persona expected"
+    assert auditors[0]["email"] == "auditor.rajan@vigilance.gov.in"

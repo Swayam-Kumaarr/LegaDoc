@@ -41,6 +41,27 @@ def _next_version(db: Session, case_id: UUID, doc_type: str) -> int:
     return (latest.version + 1) if latest else 1
 
 
+_TYPED_TEXT_MIME_TYPES = {"text/plain", "text/csv"}
+
+
+def _typed_text(data: bytes, detected_mime: str) -> Optional[str]:
+    """The decoded text of a typed (not scanned) upload, or None when the
+    file needs OCR or is binary evidence.
+
+    Typed text has nothing for OCR to extract. It used to be sent to the OCR
+    worker anyway, which treats every non-PDF payload as an image: both
+    engines failed to decode it, the document landed in needs_review with an
+    empty raw_text, and no role could ever read it — confirmed live with a
+    witness statement and an FSL report submitted as .txt. Decoding follows
+    upload_validator, which accepts UTF-8 and falls back to Latin-1."""
+    if detected_mime not in _TYPED_TEXT_MIME_TYPES:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("latin-1")
+
+
 @router.post("", response_model=schemas.DocumentUploadResponse, status_code=status.HTTP_202_ACCEPTED)
 async def upload_document(
     case_id: str = Form(...),
@@ -86,6 +107,7 @@ async def upload_document(
     data = validation.data
     doc_hash = validation.sha256_hash
     is_binary = validation.is_binary_evidence
+    typed_text = _typed_text(data, validation.detected_mime)
 
     # 2. Deduplication check — if exact file content already uploaded for this case & doc_type, return existing
     existing = (
@@ -116,6 +138,7 @@ async def upload_document(
         version=version,
         storage_path=key,
         doc_hash=doc_hash,
+        raw_text=typed_text,
         status="ready" if is_binary else "processing",
         chain_status="pending",
         uploaded_by=UUID(claims["sub"]),
@@ -131,7 +154,11 @@ async def upload_document(
     # Track A — always, independent of Track B. See System Connections #8.
     queue_client.enqueue("chain_worker.write_hash", document_id=str(document.id), idempotency_key=idempotency_key)
     # Track B — text-bearing documents only. See System Connections #6.
-    if not is_binary:
+    # Typed text goes straight to the AI parser, exactly like the complaint
+    # narrative in POST /cases; only scans and PDFs need OCR first.
+    if typed_text is not None:
+        queue_client.enqueue("ai_parser_worker.tag_document", document_id=str(document.id))
+    elif not is_binary:
         queue_client.enqueue("ocr_worker.extract_document", document_id=str(document.id))
 
     write_audit_log(
