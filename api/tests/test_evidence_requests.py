@@ -372,3 +372,34 @@ def test_seeding_stage_requirements_is_idempotent(db_session):
     seed_all(db_session)
 
     assert db_session.query(models.StageRequirement).count() == len(DEMO_STAGE_REQUIREMENTS)
+
+
+def test_io_can_list_requisition_targets_and_only_real_authorities_appear(client, make_user, make_org):
+    """Issue #89. Raising a requisition needs a target organisation, and no
+    role that raises one could list organisations."""
+    case, io_user, io_token = _register_and_assign_case(client, make_user)
+    fsl = make_org(name="Central FSL", org_type="fsl")
+    bank = make_org(name="State Bank", org_type="bank")
+    court = make_org(name="Sessions Court", org_type="court")
+
+    resp = client.get("/evidence-requests/requisition-targets", headers=auth_headers(io_token))
+    assert resp.status_code == 200, resp.text
+    ids = {o["id"] for o in resp.json()}
+    assert {str(fsl.id), str(bank.id)} <= ids
+    assert str(court.id) not in ids
+
+
+def test_requisition_to_a_non_authority_organisation_is_refused(client, make_user, make_org):
+    """Any organisation used to be accepted, so a requisition addressed to a
+    court or police station sat "requested" forever — only external_authority
+    users of the target organisation ever see a request."""
+    case, io_user, io_token = _register_and_assign_case(client, make_user)
+    court = make_org(name="Sessions Court", org_type="court")
+
+    resp = client.post(
+        f"/cases/{case['id']}/evidence-requests",
+        json={"requested_org_id": str(court.id), "doc_type_expected": "Report"},
+        headers=auth_headers(io_token),
+    )
+    assert resp.status_code == 400
+    assert "court" in resp.json()["detail"]

@@ -252,6 +252,64 @@ def get_case(case_id: str, claims: dict = Depends(verify_case_access), db: Sessi
     return case
 
 
+@router.get("/{case_id}/assignable-officers", response_model=list[schemas.AssignableOfficer])
+def list_assignable_officers(
+    case_id: str,
+    claims: dict = Depends(require_role("sho")),
+    db: Session = Depends(get_db),
+):
+    """GET /cases/:id/assignable-officers — SHO. The officers who can be
+    assigned to investigate this case, flagged if already assigned.
+
+    Exists because assigning an IO needs a list of candidates and no role that
+    assigns could read one: GET /admin/users and GET /orgs/:id/users are
+    config_admin only, so the SHO could not pick an officer at all and the IO
+    could never be given a case through the UI (issue #89).
+
+    Candidates are users holding an assignable role in any police
+    organisation, not only the SHO's own. Case has no owning organisation or
+    station (issue #74), so there is nothing to scope by; and the seeded SHO,
+    IO and Duty Officer each sit in a different police organisation, so an
+    own-org filter would return nobody and make assignment impossible.
+    Returns no email or contact details.
+    """
+    try:
+        case_uuid = UUID(case_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    if db.get(models.Case, case_uuid) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+
+    assigned_ids = {
+        row[0]
+        for row in db.query(models.CaseAssignment.io_user_id)
+        .filter(models.CaseAssignment.case_id == case_uuid)
+        .all()
+    }
+    officers = (
+        db.query(models.User, models.Organization.name)
+        .join(models.Organization, models.Organization.id == models.User.org_id)
+        .filter(
+            models.User.role.in_(_ASSIGNABLE_ROLES),
+            models.Organization.org_type == "police",
+        )
+        .order_by(models.User.name)
+        .all()
+    )
+    return [
+        schemas.AssignableOfficer(
+            id=u.id,
+            name=u.name,
+            role=u.role,
+            designation=u.designation,
+            service_id=u.service_id,
+            org_name=org_name,
+            already_assigned=u.id in assigned_ids,
+        )
+        for u, org_name in officers
+    ]
+
+
 @router.post("/{case_id}/assign-io", status_code=status.HTTP_201_CREATED)
 def assign_io(
     case_id: str,

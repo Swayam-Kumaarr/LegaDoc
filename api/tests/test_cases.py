@@ -936,3 +936,44 @@ def test_defense_counsel_cannot_read_the_case_diary(client, make_user, db_sessio
     resp = client.get(f"/cases/{case['id']}/case-diary", headers=auth_headers(def_token))
     assert resp.status_code == 403
     assert "172" in resp.json()["detail"]
+
+
+def test_sho_can_list_assignable_officers_across_police_organisations(client, make_user, make_org):
+    """Issue #89. The SHO had no way to read a list of officers, so an IO could
+    never be assigned through the UI. The seeded SHO and IO sit in different
+    police organisations, so candidates must span police organisations."""
+    duty = make_user("duty_officer", email="duty_assignable@example.com", password="pw")
+    sho = make_user("sho", email="sho_assignable@example.com", password="pw")
+    other_station = make_org(name="Cyber Cell", org_type="police")
+    io = make_user("io", email="io_assignable@example.com", password="pw", org=other_station)
+    make_user("defense", email="adv_assignable@bar.in", password="pw",
+              org=make_org(name="Bar Association", org_type="defense"))
+
+    duty_token = login(client, "duty_assignable@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+    sho_token = login(client, "sho_assignable@example.com", "pw").json()["access_token"]
+
+    resp = client.get(f"/cases/{case['id']}/assignable-officers", headers=auth_headers(sho_token))
+    assert resp.status_code == 200, resp.text
+    by_id = {o["id"]: o for o in resp.json()}
+
+    assert str(io.id) in by_id                          # different police org, still offered
+    assert by_id[str(io.id)]["already_assigned"] is False
+    assert str(duty.id) not in by_id                    # duty officers are not assignable
+    assert all("email" not in o for o in resp.json())   # no contact details leak
+    assert all(o["role"] != "defense" for o in resp.json())
+
+    client.post(f"/cases/{case['id']}/assign-io", json={"io_user_id": str(io.id)}, headers=auth_headers(sho_token))
+    after = {o["id"]: o for o in client.get(f"/cases/{case['id']}/assignable-officers", headers=auth_headers(sho_token)).json()}
+    assert after[str(io.id)]["already_assigned"] is True
+
+
+def test_only_the_sho_can_list_assignable_officers(client, make_user):
+    make_user("duty_officer", email="duty_assign_role@example.com", password="pw")
+    duty_token = login(client, "duty_assign_role@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+    make_user("io", email="io_assign_role@example.com", password="pw")
+    io_token = login(client, "io_assign_role@example.com", "pw").json()["access_token"]
+
+    resp = client.get(f"/cases/{case['id']}/assignable-officers", headers=auth_headers(io_token))
+    assert resp.status_code == 403
