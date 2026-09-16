@@ -10,7 +10,8 @@ import enum
 import uuid
 
 from sqlalchemy import (
-    Column, String, Integer, Boolean, ForeignKey, DateTime, Text, JSON, Enum, func, Table
+    Column, String, Integer, Boolean, ForeignKey, DateTime, Text, JSON, Enum, func, Table,
+    UniqueConstraint,
 )
 from app.db_types import GUID
 from sqlalchemy.orm import relationship
@@ -128,6 +129,39 @@ class CaseAssignment(Base):
     case_id = Column(GUID(), ForeignKey("cases.id"), nullable=False)
     io_user_id = Column(GUID(), ForeignKey("users.id"), nullable=False)
     assigned_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CaseParty(Base):
+    """A non-police participant formally recorded on a case — today a defence
+    advocate engaged for the accused.
+
+    Deliberately separate from CaseAssignment, which means "the current IO"
+    and is deleted wholesale by reassign_io when the IO changes. An
+    engagement must not be revoked as a side effect of a police reassignment.
+
+    This exists because nothing in the schema linked a defence advocate to a
+    case (issue #70). Before it, GET /cases had no correct answer for the
+    role: returning the whole registry let an advocate enumerate every case
+    in the state, and default-denying — the safe choice made in #61 — left
+    the Defence portal's case picker permanently empty, so the bail flow
+    could not be exercised end to end.
+
+    party_role is a string rather than an enum so recording other
+    participants later (next friend, surety, interpreter) does not need a
+    migration.
+    """
+    __tablename__ = "case_parties"
+    __table_args__ = (
+        UniqueConstraint("case_id", "user_id", "party_role", name="uq_case_party"),
+    )
+    id = uuid_pk()
+    case_id = Column(GUID(), ForeignKey("cases.id"), nullable=False)
+    user_id = Column(GUID(), ForeignKey("users.id"), nullable=False)
+    party_role = Column(String, nullable=False)  # "defense" today
+    # Who recorded the engagement — an advocate never self-associates, since
+    # that would reduce to "any defence account may claim any case".
+    recorded_by_user_id = Column(GUID(), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class Document(Base):

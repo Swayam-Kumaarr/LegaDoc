@@ -662,3 +662,141 @@ def test_list_case_documents_denies_unassigned_io(client, make_user):
     other_token = login(client, "other_docs2@example.com", "pw").json()["access_token"]
     resp = client.get(f"/cases/{case['id']}/documents", headers=auth_headers(other_token))
     assert resp.status_code == 403
+
+
+def test_defense_sees_only_cases_it_is_engaged_on(client, make_user):
+    """Issue #70. Nothing in the schema linked an advocate to a case, so
+    GET /cases had no correct answer for the role: returning the registry let
+    any defence account enumerate every case in the state, and default-denying
+    left the Defence portal's picker permanently empty. CaseParty is the link.
+    """
+    make_user("duty_officer", email="duty_party@example.com", password="pw")
+    duty_token = login(client, "duty_party@example.com", "pw").json()["access_token"]
+    engaged_case = _register_fir(client, duty_token, crime_type="Theft")
+    other_case = _register_fir(client, duty_token, crime_type="Robbery")
+
+    make_user("defense", email="adv_party@bar.in", password="pw")
+    def_token = login(client, "adv_party@bar.in", "pw").json()["access_token"]
+
+    # No engagement recorded yet: empty list, and the case cannot be opened.
+    assert client.get("/cases", headers=auth_headers(def_token)).json() == []
+    assert client.get(f"/cases/{engaged_case['id']}", headers=auth_headers(def_token)).status_code == 403
+
+    # The bench records the engagement.
+    make_user("court", email="bench_party@court.gov.in", password="pw")
+    court_token = login(client, "bench_party@court.gov.in", "pw").json()["access_token"]
+    adv_id = client.get("/auth/me", headers=auth_headers(def_token)).json()["id"]
+    rec = client.post(
+        f"/cases/{engaged_case['id']}/parties",
+        json={"user_id": adv_id},
+        headers=auth_headers(court_token),
+    )
+    assert rec.status_code == 201, rec.text
+
+    # Now scoped to exactly that case — not the other one.
+    listed = {c["id"] for c in client.get("/cases", headers=auth_headers(def_token)).json()}
+    assert listed == {engaged_case["id"]}
+    assert client.get(f"/cases/{engaged_case['id']}", headers=auth_headers(def_token)).status_code == 200
+    assert client.get(f"/cases/{other_case['id']}", headers=auth_headers(def_token)).status_code == 403
+
+
+def test_defense_cannot_record_its_own_engagement(client, make_user):
+    """Self-service would reduce the whole mechanism to "any defence account
+    may open any case", which is the enumeration hole it exists to close."""
+    make_user("duty_officer", email="duty_self@example.com", password="pw")
+    duty_token = login(client, "duty_self@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+
+    make_user("defense", email="adv_self@bar.in", password="pw")
+    def_token = login(client, "adv_self@bar.in", "pw").json()["access_token"]
+    adv_id = client.get("/auth/me", headers=auth_headers(def_token)).json()["id"]
+
+    resp = client.post(
+        f"/cases/{case['id']}/parties",
+        json={"user_id": adv_id},
+        headers=auth_headers(def_token),
+    )
+    assert resp.status_code == 403
+
+
+def test_only_a_defense_account_can_be_recorded_as_defense_counsel(client, make_user):
+    """Recording a police or bench account as opposing counsel would hand it a
+    second, unaudited route into the case."""
+    make_user("duty_officer", email="duty_wrongrole@example.com", password="pw")
+    duty_token = login(client, "duty_wrongrole@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+
+    io_user = make_user("io", email="io_wrongrole@police.gov.in", password="pw")
+    make_user("court", email="bench_wrongrole@court.gov.in", password="pw")
+    court_token = login(client, "bench_wrongrole@court.gov.in", "pw").json()["access_token"]
+
+    resp = client.post(
+        f"/cases/{case['id']}/parties",
+        json={"user_id": str(io_user.id)},
+        headers=auth_headers(court_token),
+    )
+    assert resp.status_code == 400
+
+
+def test_recording_an_engagement_twice_is_idempotent(client, make_user):
+    """Re-recording the same engagement is not an error — the unique
+    constraint would otherwise surface as a 500 on a harmless repeat."""
+    make_user("duty_officer", email="duty_idem@example.com", password="pw")
+    duty_token = login(client, "duty_idem@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+
+    make_user("defense", email="adv_idem@bar.in", password="pw")
+    def_token = login(client, "adv_idem@bar.in", "pw").json()["access_token"]
+    adv_id = client.get("/auth/me", headers=auth_headers(def_token)).json()["id"]
+
+    make_user("court", email="bench_idem@court.gov.in", password="pw")
+    court_token = login(client, "bench_idem@court.gov.in", "pw").json()["access_token"]
+
+    first = client.post(f"/cases/{case['id']}/parties", json={"user_id": adv_id}, headers=auth_headers(court_token))
+    second = client.post(f"/cases/{case['id']}/parties", json={"user_id": adv_id}, headers=auth_headers(court_token))
+    assert first.status_code == 201
+    assert second.status_code in (200, 201)
+    assert first.json()["id"] == second.json()["id"]
+
+
+def test_engagement_can_be_recorded_by_advocate_email(client, make_user):
+    """The bench has the advocate's email on the vakalatnama and no way to
+    look up a UUID — listing users is config_admin-only — so a user_id-only
+    API could not be driven from the Judiciary screen at all."""
+    make_user("duty_officer", email="duty_email@example.com", password="pw")
+    duty_token = login(client, "duty_email@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+
+    make_user("defense", email="Adv.Kapoor@bar.in", password="pw")
+    make_user("court", email="bench_email@court.gov.in", password="pw")
+    court_token = login(client, "bench_email@court.gov.in", "pw").json()["access_token"]
+
+    # Case-insensitive, whitespace-tolerant — it is typed in by hand.
+    resp = client.post(
+        f"/cases/{case['id']}/parties",
+        json={"email": "  adv.kapoor@BAR.in  "},
+        headers=auth_headers(court_token),
+    )
+    assert resp.status_code == 201, resp.text
+
+    def_token = login(client, "Adv.Kapoor@bar.in", "pw").json()["access_token"]
+    assert [c["id"] for c in client.get("/cases", headers=auth_headers(def_token)).json()] == [case["id"]]
+
+
+def test_case_party_requires_exactly_one_identifier(client, make_user):
+    """Neither identifier, or both, is a request bug — reject it rather than
+    silently preferring one."""
+    make_user("duty_officer", email="duty_ident@example.com", password="pw")
+    duty_token = login(client, "duty_ident@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, duty_token)
+    make_user("court", email="bench_ident@court.gov.in", password="pw")
+    court_token = login(client, "bench_ident@court.gov.in", "pw").json()["access_token"]
+
+    neither = client.post(f"/cases/{case['id']}/parties", json={}, headers=auth_headers(court_token))
+    both = client.post(
+        f"/cases/{case['id']}/parties",
+        json={"user_id": str(uuid4()), "email": "x@bar.in"},
+        headers=auth_headers(court_token),
+    )
+    assert neither.status_code == 422
+    assert both.status_code == 422

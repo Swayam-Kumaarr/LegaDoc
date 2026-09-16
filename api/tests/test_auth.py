@@ -70,8 +70,10 @@ def test_protected_endpoint_rejects_garbage_token(client):
 
 
 def test_login_rate_limiter_blocks_11th_attempt(client, make_user):
-    """Verify that login is rate-limited to 10 requests per minute per IP,
-    returning HTTP 429 with Retry-After header on the 11th request."""
+    """Ten FAILED attempts per account per minute; the 11th returns 429 with a
+    Retry-After header. Was "per IP", which behind the Vite proxy meant one
+    shared bucket for every user — see
+    test_failed_attempts_are_scoped_per_account_not_globally."""
     from app.rate_limit import login_rate_limiter
     login_rate_limiter.reset()
 
@@ -86,7 +88,7 @@ def test_login_rate_limiter_blocks_11th_attempt(client, make_user):
         # 11th attempt must be blocked by rate limiter
         resp11 = login(client, "rate_test@example.com", "wrong-password")
         assert resp11.status_code == 429
-        assert "rate limit exceeded" in resp11.json()["detail"].lower()
+        assert "too many failed sign-in attempts" in resp11.json()["detail"].lower()
         assert "Retry-After" in resp11.headers
     finally:
         login_rate_limiter.reset()
@@ -224,3 +226,99 @@ def test_change_password_enforces_complexity(client, make_user):
     new_login = login(client, "officer_pwd@police.gov", "SecurePassword2026!")
     assert new_login.status_code == 200
 
+
+
+def test_successful_logins_do_not_consume_rate_limit_quota(client, make_user):
+    """The reported blocker. The limiter counted every attempt, including
+    successful ones, and keyed on request.client.host — which is the Vite
+    proxy container's address for every browser request, since uvicorn runs
+    without --proxy-headers. That made it one shared bucket of ten for the
+    whole application: walking the nine seeded personas nearly exhausted it,
+    and the next sign-in anywhere returned 429.
+    """
+    from app.rate_limit import login_rate_limiter, login_ip_limiter
+    login_rate_limiter.reset()
+    login_ip_limiter.reset()
+
+    make_user("duty_officer", email="quota@example.com", password="hunter2000")
+
+    # Well past the old limit of 10 — none of these should be charged.
+    for i in range(15):
+        resp = login(client, "quota@example.com", "hunter2000")
+        assert resp.status_code == 200, f"attempt {i + 1} returned {resp.status_code}: {resp.text}"
+
+
+def test_failed_attempts_are_scoped_per_account_not_globally(client, make_user):
+    """One account being attacked must not lock everyone else out. With a
+    single per-IP bucket behind the proxy, it did exactly that."""
+    from app.rate_limit import login_rate_limiter, login_ip_limiter
+    login_rate_limiter.reset()
+    login_ip_limiter.reset()
+
+    make_user("duty_officer", email="victim@example.com", password="hunter2000")
+    make_user("io", email="bystander@example.com", password="hunter2000")
+
+    for _ in range(10):
+        assert login(client, "victim@example.com", "wrong-password").status_code == 401
+
+    # That account is now locked...
+    assert login(client, "victim@example.com", "wrong-password").status_code == 429
+    # ...but an unrelated account signs in normally.
+    assert login(client, "bystander@example.com", "hunter2000").status_code == 200
+
+
+def test_a_successful_login_clears_earlier_failures(client, make_user):
+    """A few mistyped passwords followed by the right one should not leave the
+    account one attempt from lockout."""
+    from app.rate_limit import login_rate_limiter, login_ip_limiter
+    login_rate_limiter.reset()
+    login_ip_limiter.reset()
+
+    make_user("duty_officer", email="typo@example.com", password="hunter2000")
+
+    for _ in range(9):
+        assert login(client, "typo@example.com", "wrong-password").status_code == 401
+    assert login(client, "typo@example.com", "hunter2000").status_code == 200
+
+    # Budget reset: nine more failures are available before the block.
+    for _ in range(9):
+        assert login(client, "typo@example.com", "wrong-password").status_code == 401
+
+
+def test_seeded_personas_match_the_frontend_login_picker():
+    """CLAUDE.md, seed_data.py and the DevLogin picker describe the same set of
+    accounts, and nothing kept them in step — the SHO persona was in the picker
+    and absent from the documented table. A persona offered by the UI that the
+    seeder never creates is indistinguishable, to whoever clicks it, from a
+    broken login.
+    """
+    import re
+    from pathlib import Path
+    from app.seed_data import OFFICIAL_TEST_USERS
+
+    picker = Path(__file__).resolve().parents[2] / "web" / "src" / "dev" / "seededAccounts.js"
+    listed = set(re.findall(r"email:\s*'([^']+)'", picker.read_text(encoding="utf-8")))
+    seeded = {u["email"] for u in OFFICIAL_TEST_USERS}
+
+    assert listed == seeded, (
+        f"offered by the picker but never seeded: {sorted(listed - seeded)}; "
+        f"seeded but not offered: {sorted(seeded - listed)}"
+    )
+
+
+def test_every_seeded_persona_can_authenticate(db_session):
+    """Pins the seeder end to end: each documented persona exists, carries the
+    documented role, and its password verifies. Until scripts/setup.sh called
+    the seeder, a fresh stack had none of them and every sign-in failed."""
+    from app import models, security
+    from app.seed_data import DEFAULT_TEST_PASSWORD, OFFICIAL_TEST_USERS, seed_all
+
+    seed_all(db_session)
+
+    for u in OFFICIAL_TEST_USERS:
+        row = db_session.query(models.User).filter(models.User.email == u["email"]).first()
+        assert row is not None, f"{u['email']} was not created by seed_all"
+        assert row.role == u["role"], f"{u['email']}: role {row.role} != {u['role']}"
+        assert security.verify_password(DEFAULT_TEST_PASSWORD, row.hashed_password), (
+            f"{u['email']} does not accept the documented password"
+        )

@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 # ---------- Auth ----------
@@ -72,6 +72,35 @@ class CaseResponse(BaseModel):
 
 class AssignIORequest(BaseModel):
     io_user_id: UUID
+
+
+class RecordCasePartyRequest(BaseModel):
+    """Records a non-police participant on a case. party_role defaults to
+    "defense" because that is the only one scoping reads today; the column is
+    a free string so other participants can be added without a migration.
+
+    Identify the party by user_id or by email — exactly one. Email exists
+    because the bench has the advocate's email on the vakalatnama and no way
+    to look up a UUID: listing users is config_admin-only, so a user_id-only
+    API could not be driven from the Judiciary screen at all."""
+    user_id: Optional[UUID] = None
+    email: Optional[str] = None
+    party_role: str = "defense"
+
+    @model_validator(mode="after")
+    def _exactly_one_identifier(self):
+        if (self.user_id is None) == (self.email is None):
+            raise ValueError("provide exactly one of user_id or email")
+        return self
+
+
+class CasePartyResponse(BaseModel):
+    id: UUID
+    case_id: UUID
+    user_id: UUID
+    party_role: str
+    recorded_by_user_id: UUID
+    created_at: datetime
 
 
 # ---------- Documents ----------

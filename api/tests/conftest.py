@@ -49,11 +49,13 @@ def _fresh_schema():
 @pytest.fixture(autouse=True)
 def _reset_rate_limiters():
     """Reset singleton sliding-window rate limiters before and after each test."""
-    from app.rate_limit import login_rate_limiter, ai_parser_limiter
+    from app.rate_limit import login_rate_limiter, login_ip_limiter, ai_parser_limiter
     login_rate_limiter.reset()
+    login_ip_limiter.reset()
     ai_parser_limiter.reset()
     yield
     login_rate_limiter.reset()
+    login_ip_limiter.reset()
     ai_parser_limiter.reset()
 
 
