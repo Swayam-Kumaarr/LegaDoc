@@ -977,3 +977,18 @@ def test_only_the_sho_can_list_assignable_officers(client, make_user):
 
     resp = client.get(f"/cases/{case['id']}/assignable-officers", headers=auth_headers(io_token))
     assert resp.status_code == 403
+
+
+def test_register_fir_records_the_owning_station_and_registrant(client, make_user, make_org, db_session):
+    """Issue #74. A case used to carry no owner at all, so nothing could ever
+    scope it by station. Registration must now stamp both."""
+    station = make_org(name="Karol Bagh PS", org_type="police")
+    duty = make_user("duty_officer", email="duty_owner@example.com", password="pw", org=station)
+    token = login(client, "duty_owner@example.com", "pw").json()["access_token"]
+
+    case = _register_fir(client, token)
+
+    row = db_session.get(models.Case, UUID(case["id"]))
+    db_session.refresh(row)
+    assert row.org_id == station.id
+    assert row.registered_by_user_id == duty.id

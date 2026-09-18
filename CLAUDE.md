@@ -166,6 +166,11 @@ hides them from restricted roles until they are re-tagged (issue #92):
 docker compose exec api python -m app.retag_case_diary
 ```
 
+`005_case_owning_org.sql` backfills `cases.org_id` and
+`registered_by_user_id` itself, from each case's `fir_registered` audit row.
+Nothing enforces access on those columns yet (issue #74) — the Duty Officer
+rule above still reads the audit row.
+
 ---
 
 ## Windows: always run `docker compose` from inside WSL2
