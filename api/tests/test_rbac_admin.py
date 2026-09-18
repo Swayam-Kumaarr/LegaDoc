@@ -133,15 +133,19 @@ def test_admin_assign_user_role(client, db_session):
     assert duty_officer.role == "sho"
 
 
-def test_unimplemented_admin_endpoints_explicit_501(client):
+def test_admin_can_read_the_stage_requirements_the_gate_enforces(client):
+    """Was an explicit 501 (issue #90), so the admin screen could not show what
+    the charge-sheet AND-join checks. It now returns the configured rows —
+    including the seeded demo rule."""
     res = client.post("/auth/login", json={"email": "admin.sharma@legadoc.gov.in", "password": DEFAULT_TEST_PASSWORD})
     token = res.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    # stage-requirements must return explicit 501
     stage_res = client.get("/admin/stage-requirements", headers=headers)
-    assert stage_res.status_code == 501
-    assert "not implemented" in stage_res.json()["detail"].lower()
+    assert stage_res.status_code == 200, stage_res.text
+    rules = {(r["crime_type"], r["requirement_type"], r["requirement_key"]) for r in stage_res.json()}
+    assert ("Theft", "evidence_request", "FSL Report") in rules
+    assert ("Theft", "document", "FIR") in rules
 
 
 def test_role_assignment_and_removal_audit_logging(client, db_session):

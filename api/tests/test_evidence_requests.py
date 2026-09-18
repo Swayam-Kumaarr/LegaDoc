@@ -323,6 +323,57 @@ def test_typed_text_report_is_readable_without_ocr(client, make_user, make_org, 
     assert tasks == {"chain_worker.write_hash", "ai_parser_worker.tag_document"}
 
 
+def test_seeded_theft_rule_blocks_charge_sheet_until_fsl_report_is_completed(client, make_user, make_org, db_session):
+    """Issue #90, end to end on the seeded demo rule. With no StageRequirement
+    rows every charge sheet was accepted at once, so the "cannot file: FSL
+    report outstanding" moment could never be shown."""
+    from app.seed_data import seed_all
+    seed_all(db_session)
+
+    case, io_user, io_token = _register_and_assign_case(client, make_user, crime_type="Theft")
+    make_user("prosecutor", email="pp_theft@court.gov.in", password="pw")
+    pros_token = login(client, "pp_theft@court.gov.in", "pw").json()["access_token"]
+
+    # FIR is created by registration, so only the FSL report is outstanding.
+    blocked = client.post(f"/cases/{case['id']}/file-charge-sheet", headers=auth_headers(pros_token))
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["detail"]["missing_items"] == ["Evidence Request: FSL Report"]
+
+    fsl_org = make_org(name="Central FSL", org_type="fsl")
+    req = client.post(
+        f"/cases/{case['id']}/evidence-requests",
+        json={"requested_org_id": str(fsl_org.id), "doc_type_expected": "FSL Report"},
+        headers=auth_headers(io_token),
+    ).json()
+
+    # Raised but not yet completed — still blocked.
+    still_blocked = client.post(f"/cases/{case['id']}/file-charge-sheet", headers=auth_headers(pros_token))
+    assert still_blocked.status_code == 409
+
+    make_user("external_authority", email="fsl_theft@fsl.gov.in", password="pw", org=fsl_org)
+    fsl_token = login(client, "fsl_theft@fsl.gov.in", "pw").json()["access_token"]
+    submitted = client.post(
+        f"/evidence-requests/{req['id']}/submit",
+        files={"file": ("report.txt", io.BytesIO(b"CFSL: tool marks consistent with a screwdriver."), "text/plain")},
+        headers=auth_headers(fsl_token),
+    )
+    assert submitted.status_code == 200, submitted.text
+
+    filed = client.post(f"/cases/{case['id']}/file-charge-sheet", headers=auth_headers(pros_token))
+    assert filed.status_code == 200, filed.text
+    assert filed.json()["investigation_status"] == "Charge_Sheet_Filed"
+
+
+def test_seeding_stage_requirements_is_idempotent(db_session):
+    from app import models
+    from app.seed_data import DEMO_STAGE_REQUIREMENTS, seed_all
+
+    seed_all(db_session)
+    seed_all(db_session)
+
+    assert db_session.query(models.StageRequirement).count() == len(DEMO_STAGE_REQUIREMENTS)
+
+
 def test_io_can_list_requisition_targets_and_only_real_authorities_appear(client, make_user, make_org):
     """Issue #89. Raising a requisition needs a target organisation, and no
     role that raises one could list organisations."""
