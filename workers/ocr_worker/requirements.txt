@@ -23,4 +23,4 @@ opencv-python-headless  # deskew/denoise/contrast preprocessing before OCR
 # on what was effectively still raw PDF bytes. Pure-pip, no external
 # binary dependency (unlike pdf2image, which needs poppler installed
 # separately at the OS level).
-pymupdf==1.24.10
+pymupdf==1.28.2
