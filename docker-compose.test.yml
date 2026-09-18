@@ -37,7 +37,11 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   ocr_worker:
-    mem_limit: 2200m
+    # 3 GB, not 2.2: #106 added a Tesseract Devanagari pass on bilingual pages
+    # on top of both Paddle models. The cap only helps if the VM can actually
+    # hand it over — stop other projects' containers first, or this becomes a
+    # VM-level kill instead.
+    mem_limit: 3000m
     environment:
       - OBJECT_STORAGE_BACKEND=minio
       # Paddle/OpenCV spawn one OpenMP thread per visible CPU, each with its
