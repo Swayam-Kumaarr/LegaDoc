@@ -82,15 +82,17 @@ def register_fir(
     Evidence" step was a fully disconnected second action an officer had
     to separately remember to do for the exact same text.
     """
+    user = db.get(models.User, UUID(claims["sub"]))
     case = models.Case(
         case_number=_generate_case_number(body.crime_type),
         crime_type=body.crime_type,
         investigation_status="FIR_Registered",
+        org_id=user.org_id if user else None,
+        registered_by_user_id=user.id if user else None,
     )
     db.add(case)
     db.flush()  # assigns case.id without committing, so it can key the document below
 
-    user = db.get(models.User, UUID(claims["sub"]))
     org_id = user.org_id if user else case.id
 
     doc_id = uuid.uuid4()

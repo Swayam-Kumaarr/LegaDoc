@@ -119,6 +119,13 @@ class Case(Base):
         String, nullable=False, default="FIR_Registered"
     )  # FIR_Registered -> Evidence_Collection -> Charge_Sheet_Ready -> Charge_Sheet_Filed -> Trial -> Judgment
     bail_status = Column(String, nullable=True)  # independent of investigation_status — see Flow 4
+    # Owning station and registering officer (issue #74). Nullable: cases
+    # registered before these columns existed are backfilled from their
+    # fir_registered audit row by db/migrations/005, and any row with no such
+    # audit entry stays NULL rather than being guessed. Nothing scopes access
+    # on these yet — the Duty Officer rule still reads the audit row.
+    org_id = Column(GUID(), ForeignKey("organizations.id"), nullable=True, index=True)
+    registered_by_user_id = Column(GUID(), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
