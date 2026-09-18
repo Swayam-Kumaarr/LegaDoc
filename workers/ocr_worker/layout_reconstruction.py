@@ -60,6 +60,122 @@ def normalize_devanagari_digits(text: str) -> str:
     return text.translate(DEVANAGARI_DIGITS)
 
 
+# Devanagari letters and signs, excluding the numerals (U+0966-U+096F), which
+# the Hindi pass hallucinates over printed Latin digits — see
+# has_devanagari_letters.
+_DEVANAGARI_LETTER_RE = re.compile(r"[ऀ-॥॰-ॿ]")
+
+# How much of a page must read as Devanagari before the Tesseract pass is
+# worth fusing in. An English-only FIR produces a handful of spurious
+# Devanagari detections (4 of 371 boxes on the real Delhi fixture), and
+# fusing on that evidence only lets Tesseract's own Latin-as-Devanagari
+# garbage ("हार" over "Act(s)") into a page that was reading correctly.
+_BILINGUAL_MIN_BOXES = 8
+_BILINGUAL_MIN_RATIO = 0.10
+
+
+def page_is_bilingual(boxes: List[Dict[str, Any]]) -> bool:
+    """True when enough of the page reads as Devanagari to be worth a second,
+    Devanagari-specialist OCR pass. See _BILINGUAL_MIN_RATIO."""
+    if not boxes:
+        return False
+    dev = sum(1 for b in boxes if has_devanagari_letters(b.get("text", "")))
+    return dev >= _BILINGUAL_MIN_BOXES and dev / len(boxes) >= _BILINGUAL_MIN_RATIO
+
+
+def strip_devanagari(text: str) -> str:
+    """Removes Devanagari letters from a mixed-script detection, keeping the
+    Latin part.
+
+    Used on PaddleOCR boxes once a Tesseract Devanagari reading is available
+    for the same page. Dropping such a box wholesale loses the Latin half —
+    Paddle reads the label "P.S. थाना:" as "P.S. धानn:", and discarding it
+    took the "P.S." with it, which is what the police-station field matches
+    on. Only the untrusted half is removed.
+    """
+    return " ".join(w for w in _DEVANAGARI_LETTER_RE.sub("", text).split() if w.strip(".,:;()[]|-"))
+
+
+def is_devanagari_word(text: str) -> bool:
+    """True for a detection that is genuinely Devanagari rather than Latin
+    text mis-read as Devanagari.
+
+    Tesseract's Hindi model transliterates Latin words it cannot place —
+    "HARYANA" comes back as "#88१%8॥4&" and "IPC" as "॥?ए९". Those carry one
+    or two Devanagari glyphs among symbols and digits; real Hindi words are
+    almost entirely Devanagari letters. Requiring both a minimum count and a
+    clear majority separates the two.
+    """
+    alnum = [ch for ch in text if ch.isalnum() or _DEVANAGARI_LETTER_RE.match(ch)]
+    dev = [ch for ch in alnum if _DEVANAGARI_LETTER_RE.match(ch)]
+    return len(dev) >= 2 and bool(alnum) and len(dev) / len(alnum) >= 0.6
+
+
+def _containment(inner: List[int], outer: List[int]) -> float:
+    """Fraction of `inner`'s area that lies inside `outer`."""
+    area = max(0, inner[2] - inner[0]) * max(0, inner[3] - inner[1])
+    if area <= 0:
+        return 0.0
+    x_ov = max(0, min(inner[2], outer[2]) - max(inner[0], outer[0]))
+    y_ov = max(0, min(inner[3], outer[3]) - max(inner[1], outer[1]))
+    return (x_ov * y_ov) / area
+
+
+def fuse_devanagari_boxes(
+    paddle_boxes: List[Dict[str, Any]],
+    tesseract_boxes: List[Dict[str, Any]],
+    min_confidence: float = 0.5,
+    latin_confidence: float = 0.85,
+) -> List[Dict[str, Any]]:
+    """Takes Devanagari from Tesseract and everything else from PaddleOCR.
+
+    PaddleOCR's Hindi model drops conjuncts and reph and emits the ि matra in
+    visual order, so "प्रथम सूचना रिपोर्ट" comes back as "पथम सूचना िरपोट" and
+    "प्रक्रिया" as "पिकया" — issue #91. Tesseract's `hin` model reads the same
+    lines correctly. It is not a replacement, though: it drops the digit 1
+    from numbers ("Section 154" -> "54", "2017" -> "207"), which on an FIR
+    corrupts exactly the statute and date values that matter most, while
+    Paddle's English pass reads them perfectly.
+
+    So each engine supplies what it is good at:
+      - Devanagari words come from Tesseract, above a confidence floor and
+        filtered by is_devanagari_word.
+      - Latin text and all digits come from Paddle, with any Devanagari
+        characters stripped out of mixed boxes.
+      - A Tesseract box is dropped where Paddle read the same region as Latin
+        with high confidence: a region a Latin model is sure about is Latin,
+        and this is where Tesseract's transliterated garbage lands.
+
+    Only called for pages that pass page_is_bilingual.
+    """
+    dev = [
+        b for b in tesseract_boxes
+        if is_devanagari_word(b.get("text", "")) and float(b.get("confidence", 0.0)) >= min_confidence
+    ]
+
+    latin: List[Dict[str, Any]] = []
+    for box in paddle_boxes:
+        text = box.get("text", "")
+        if has_devanagari_letters(text):
+            text = strip_devanagari(text)
+        if not text.strip():
+            continue
+        kept = dict(box)
+        kept["text"] = text
+        latin.append(kept)
+
+    dev = [
+        d for d in dev
+        if not any(
+            float(p.get("confidence", 0.0)) >= latin_confidence
+            and _containment(d["box"], p["box"]) >= 0.6
+            for p in latin
+        )
+    ]
+
+    return latin + dev
+
+
 def compute_box_iou(b1: List[int], b2: List[int]) -> float:
     """Calculates Intersection over Union (IoU) of two bounding boxes [x1, y1, x2, y2]."""
     x_left = max(b1[0], b2[0])
@@ -315,7 +431,7 @@ def extract_bilingual_fir_fields(
 
     # --- 1. FIR Number ---
     m_fir = re.search(
-        r"(?i)(?:FIR\s*N[oO0]\.?|एफ\.?आई\.?आर\.?\s*(?:सं\.?|संख्या|नं\.?)?|प्रथम\s*सूचना\s*रिपोर्ट(?:\s*(?:सं\.?|संख्या))?|मु\.?\s*अ\.?\s*सं\.?|मु०\s*अ०\s*सं०?|मुकदमा\s*अपराध\s*संख्या|अपराध\s*(?:सं\.?|संख्या))[:\s]*([0-9]{1,12}(?:/[0-9]{2,4})?)",
+        r"(?i)(?:FIR\s*N[oO0]\.?|एफ\.?आई\.?आर\.?\s*(?:सं\.?|संख्या|नं\.?)?|प्रथम\s*सूचना\s*रिपोर्ट(?:\s*(?:सं\.?|संख्या))?|मु\.?\s*अ\.?\s*सं\.?|मु०\s*अ०\s*सं०?|मुकदमा\s*अपराध\s*संख्या|अपराध\s*(?:सं\.?|संख्या))[^0-9\n]{0,40}([0-9]{1,12}(?:/[0-9]{2,4})?)",
         norm_text,
     )
     if m_fir:
@@ -507,10 +623,20 @@ def drop_contained_duplicate_text(boxes: List[Dict[str, Any]]) -> List[Dict[str,
     return kept
 
 
-def process_ocr_boxes_to_layout(raw_boxes: List[Dict[str, Any]]) -> Dict[str, Any]:
+def process_ocr_boxes_to_layout(
+    raw_boxes: List[Dict[str, Any]],
+    devanagari_boxes: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """End-to-end transformation:
-    Raw OCR detections -> Spatial IoU NMS -> Row Clustering -> Bilingual Field Extraction.
+    Raw OCR detections -> Devanagari fusion -> Spatial IoU NMS -> Row Clustering
+    -> Bilingual Field Extraction.
+
+    devanagari_boxes are Tesseract `hin` detections for the same page, used
+    only on a page that passes page_is_bilingual — see fuse_devanagari_boxes.
     """
+    if devanagari_boxes and page_is_bilingual(raw_boxes):
+        raw_boxes = fuse_devanagari_boxes(raw_boxes, devanagari_boxes)
+
     filtered_boxes = drop_contained_duplicate_text(deduplicate_boxes_nms(raw_boxes))
     rows = reconstruct_layout_rows(filtered_boxes)
     reconstructed_text = "\n".join(r["text"] for r in rows)

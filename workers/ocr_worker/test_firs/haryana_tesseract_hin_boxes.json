@@ -1,0 +1,1652 @@
+[
+ {
+  "text": "2]",
+  "confidence": 0.0,
+  "box": [
+   68,
+   59,
+   119,
+   132
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "#88१%8॥4&",
+  "confidence": 0.0,
+  "box": [
+   160,
+   76,
+   272,
+   115
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "70[08",
+  "confidence": 0.0,
+  "box": [
+   284,
+   76,
+   363,
+   115
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "०॥॥26/8",
+  "confidence": 0.0,
+  "box": [
+   374,
+   76,
+   463,
+   115
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "559५80£5",
+  "confidence": 0.0,
+  "box": [
+   474,
+   76,
+   572,
+   115
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(हरियाणा",
+  "confidence": 0.96,
+  "box": [
+   584,
+   76,
+   667,
+   115
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "पुलिस",
+  "confidence": 0.96,
+  "box": [
+   679,
+   76,
+   733,
+   115
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "नागरिक",
+  "confidence": 0.93,
+  "box": [
+   742,
+   76,
+   811,
+   115
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "सेवा|",
+  "confidence": 0.23,
+  "box": [
+   820,
+   76,
+   875,
+   115
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "700॥0६",
+  "confidence": 0.0,
+  "box": [
+   280,
+   85,
+   362,
+   103
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "ए॥]26|4",
+  "confidence": 0.0,
+  "box": [
+   370,
+   85,
+   456,
+   103
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "559५॥055",
+  "confidence": 0.0,
+  "box": [
+   464,
+   85,
+   577,
+   103
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "नागरिक",
+  "confidence": 0.93,
+  "box": [
+   738,
+   76,
+   822,
+   113
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "अीशीनशय,",
+  "confidence": 0.0,
+  "box": [
+   60,
+   123,
+   124,
+   152
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "सार",
+  "confidence": 0.0,
+  "box": [
+   340,
+   127,
+   401,
+   143
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "7४7077१40",
+  "confidence": 0.0,
+  "box": [
+   407,
+   127,
+   560,
+   143
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "5४",
+  "confidence": 0.38,
+  "box": [
+   549,
+   123,
+   561,
+   152
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "70707",
+  "confidence": 0.07,
+  "box": [
+   566,
+   127,
+   652,
+   143
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(ए॥94",
+  "confidence": 0.22,
+  "box": [
+   366,
+   150,
+   429,
+   170
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "8९७०",
+  "confidence": 0.0,
+  "box": [
+   434,
+   150,
+   498,
+   167
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "54",
+  "confidence": 0.0,
+  "box": [
+   506,
+   150,
+   535,
+   167
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(7.7.९.)",
+  "confidence": 0.42,
+  "box": [
+   540,
+   150,
+   614,
+   169
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "प्रधम",
+  "confidence": 0.69,
+  "box": [
+   402,
+   181,
+   446,
+   197
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "सूचना",
+  "confidence": 0.97,
+  "box": [
+   454,
+   183,
+   506,
+   203
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "रिपोर्ट",
+  "confidence": 0.96,
+  "box": [
+   513,
+   177,
+   562,
+   199
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(धारा",
+  "confidence": 0.93,
+  "box": [
+   329,
+   217,
+   374,
+   238
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "54",
+  "confidence": 0.0,
+  "box": [
+   385,
+   217,
+   417,
+   233
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "दंड",
+  "confidence": 0.95,
+  "box": [
+   427,
+   212,
+   454,
+   234
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "प्रक्रिया",
+  "confidence": 0.93,
+  "box": [
+   461,
+   213,
+   519,
+   233
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "सहिंता",
+  "confidence": 0.9,
+  "box": [
+   526,
+   212,
+   582,
+   237
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "के",
+  "confidence": 0.95,
+  "box": [
+   589,
+   213,
+   608,
+   233
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "तहत)",
+  "confidence": 0.93,
+  "box": [
+   615,
+   217,
+   662,
+   238
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "43...",
+  "confidence": 0.15,
+  "box": [
+   44,
+   363,
+   58,
+   379
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "छज्ञाव॑ल",
+  "confidence": 0.01,
+  "box": [
+   90,
+   370,
+   162,
+   387
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(ज़िला):",
+  "confidence": 0.21,
+  "box": [
+   168,
+   364,
+   237,
+   392
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "एएरणएरअशार&",
+  "confidence": 0.0,
+  "box": [
+   250,
+   370,
+   416,
+   387
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "ए.5.",
+  "confidence": 0.64,
+  "box": [
+   480,
+   370,
+   517,
+   387
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(थाना):",
+  "confidence": 0.93,
+  "box": [
+   522,
+   369,
+   587,
+   392
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "$॥+प्&840",
+  "confidence": 0.0,
+  "box": [
+   599,
+   370,
+   724,
+   387
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "अत्या",
+  "confidence": 0.11,
+  "box": [
+   804,
+   370,
+   851,
+   387
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(वर्ष):",
+  "confidence": 0.28,
+  "box": [
+   857,
+   364,
+   905,
+   392
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "207",
+  "confidence": 0.0,
+  "box": [
+   918,
+   369,
+   969,
+   387
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "पाए",
+  "confidence": 0.19,
+  "box": [
+   89,
+   420,
+   127,
+   437
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "४०.",
+  "confidence": 0.8,
+  "box": [
+   134,
+   420,
+   166,
+   437
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(प्र.सू.रि.",
+  "confidence": 0.5,
+  "box": [
+   172,
+   414,
+   246,
+   444
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "सं.)",
+  "confidence": 0.33,
+  "box": [
+   257,
+   412,
+   294,
+   441
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "0380",
+  "confidence": 0.95,
+  "box": [
+   308,
+   418,
+   359,
+   437
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "709५6",
+  "confidence": 0.25,
+  "box": [
+   482,
+   420,
+   527,
+   437
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(दिनांक):",
+  "confidence": 0.93,
+  "box": [
+   532,
+   412,
+   612,
+   441
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "24/07/207",
+  "confidence": 0.0,
+  "box": [
+   625,
+   418,
+   741,
+   437
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "%0",
+  "confidence": 0.0,
+  "box": [
+   482,
+   457,
+   536,
+   476
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "2...",
+  "confidence": 0.65,
+  "box": [
+   42,
+   511,
+   58,
+   528
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "5.30.",
+  "confidence": 0.74,
+  "box": [
+   88,
+   511,
+   140,
+   541
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "हर",
+  "confidence": 0.38,
+  "box": [
+   200,
+   503,
+   248,
+   536
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(अधिनियम)",
+  "confidence": 0.95,
+  "box": [
+   254,
+   509,
+   366,
+   544
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "इत्लागाड",
+  "confidence": 0.0,
+  "box": [
+   494,
+   503,
+   582,
+   536
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(धाराएँ))",
+  "confidence": 0.46,
+  "box": [
+   587,
+   512,
+   669,
+   540
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(क्र.सं.)",
+  "confidence": 0.67,
+  "box": [
+   88,
+   543,
+   150,
+   566
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "]",
+  "confidence": 0.0,
+  "box": [
+   141,
+   583,
+   146,
+   600
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "॥?ए९",
+  "confidence": 0.0,
+  "box": [
+   206,
+   583,
+   241,
+   599
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "860",
+  "confidence": 0.0,
+  "box": [
+   259,
+   582,
+   292,
+   599
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "380",
+  "confidence": 0.96,
+  "box": [
+   503,
+   583,
+   537,
+   599
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "2.",
+  "confidence": 0.65,
+  "box": [
+   138,
+   620,
+   149,
+   637
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "[72860",
+  "confidence": 0.0,
+  "box": [
+   206,
+   619,
+   292,
+   637
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "457",
+  "confidence": 0.85,
+  "box": [
+   498,
+   611,
+   536,
+   636
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "3...",
+  "confidence": 0.0,
+  "box": [
+   42,
+   673,
+   58,
+   690
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(9)",
+  "confidence": 0.73,
+  "box": [
+   89,
+   673,
+   115,
+   692
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "0०0घावटा८€",
+  "confidence": 0.0,
+  "box": [
+   130,
+   681,
+   243,
+   697
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "ण॑",
+  "confidence": 0.0,
+  "box": [
+   249,
+   681,
+   269,
+   697
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "णींता८6",
+  "confidence": 0.21,
+  "box": [
+   274,
+   681,
+   342,
+   697
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(अपराध",
+  "confidence": 0.95,
+  "box": [
+   358,
+   679,
+   422,
+   698
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "की",
+  "confidence": 0.96,
+  "box": [
+   430,
+   675,
+   456,
+   697
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "घटना):",
+  "confidence": 0.96,
+  "box": [
+   465,
+   679,
+   528,
+   702
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "4.",
+  "confidence": 0.17,
+  "box": [
+   94,
+   727,
+   99,
+   739
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "99",
+  "confidence": 0.29,
+  "box": [
+   130,
+   733,
+   155,
+   748
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(दिनो:",
+  "confidence": 0.15,
+  "box": [
+   159,
+   730,
+   199,
+   749
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "फाततरणोड",
+  "confidence": 0.0,
+  "box": [
+   206,
+   733,
+   275,
+   749
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "ऐड",
+  "confidence": 0.26,
+  "box": [
+   279,
+   733,
+   310,
+   749
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "096",
+  "confidence": 0.35,
+  "box": [
+   445,
+   730,
+   474,
+   742
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "॥ण४",
+  "confidence": 0.0,
+  "box": [
+   478,
+   730,
+   509,
+   742
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(दिनांक",
+  "confidence": 0.95,
+  "box": [
+   513,
+   726,
+   561,
+   745
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "से):",
+  "confidence": 0.84,
+  "box": [
+   565,
+   728,
+   587,
+   745
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "290722047",
+  "confidence": 0.0,
+  "box": [
+   595,
+   730,
+   673,
+   743
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "एज",
+  "confidence": 0.17,
+  "box": [
+   745,
+   733,
+   775,
+   745
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "प०",
+  "confidence": 0.63,
+  "box": [
+   779,
+   733,
+   797,
+   746
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(दिनांक",
+  "confidence": 0.92,
+  "box": [
+   800,
+   729,
+   846,
+   749
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "तब)",
+  "confidence": 0.37,
+  "box": [
+   852,
+   733,
+   884,
+   749
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "24/072047",
+  "confidence": 0.0,
+  "box": [
+   892,
+   733,
+   970,
+   746
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "व्रक्ा#",
+  "confidence": 0.38,
+  "box": [
+   129,
+   771,
+   163,
+   782
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "#सां०व",
+  "confidence": 0.0,
+  "box": [
+   167,
+   771,
+   209,
+   783
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(सम्रय",
+  "confidence": 0.29,
+  "box": [
+   213,
+   771,
+   253,
+   786
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "अवधि):",
+  "confidence": 0.58,
+  "box": [
+   257,
+   768,
+   305,
+   786
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "वराक७",
+  "confidence": 0.0,
+  "box": [
+   444,
+   775,
+   478,
+   787
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "770७५",
+  "confidence": 0.0,
+  "box": [
+   482,
+   775,
+   517,
+   787
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(समय",
+  "confidence": 0.88,
+  "box": [
+   521,
+   775,
+   561,
+   790
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "से):",
+  "confidence": 0.44,
+  "box": [
+   566,
+   773,
+   588,
+   790
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "00:00",
+  "confidence": 0.96,
+  "box": [
+   595,
+   775,
+   633,
+   787
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "ड़",
+  "confidence": 0.0,
+  "box": [
+   641,
+   774,
+   659,
+   787
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "ग्ाह",
+  "confidence": 0.0,
+  "box": [
+   745,
+   774,
+   778,
+   786
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "ए०",
+  "confidence": 0.08,
+  "box": [
+   782,
+   774,
+   800,
+   786
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(समय",
+  "confidence": 0.63,
+  "box": [
+   804,
+   774,
+   843,
+   789
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "तड);",
+  "confidence": 0.39,
+  "box": [
+   848,
+   774,
+   881,
+   789
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "00:00",
+  "confidence": 0.89,
+  "box": [
+   888,
+   774,
+   926,
+   786
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "किड",
+  "confidence": 0.09,
+  "box": [
+   934,
+   773,
+   953,
+   786
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(0)",
+  "confidence": 0.67,
+  "box": [
+   89,
+   814,
+   116,
+   834
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "गगगिग्राभ्नीणा",
+  "confidence": 0.0,
+  "box": [
+   142,
+   820,
+   259,
+   837
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "7८९लंः०त",
+  "confidence": 0.02,
+  "box": [
+   265,
+   820,
+   344,
+   837
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "॥",
+  "confidence": 0.63,
+  "box": [
+   351,
+   821,
+   369,
+   837
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "7.5.",
+  "confidence": 0.27,
+  "box": [
+   376,
+   820,
+   413,
+   837
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(थाना",
+  "confidence": 0.92,
+  "box": [
+   418,
+   819,
+   472,
+   842
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "जहां",
+  "confidence": 0.95,
+  "box": [
+   476,
+   809,
+   519,
+   846
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "एन",
+  "confidence": 0.0,
+  "box": [
+   582,
+   820,
+   627,
+   837
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(दिनांक):",
+  "confidence": 0.89,
+  "box": [
+   632,
+   809,
+   713,
+   847
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "पृणाल",
+  "confidence": 0.26,
+  "box": [
+   832,
+   820,
+   882,
+   837
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(समय):",
+  "confidence": 0.93,
+  "box": [
+   887,
+   819,
+   957,
+   842
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "सूचना",
+  "confidence": 0.96,
+  "box": [
+   140,
+   861,
+   197,
+   885
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "प्राप्त",
+  "confidence": 0.96,
+  "box": [
+   205,
+   861,
+   253,
+   878
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "हुई):",
+  "confidence": 0.86,
+  "box": [
+   261,
+   855,
+   300,
+   885
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "24/07/207",
+  "confidence": 0.0,
+  "box": [
+   582,
+   859,
+   699,
+   878
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "46:43",
+  "confidence": 0.0,
+  "box": [
+   832,
+   859,
+   889,
+   878
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "॥5",
+  "confidence": 0.73,
+  "box": [
+   902,
+   860,
+   929,
+   877
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(0",
+  "confidence": 0.69,
+  "box": [
+   89,
+   906,
+   113,
+   925
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "एतालग",
+  "confidence": 0.07,
+  "box": [
+   140,
+   904,
+   217,
+   921
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "एछॉंभ,",
+  "confidence": 0.0,
+  "box": [
+   224,
+   904,
+   278,
+   935
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "हिलंसालाए०",
+  "confidence": 0.28,
+  "box": [
+   285,
+   904,
+   381,
+   921
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "छग9",
+  "confidence": 0.0,
+  "box": [
+   582,
+   913,
+   638,
+   935
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": ")९०.",
+  "confidence": 0.0,
+  "box": [
+   644,
+   913,
+   677,
+   930
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(प्रविष्टि",
+  "confidence": 0.93,
+  "box": [
+   682,
+   907,
+   757,
+   935
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "सं.):",
+  "confidence": 0.36,
+  "box": [
+   766,
+   906,
+   802,
+   935
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "पग्ा८",
+  "confidence": 0.0,
+  "box": [
+   832,
+   913,
+   881,
+   930
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(समय):",
+  "confidence": 0.93,
+  "box": [
+   887,
+   912,
+   957,
+   935
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(रोजनामचा",
+  "confidence": 0.41,
+  "box": [
+   139,
+   932,
+   243,
+   959
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "संदर्म):",
+  "confidence": 0.48,
+  "box": [
+   252,
+   932,
+   312,
+   959
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "023",
+  "confidence": 0.96,
+  "box": [
+   582,
+   950,
+   620,
+   969
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "24/07/2077",
+  "confidence": 0.3,
+  "box": [
+   832,
+   950,
+   948,
+   969
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "46:43",
+  "confidence": 0.0,
+  "box": [
+   832,
+   989,
+   890,
+   1008
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "5",
+  "confidence": 0.0,
+  "box": [
+   902,
+   990,
+   929,
+   1007
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "+",
+  "confidence": 0.0,
+  "box": [
+   42,
+   1039,
+   58,
+   1055
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "प्॥फ९",
+  "confidence": 0.41,
+  "box": [
+   88,
+   1047,
+   137,
+   1068
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "णप्राण्आ॥०॥",
+  "confidence": 0.0,
+  "box": [
+   143,
+   1047,
+   285,
+   1063
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(सूचना",
+  "confidence": 0.95,
+  "box": [
+   291,
+   1045,
+   355,
+   1071
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "का",
+  "confidence": 0.96,
+  "box": [
+   364,
+   1047,
+   390,
+   1063
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "प्रकार):",
+  "confidence": 0.93,
+  "box": [
+   398,
+   1045,
+   460,
+   1068
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "ताला",
+  "confidence": 0.2,
+  "box": [
+   472,
+   1047,
+   540,
+   1064
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "38/शंक्ा।",
+  "confidence": 0.0,
+  "box": [
+   46,
+   1399,
+   109,
+   1419
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "॥",
+  "confidence": 0.31,
+  "box": [
+   115,
+   1399,
+   132,
+   1414
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "(आईपी):0.88.233.42",
+  "confidence": 0.0,
+  "box": [
+   138,
+   1395,
+   326,
+   1418
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "/॥/209",
+  "confidence": 0.0,
+  "box": [
+   483,
+   1393,
+   576,
+   1408
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "9:43:52",
+  "confidence": 0.0,
+  "box": [
+   592,
+   1393,
+   654,
+   1408
+  ],
+  "lang": "hi_tess"
+ },
+ {
+  "text": "47",
+  "confidence": 0.67,
+  "box": [
+   1024,
+   1396,
+   1049,
+   1411
+  ],
+  "lang": "hi_tess"
+ }
+]
