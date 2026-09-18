@@ -31,9 +31,9 @@ from app.database import SessionLocal
 from app.storage import get_storage
 
 try:
-    from layout_reconstruction import process_ocr_boxes_to_layout
+    from layout_reconstruction import page_is_bilingual, process_ocr_boxes_to_layout
 except ImportError:
-    from workers.ocr_worker.layout_reconstruction import process_ocr_boxes_to_layout
+    from workers.ocr_worker.layout_reconstruction import page_is_bilingual, process_ocr_boxes_to_layout
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +191,17 @@ def run_ocr_on_document_bytes(data: bytes, log_label: str) -> Dict[str, Any]:
         if page_engine == "tesseract_fallback":
             engine_used = "tesseract_fallback"  # any page needing fallback marks the whole document
 
-        layout = process_ocr_boxes_to_layout(raw_boxes)
+        # A bilingual page gets a second, Devanagari-only reading fused in;
+        # Paddle's Hindi output is not usable on its own (issue #91). Skipped
+        # on an English page — the gate is in page_is_bilingual — and on the
+        # fallback path, which is already Tesseract.
+        devanagari_boxes = None
+        if page_engine == "paddleocr" and page_is_bilingual(raw_boxes):
+            devanagari_boxes = run_tesseract_devanagari(processed_bytes)
+            if devanagari_boxes:
+                engine_used = "paddleocr+tesseract_hin"
+
+        layout = process_ocr_boxes_to_layout(raw_boxes, devanagari_boxes)
         if first_layout is None:
             first_layout = layout
         row_count += layout["row_count"]
@@ -333,6 +343,41 @@ def run_paddle_ocr(image_bytes: bytes) -> List[Dict[str, Any]]:
                     "box": [x1, y1, x2, y2],
                     "lang": lang,
                 })
+
+    return words
+
+
+def run_tesseract_devanagari(image_bytes: bytes) -> List[Dict[str, Any]]:
+    """Word-level Tesseract `hin` detections, used only to supply the
+    Devanagari half of a bilingual page (see fuse_devanagari_boxes).
+
+    This is not a fallback — Paddle succeeded. It runs as a second opinion on
+    the script Paddle reads worst, and returns [] on any failure so a page
+    still gets its Paddle reading.
+    """
+    if not _HAS_TESSERACT or not _HAS_PIL:
+        return []
+
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        data = pytesseract.image_to_data(img, lang="hin", output_type=pytesseract.Output.DICT)
+    except Exception as exc:
+        logger.warning(f"Tesseract Devanagari pass unavailable, keeping PaddleOCR only: {exc}")
+        return []
+
+    words = []
+    for i in range(len(data["text"])):
+        text = (data["text"][i] or "").strip()
+        conf = float(data["conf"][i])
+        if not text or conf < 0:
+            continue
+        x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
+        words.append({
+            "text": text,
+            "confidence": conf / 100.0,
+            "box": [x, y, x + w, y + h],
+            "lang": "hi_tesseract",
+        })
 
     return words
 

@@ -68,6 +68,13 @@ def _load_delhi_test_boxes():
         return json.load(f)
 
 
+def _load_fixture_boxes(name):
+    """Real detections captured from the fixture scans by the worker's own
+    engines, so these tests exercise the same input production sees."""
+    with open(os.path.join(_ocr_worker_dir, "test_firs", name), "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def _create_test_document(db_session, make_org, make_user):
     org = make_org()
     io_user = make_user("io", email=f"io-{uuid4().hex[:8]}@example.com", password="pw", org=org)
@@ -542,3 +549,76 @@ def test_devanagari_numerals_alone_do_not_outrank_a_confident_latin_read():
 
     kept = layout_mod.deduplicate_boxes_nms([ghost, latin])
     assert [b["text"] for b in kept] == ["Section 154"]
+
+
+def test_hindi_lines_of_a_real_bilingual_fir_are_readable(monkeypatch):
+    """Issue #91. PaddleOCR's Hindi model drops conjuncts and reph and emits
+    the ि matra in visual order, so the Haryana FIR's title came out as
+    "पथम सूचना िरपोट" and "प्रक्रिया" as "पिकया" — garbage in front of a
+    judge. Tesseract's hin model reads those same lines correctly, so the
+    Devanagari is taken from it and everything else stays with Paddle."""
+    paddle = _load_fixture_boxes("haryana_paddle_boxes.json")
+    tess = _load_fixture_boxes("haryana_tesseract_hin_boxes.json")
+
+    before = layout_mod.process_ocr_boxes_to_layout(paddle)["reconstructed_text"]
+    after = layout_mod.process_ocr_boxes_to_layout(paddle, tess)["reconstructed_text"]
+
+    # What the page actually says.
+    for phrase in ("सूचना", "रिपोर्ट", "प्रक्रिया", "अधिनियम", "दिनांक", "अपराध की घटना"):
+        assert phrase in after, phrase
+
+    # What PaddleOCR made of it.
+    for garbled in ("िरपोट", "पिकया", "सिंहंता", "धिनेयम"):
+        assert garbled in before, garbled
+        assert garbled not in after, garbled
+
+
+def test_fusion_keeps_latin_and_digits_from_paddleocr():
+    """Tesseract's hin model drops the digit 1 ("Section 154" -> "54",
+    "2017" -> "207"), which on an FIR corrupts the statute and date values
+    that matter most. Only the Devanagari comes from it."""
+    paddle = _load_fixture_boxes("haryana_paddle_boxes.json")
+    tess = _load_fixture_boxes("haryana_tesseract_hin_boxes.json")
+
+    res = layout_mod.process_ocr_boxes_to_layout(paddle, tess)
+    text, fields = res["reconstructed_text"], res["fields"]
+
+    assert "KURUKSHETRA" in fields["district"]
+    assert "SHAHABAD" in fields["police_station"]
+    assert "2017" in text and "24/07/2017" in text
+    assert "154" in text  # Section 154 Cr.P.C., the FIR's own statute
+    # The label sits between "FIR No." and the number as a Devanagari gloss;
+    # matching straight through it used to capture the wrong digit entirely.
+    assert fields["fir_number"] == "0380"
+
+
+def test_an_english_only_page_is_left_to_paddleocr_alone():
+    """The Devanagari pass is a second opinion on Hindi, not a general
+    improvement. On the real Delhi FIR — English, 4 spurious Devanagari
+    detections out of 371 — Tesseract contributes only its own Latin-as-
+    Devanagari garbage ("हार" over "Act(s)"), so the page must not be fused
+    at all."""
+    paddle = _load_delhi_test_boxes()
+    tess = _load_fixture_boxes("delhi_tesseract_hin_boxes.json")
+
+    assert layout_mod.page_is_bilingual(paddle) is False
+    assert layout_mod.page_is_bilingual(_load_fixture_boxes("haryana_paddle_boxes.json")) is True
+
+    unfused = layout_mod.process_ocr_boxes_to_layout(paddle)["reconstructed_text"]
+    offered = layout_mod.process_ocr_boxes_to_layout(paddle, tess)["reconstructed_text"]
+    assert offered == unfused
+
+
+def test_latin_half_of_a_mixed_script_box_survives_fusion():
+    """Paddle reads the label "P.S. थाना:" as "P.S. धानn:". Dropping such a
+    box wholesale because it holds Devanagari took the "P.S." with it — and
+    that Latin label is what the police-station field matches on. Only the
+    untrusted Devanagari is stripped."""
+    assert layout_mod.strip_devanagari("P.S. धानn:") == "P.S. n:"
+    assert layout_mod.strip_devanagari("धारा") == ""
+
+    # Tesseract's transliteration of Latin words carries a glyph or two among
+    # symbols; real Hindi words are almost entirely Devanagari letters.
+    assert layout_mod.is_devanagari_word("रिपोर्ट") is True
+    assert layout_mod.is_devanagari_word("#88१%8॥4&") is False
+    assert layout_mod.is_devanagari_word("ए.5.") is False
