@@ -56,6 +56,11 @@ services:
       - ./api/app:/app/app
       - ./api/tests:/app/tests
       - ./workers:/workers
+      # tests/test_auth.py reads the DevLogin picker to check it lists exactly
+      # the personas the seeder creates. Without this mount that file does not
+      # exist in the container and `docker exec legadoc-api-1 pytest` — the
+      # command CLAUDE.md documents — fails a test that passes in CI.
+      - ./web/src/dev:/web/src/dev:ro
     # Local/dev only — overrides the Dockerfile's plain CMD so edits to
     # ./api/app (bind-mounted above) take effect without a manual restart.
     # Without --reload every backend change silently kept running the code
