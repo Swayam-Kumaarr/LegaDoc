@@ -718,3 +718,33 @@ def test_registration_time_fallback_skips_occurrence_times():
         "Time From: 22:23 hrs Time To: 06:23 hrs",
         "दिनांक: १३/११/२०२४ समय: १४:३० बजे",
     ]) == "14:30 बजे"
+
+
+def test_act_year_is_not_reported_as_a_section_number():
+    """Issue #107. These forms tabulate the Act and its sections in separate
+    columns — "1 | IPC 1860 | 380" — and the old pattern took the first 1-3
+    digit run after the Act name. That truncated the Act's own year and
+    reported "IPC 186" as the offence, while the real sections (380, 457) in
+    the next column were never picked up. A wrong statute number on a charge
+    sheet is not a cosmetic defect."""
+    fields = _fused_haryana()["fields"]
+
+    assert fields["ipc_sections"] == ["IPC 380", "IPC 457"]
+    assert not any("186" in s for s in fields["ipc_sections"])
+
+
+def test_sections_are_read_per_line_and_per_act():
+    """A section belongs to the Act on its own row: the number two rows down
+    is a different offence, and 2023 after BNS is the year it was enacted."""
+    def sections(lines):
+        boxes = [
+            {"box": [50, 20 + 30 * i, 600, 40 + 30 * i], "text": t, "confidence": 0.95}
+            for i, t in enumerate(lines)
+        ]
+        return layout_mod.process_ocr_boxes_to_layout(boxes)["fields"]["ipc_sections"]
+
+    assert sections(["1 IPC 1860 380", "2 IPC 1860 457"]) == ["IPC 380", "IPC 457"]
+    assert sections(["The Bharatiya Nyaya Sanhita (BNS), 2023 303(2)"]) == ["BNS 303(2)"]
+    # A number printed before the Act name is not one of its sections; the
+    # Section/s heading fallback still catches it.
+    assert sections(["धाराएं: 379, 411 भा.दं.सं."]) == ["379"]

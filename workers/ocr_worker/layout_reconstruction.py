@@ -581,6 +581,53 @@ def _registration_time(norm_text: str) -> Optional[str]:
     return None
 
 
+_BNS_ACT_RE = re.compile(
+    r"(?i)BNS|Bharatiya\s+Nyaya\s+Sanhita|भारतीय\s*न्याय\s*संहिता|बी\.?एन\.?एस\.?"
+)
+_IPC_ACT_RE = re.compile(
+    r"(?i)IPC|Indian\s+Penal\s+Code|भा\.?\s*दं\.?\s*(?:सं\.?|वि\.?)"
+    r"|भा०\s*दं०\s*(?:सं०|वि०)|भारतीय\s*दंड\s*संहिता"
+)
+
+# A section number, with its sub-clause if it has one: 380, 303(2), 66A.
+# Not preceded or followed by another digit, so a four-digit year cannot be
+# read as its own first three digits.
+_SECTION_NUMBER_RE = re.compile(r"(?<!\d)([1-9][0-9]{0,3})(\([0-9a-zA-Z]+\))?(?!\d)")
+
+
+def _is_act_year(number: str) -> bool:
+    """A four-digit number next to an Act's name is the year it was enacted —
+    IPC 1860, BNS 2023, CrPC 1973 — not a section of it."""
+    return len(number) == 4 and 1800 <= int(number) <= 2100
+
+
+def _sections_after_act(norm_text: str, act_re: "re.Pattern[str]") -> List[str]:
+    """Section numbers printed after an Act's name, on that same line.
+
+    These forms tabulate the two separately — "1 | IPC 1860 | 380" — so the
+    number that matters is not the first one on the line and not the one
+    directly after the Act either. Taking the first 1-3 digit run after the
+    Act name read "IPC 1860" as section 186: it truncated the Act's own year
+    and reported it as the offence, while the real sections (380, 457) sat in
+    the next column and were never picked up. Wrong statute numbers on a
+    charge sheet are not a cosmetic defect (issue #107).
+
+    Scoped to the line because `.` never crosses a newline here: a number two
+    rows further down belongs to a different offence.
+    """
+    found: List[str] = []
+    for line in norm_text.split("\n"):
+        for act in act_re.finditer(line):
+            for m in _SECTION_NUMBER_RE.finditer(line[act.end():]):
+                number, clause = m.group(1), m.group(2) or ""
+                if _is_act_year(number):
+                    continue  # the Act's year, not one of its sections
+                sec = number + clause
+                if sec not in found:
+                    found.append(sec)
+    return found
+
+
 def extract_bilingual_fir_fields(
     rows: List[Dict[str, Any]],
     raw_text: Optional[str] = None,
@@ -672,16 +719,10 @@ def extract_bilingual_fir_fields(
 
     # --- 7. Sections (IPC / BNS) ---
     sections = []
-    # Search for BNS sections (e.g. 303(2), 304, 379)
-    for m in re.finditer(r"(?i)(?:BNS|Bharatiya\s+Nyaya\s+Sanhita|भारतीय\s*न्याय\s*संहिता|बी\.?एन\.?एस\.?).*?(?:2023\s*)?([1-9][0-9]{1,2}(?:\([0-9a-zA-Z]+\))?)", norm_text):
-        sec = m.group(1).strip()
-        if sec and f"BNS {sec}" not in sections:
-            sections.append(f"BNS {sec}")
-    # Search for IPC sections
-    for m in re.finditer(r"(?i)(?:IPC|Indian\s+Penal\s+Code|भा\.?\s*दं\.?\s*(?:सं\.?|वि\.?)|भा०\s*दं०\s*(?:सं०|वि०)|भारतीय\s*दंड\s*संहिता).*?([1-9][0-9]{1,2}(?:\([0-9a-zA-Z]+\))?)", norm_text):
-        sec = m.group(1).strip()
-        if sec and f"IPC {sec}" not in sections:
-            sections.append(f"IPC {sec}")
+    for label, act_re in (("BNS", _BNS_ACT_RE), ("IPC", _IPC_ACT_RE)):
+        for sec in _sections_after_act(norm_text, act_re):
+            if f"{label} {sec}" not in sections:
+                sections.append(f"{label} {sec}")
     # Section/s heading directly followed by digits
     if not sections:
         for m in re.finditer(r"(?i)(?:Section/s|Sections|धाराएं|धाराएँ|धारा)[:\s]*([1-9][0-9]{1,2}(?:\([0-9a-zA-Z]+\))?)", norm_text):
