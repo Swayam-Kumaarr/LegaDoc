@@ -394,7 +394,7 @@ def test_audit_log_query_filters_and_pagination(client, db_session, make_org, ma
 def test_chain_integrity_detects_row_deletion(client, db_session, make_org, make_user):
     """Deleting any row in the middle must break the cryptographic hash chain."""
     case, tokens, _ = _setup_case_with_audit_trail(db_session, make_org, make_user)
-    rows = db_session.query(models.AuditLog).order_by(models.AuditLog.created_at.asc()).all()
+    rows = db_session.query(models.AuditLog).order_by(models.AuditLog.seq.asc()).all()
     assert len(rows) >= 3
 
     # Delete the second row
@@ -456,3 +456,31 @@ def test_full_audit_view_exposes_seq_so_a_gap_is_not_read_as_a_break(client, db_
     # The interleaved row leaves a gap, and the chain is still intact.
     assert seqs[-1] - seqs[-2] > 1
     assert resp.json()["chain_intact"] is True
+
+
+def test_audit_entries_are_ordered_by_seq_when_timestamps_tie(client, db_session, make_org, make_user):
+    """models.AuditLog.seq exists because wall-clock timestamps tie: several
+    same-request writes have landed on an identical microsecond on this
+    stack. Ordering the API response by created_at therefore left the order
+    up to the database, so the chain of custody could render out of order —
+    and under offset/limit an unstable sort can drop a row from one page and
+    repeat it on the next."""
+    from datetime import datetime, timezone
+
+    case, tokens, _ = _setup_case_with_audit_trail(db_session, make_org, make_user)
+
+    # Force the exact tie the seq column was introduced for.
+    same_instant = datetime(2026, 9, 23, 12, 0, 0, tzinfo=timezone.utc)
+    for row in db_session.query(models.AuditLog).all():
+        row.created_at = same_instant
+    db_session.commit()
+
+    resp = client.get(f"/cases/{case.id}/audit-log", headers=auth_headers(tokens["config_admin"]))
+    assert resp.status_code == 200, resp.text
+    seqs = [e["seq"] for e in resp.json()["entries"]]
+    assert seqs == sorted(seqs, reverse=True), seqs
+
+    # And the hashes still chain in that order, newest first.
+    entries = resp.json()["entries"]
+    for newer, older in zip(entries, entries[1:]):
+        assert newer["prev_hash"] == older["row_hash"]

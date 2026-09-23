@@ -81,7 +81,13 @@ def get_audit_log(
             query = query.filter(models.AuditLog.target_type == target_type)
 
         total_entries = query.count()
-        rows = query.order_by(models.AuditLog.created_at.desc()).offset(offset).limit(limit).all()
+        # seq, not created_at — see models.AuditLog.seq. Writes from one
+        # request have landed on an identical microsecond on this stack, and a
+        # tie makes this sort arbitrary: the chain of custody renders in the
+        # wrong order, and with offset/limit an unstable sort can drop a row
+        # from one page and repeat it on the next. admin.py and audit.py
+        # already order by seq; this endpoint was missed.
+        rows = query.order_by(models.AuditLog.seq.desc()).offset(offset).limit(limit).all()
 
         actor_ids = {r.actor_user_id for r in rows if r.actor_user_id is not None}
         users = (
@@ -126,7 +132,7 @@ def get_audit_log(
     if target_type:
         query = query.filter(models.AuditLog.target_type == target_type)
 
-    all_rows = query.order_by(models.AuditLog.created_at.asc()).all()
+    all_rows = query.order_by(models.AuditLog.seq.asc()).all()
     action_counts: dict[str, int] = {}
     first_entry_at = None
     last_entry_at = None
@@ -184,7 +190,7 @@ def get_ai_parser_audit(
     )
 
     total_count = query.count()
-    rows = query.order_by(models.AuditLog.created_at.desc()).offset(offset).limit(limit).all()
+    rows = query.order_by(models.AuditLog.seq.desc()).offset(offset).limit(limit).all()
 
     # Meta-audit: write an immutable audit log entry documenting this inspection
     write_audit_log(
