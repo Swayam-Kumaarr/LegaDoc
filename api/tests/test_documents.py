@@ -332,7 +332,7 @@ def test_redact_tag_adds_a_correction_and_extends_the_audit_hash_chain(client, m
     # (fir_registered), the explicit upload above wrote a second
     # (document_uploaded), and redact-tag wrote a third — the chain must
     # still verify end to end across all three.
-    entries = db_session.query(models.AuditLog).order_by(models.AuditLog.created_at.asc()).all()
+    entries = db_session.query(models.AuditLog).order_by(models.AuditLog.seq.asc()).all()
     assert len(entries) == 3
     assert entries[0].action == "fir_registered"
     assert entries[0].prev_hash is None

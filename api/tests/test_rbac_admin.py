@@ -172,7 +172,7 @@ def test_role_assignment_and_removal_audit_logging(client, db_session):
     assign_log = (
         db_session.query(models.AuditLog)
         .filter(models.AuditLog.action == "role_assigned", models.AuditLog.target_id == target_user.id)
-        .order_by(models.AuditLog.created_at.desc())
+        .order_by(models.AuditLog.seq.desc())
         .first()
     )
     assert assign_log is not None
@@ -195,7 +195,7 @@ def test_role_assignment_and_removal_audit_logging(client, db_session):
     remove_log = (
         db_session.query(models.AuditLog)
         .filter(models.AuditLog.action == "role_removed", models.AuditLog.target_id == target_user.id)
-        .order_by(models.AuditLog.created_at.desc())
+        .order_by(models.AuditLog.seq.desc())
         .first()
     )
     assert remove_log is not None
@@ -232,7 +232,7 @@ def test_role_lifecycle_audit_logging(client, db_session):
     create_log = (
         db_session.query(models.AuditLog)
         .filter(models.AuditLog.action == "role_created", models.AuditLog.target_type == "role")
-        .order_by(models.AuditLog.created_at.desc())
+        .order_by(models.AuditLog.seq.desc())
         .first()
     )
     assert create_log is not None
@@ -253,7 +253,7 @@ def test_role_lifecycle_audit_logging(client, db_session):
     update_log = (
         db_session.query(models.AuditLog)
         .filter(models.AuditLog.action == "role_updated", models.AuditLog.target_type == "role")
-        .order_by(models.AuditLog.created_at.desc())
+        .order_by(models.AuditLog.seq.desc())
         .first()
     )
     assert update_log is not None
@@ -267,7 +267,7 @@ def test_role_lifecycle_audit_logging(client, db_session):
     del_log = (
         db_session.query(models.AuditLog)
         .filter(models.AuditLog.action == "role_deleted", models.AuditLog.target_type == "role")
-        .order_by(models.AuditLog.created_at.desc())
+        .order_by(models.AuditLog.seq.desc())
         .first()
     )
     assert del_log is not None
@@ -323,7 +323,7 @@ def test_organization_management_and_audit(client, db_session):
     org_log = (
         db_session.query(models.AuditLog)
         .filter(models.AuditLog.action == "organization_onboarded")
-        .order_by(models.AuditLog.created_at.desc())
+        .order_by(models.AuditLog.seq.desc())
         .first()
     )
     assert org_log is not None
@@ -451,7 +451,7 @@ def test_admin_update_document_schema(client, db_session):
     audit = (
         db_session.query(models.AuditLog)
         .filter(models.AuditLog.action == "document_schema_updated")
-        .order_by(models.AuditLog.created_at.desc())
+        .order_by(models.AuditLog.seq.desc())
         .first()
     )
     assert audit is not None
