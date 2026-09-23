@@ -96,14 +96,22 @@ if allp[stage]:
 EOF
 }
 
-check_oom() {
-  local any=0
+oom_snapshot() {
   for c in $("${COMPOSE[@]}" ps -a -q 2>/dev/null); do
-    if [ "$(docker inspect -f '{{.State.OOMKilled}}' "$c")" = "true" ]; then
-      fail "$(docker inspect -f '{{.Name}}' "$c") was OOM-killed — raise its mem_limit or free VM memory"
-      any=1
-    fi
-  done
+    [ "$(docker inspect -f '{{.State.OOMKilled}}' "$c")" = "true" ] && docker inspect -f '{{.Name}}' "$c"
+  done | sort
+}
+
+check_oom() {
+  # Only kills from THIS stage count. A container OOM-killed earlier stays in
+  # `ps -a` with OOMKilled still true, and used to fail every later stage too.
+  local before=$1 any=0 name
+  while read -r name; do
+    [ -z "$name" ] && continue
+    grep -qxF "$name" <<<"$before" && continue
+    fail "$name was OOM-killed — raise its mem_limit or free VM memory"
+    any=1
+  done <<<"$(oom_snapshot)"
   return $any
 }
 
@@ -142,10 +150,11 @@ flows() { python3 scripts/e2e_flows.py --api "$API_URL" --state "$STATE_DIR/stat
 run_stage() {  # run_stage <name> <function>
   local name=$1; shift
   bold "Stage: $name"
+  local oom_before; oom_before=$(oom_snapshot)
   start_sampler "$name"
   "$@"; local rc=$?
   stop_sampler "$name"
-  check_oom || rc=1
+  check_oom "$oom_before" || rc=1
   return $rc
 }
 

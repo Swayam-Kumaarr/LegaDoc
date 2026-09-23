@@ -233,10 +233,13 @@ def stage_core(f):
     s, b = f.http("GET", "/cases", who="ncrb")
     f.check("NCRB analyst is not handed the case docket", s == 200 and b == [], short(b))
     s, b = f.http("GET", "/cases", who="defense")
-    f.check("Defense counsel can see a case to act on", s == 200 and isinstance(b, list) and len(b) > 0,
-            "empty — nothing on this branch links an advocate to a case, so the Defense portal's case "
-            "picker is always empty (CaseParty engagement link: PR #86)",
-            level="WARN")
+    # Correct at this point: the advocate has no engagement on THIS case yet, so
+    # it must not appear. Scoped to this run's case rather than asserting an
+    # empty list, because engagements recorded by earlier runs persist in the
+    # volumes. The engagement, and the case then appearing, are checked below.
+    listed = {c["id"] for c in b} if s == 200 and isinstance(b, list) else set()
+    f.check("defence without an engagement cannot see this case", s == 200 and case not in listed,
+            f"HTTP {s}: {short(b)}")
 
     print("  -- IO assignment")
     s, users = f.http("GET", "/admin/users", who="admin")
@@ -280,7 +283,7 @@ def stage_core(f):
     print("  -- Flow 3: Section 91 requisition to FSL")
     f.check("FSL organisation exists", bool(fsl_org), short(orgs))
     s, b = f.http("POST", f"/cases/{case}/evidence-requests", who="io",
-                  body={"requested_org_id": fsl_org, "doc_type_expected": "FSL_Report", "notes": "Examine broken lock"})
+                  body={"requested_org_id": fsl_org, "doc_type_expected": "FSL Report", "notes": "Examine broken lock"})
     if f.expect("IO raises an evidence request to FSL", s, 201, b):
         req = f.ids["evidence_request"] = b["id"]
         s, inbox = f.http("GET", "/evidence-requests", who="fsl")
@@ -293,6 +296,11 @@ def stage_core(f):
         requisitioned = {str(r.get("case_id")) for r in inbox} if isinstance(inbox, list) else set()
         f.check("FSL case list shows only requisitioned cases", case in listed and listed <= requisitioned,
                 f"HTTP {s}: listed={sorted(listed)} requisitioned={sorted(requisitioned)}")
+        s, b = f.http("POST", f"/cases/{case}/file-charge-sheet", who="prosecutor")
+        missing = (b or {}).get("detail", {}).get("missing_items") if isinstance(b, dict) else None
+        f.check("charge sheet blocked while the requisition is outstanding",
+                s == 409 and bool(missing), f"HTTP {s}: {short(b)}")
+
         report = b"CFSL report: tool marks on the lock are consistent with a flat-head screwdriver."
         s, b = f.http("POST", f"/evidence-requests/{req}/submit", who="fsl", files={"file": ("fsl_report.txt", report, "text/plain")})
         f.check("FSL fulfils the request", s in (200, 201) and isinstance(b, dict) and b.get("status") == "completed", f"HTTP {s}: {short(b)}")
@@ -300,6 +308,15 @@ def stage_core(f):
         f.expect("second fulfilment is refused", s, 409, b)
 
     print("  -- Flow 4: bail track")
+    s, b = f.http("POST", f"/cases/{case}/bail/application", who="defense")
+    f.expect("defence with no recorded engagement is refused", s, 403, b)
+    # Access for the defence comes from a CaseParty row, recorded by the bench —
+    # deliberately not self-service, or any advocate could open any case.
+    s, b = f.http("POST", f"/cases/{case}/parties", who="court",
+                  body={"email": PERSONAS["defense"], "party_role": "defense"})
+    f.expect("court records the defence engagement", s, (200, 201), b)
+    s, b = f.http("GET", "/cases", who="defense")
+    f.check("engaged defence now sees the case", s == 200 and any(c["id"] == case for c in b), f"HTTP {s}: {short(b)}")
     s, b = f.http("POST", f"/cases/{case}/bail/application", who="defense")
     f.expect("bail application refused before arrest", s, 400, b)
     s, b = f.http("POST", f"/cases/{case}/bail/arrest", who="io")
