@@ -84,16 +84,25 @@ def page_is_bilingual(boxes: List[Dict[str, Any]]) -> bool:
 
 
 def strip_devanagari(text: str) -> str:
-    """Removes Devanagari letters from a mixed-script detection, keeping the
-    Latin part.
+    """Removes the Devanagari words from a mixed-script detection, keeping
+    the Latin ones.
 
     Used on PaddleOCR boxes once a Tesseract Devanagari reading is available
     for the same page. Dropping such a box wholesale loses the Latin half —
     Paddle reads the label "P.S. थाना:" as "P.S. धानn:", and discarding it
     took the "P.S." with it, which is what the police-station field matches
     on. Only the untrusted half is removed.
+
+    The unit removed is the whole word, not just its Devanagari letters. A
+    word mixing both scripts is the Hindi model misreading a Hindi word, and
+    its Latin letters are part of that misreading: stripping only the
+    Devanagari left "धानn:" as "n:" and "fज़:" as "f:", which ended up in the
+    extracted fields as "n: SHAHABAD" and "f: KURUKSHETRA" (issue #107).
     """
-    return " ".join(w for w in _DEVANAGARI_LETTER_RE.sub("", text).split() if w.strip(".,:;()[]|-"))
+    return " ".join(
+        w for w in text.split()
+        if not _DEVANAGARI_LETTER_RE.search(w) and w.strip(".,:;()[]|-")
+    )
 
 
 def is_devanagari_word(text: str) -> bool:
@@ -164,6 +173,12 @@ def fuse_devanagari_boxes(
         kept["text"] = text
         latin.append(kept)
 
+    weak = [
+        b for b in tesseract_boxes
+        if is_devanagari_word(b.get("text", "")) and float(b.get("confidence", 0.0)) < min_confidence
+    ]
+    latin, dev = resolve_latin_glosses(latin, dev, weak, latin_confidence=latin_confidence)
+
     dev = [
         d for d in dev
         if not any(
@@ -174,6 +189,134 @@ def fuse_devanagari_boxes(
     ]
 
     return latin + dev
+
+
+# How much of a Latin box's width, or of one bracketed gloss inside it, must
+# lie under trusted Devanagari words before it is taken to be PaddleOCR's
+# English pass transliterating that Hindi — issue #107.
+_GLOSS_COVERAGE = 0.6
+
+_PAREN_GROUP_RE = re.compile(r"\([^()]*\)")
+
+
+def _same_line(a: List[int], b: List[int]) -> bool:
+    """True when two boxes share most of their height, i.e. sit on one line."""
+    y_ov = min(a[3], b[3]) - max(a[1], b[1])
+    return y_ov > 0.5 * min(a[3] - a[1], b[3] - b[1])
+
+
+def _x_coverage(x1: float, x2: float, spans: List[Tuple[int, int]]) -> float:
+    """Fraction of [x1, x2] covered by the union of `spans`."""
+    if x2 <= x1:
+        return 0.0
+    covered, cursor = 0.0, x1
+    for s1, s2 in sorted(spans):
+        s1, s2 = max(s1, cursor), min(s2, x2)
+        if s2 > s1:
+            covered += s2 - s1
+            cursor = s2
+    return covered / (x2 - x1)
+
+
+def resolve_latin_glosses(
+    latin_boxes: List[Dict[str, Any]],
+    dev_boxes: List[Dict[str, Any]],
+    weak_dev_boxes: Optional[List[Dict[str, Any]]] = None,
+    latin_confidence: float = 0.85,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Removes PaddleOCR's English-pass reading of Hindi text — issue #107.
+
+    The English model also detects the Devanagari on a bilingual FIR and
+    transliterates it into Latin garbage: "(धारा 154 दंड प्रक्रिया संहिता के तहत)"
+    comes back as "(4RT 154 zs afa4r afar a a6d)". It holds no Devanagari, so
+    neither the fusion nor NMS sees it as a ghost, and it lands in the text
+    beside the correct Hindi. It takes two shapes:
+
+      - The whole box is the gloss. Paddle is unsure of it, and the trusted
+        Tesseract words on that line cover it, so it is dropped whole.
+      - The gloss is a bracket inside a real English box, the way these forms
+        print labels: "P.S. (थाना): SHAHABAD" reads "P.S. (4I): SHAHABAD".
+        Where trusted Tesseract words cover the bracket, it is replaced by
+        them, giving back "P.S. (थाना): SHAHABAD"; those words are consumed so
+        they are not emitted again as boxes of their own. Where only
+        low-confidence Tesseract words cover it, and one of them opens with a
+        bracket of its own — Tesseract saw "(" at that spot too — the bracket
+        is deleted: Hindi goes there, but not Hindi we can vouch for.
+
+    Trimming arbitrary words by an estimated x-position was tried and
+    reverted: the estimate clipped "P.S." off "P.S. (4I): SHAHABAD" and the
+    police-station field took a wrong value. The same proportional estimate
+    locates the bracket here, but it can only ever rewrite text inside the
+    brackets, so the label and the value around them are never touched.
+
+    Returns the rewritten Latin boxes and the Devanagari boxes still unclaimed.
+    """
+    weak_dev_boxes = weak_dev_boxes or []
+    consumed: set = set()
+    kept: List[Dict[str, Any]] = []
+
+    for box in latin_boxes:
+        b = box.get("box")
+        text = box.get("text", "")
+        if not b or len(b) < 4 or b[2] <= b[0]:
+            kept.append(box)
+            continue
+        line = [
+            (i, d) for i, d in enumerate(dev_boxes)
+            if i not in consumed and _same_line(b, d["box"])
+        ]
+        weak = [d for d in weak_dev_boxes if _same_line(b, d["box"])]
+        if not line and not weak:
+            kept.append(box)
+            continue
+        spans = [(d["box"][0], d["box"][2]) for _, d in line]
+
+        if (
+            float(box.get("confidence", 0.0)) < latin_confidence
+            and _x_coverage(b[0], b[2], spans) >= _GLOSS_COVERAGE
+        ):
+            continue
+
+        width, n = b[2] - b[0], max(len(text), 1)
+
+        def under(d: Dict[str, Any], g1: float, g2: float) -> bool:
+            return min(d["box"][2], g2) - max(d["box"][0], g1) > 0.5 * (d["box"][2] - d["box"][0])
+
+        def replace(m: "re.Match[str]") -> str:
+            g1 = b[0] + width * m.start() / n
+            g2 = b[0] + width * m.end() / n
+            if has_devanagari_letters(m.group(0)):
+                return m.group(0)
+            if _x_coverage(g1, g2, spans) >= _GLOSS_COVERAGE:
+                words = sorted(
+                    ((i, d) for i, d in line if i not in consumed and under(d, g1, g2)),
+                    key=lambda w: w[1]["box"][0],
+                )
+                if words:
+                    consumed.update(i for i, _ in words)
+                    parts: List[str] = []
+                    for _, d in words:
+                        word = d["text"].replace("(", "").replace(")", "").strip(" :")
+                        if word and (not parts or parts[-1] != word):
+                            parts.append(word)
+                    return "(" + " ".join(parts) + ")"
+            nearby = [d for _, d in line if under(d, g1, g2)] + [d for d in weak if under(d, g1, g2)]
+            if (
+                any(d["text"].lstrip().startswith("(") for d in nearby)
+                and _x_coverage(g1, g2, [(d["box"][0], d["box"][2]) for d in nearby]) >= _GLOSS_COVERAGE
+            ):
+                return ""
+            return m.group(0)
+
+        new_text = _PAREN_GROUP_RE.sub(replace, text)
+        if new_text != text:
+            new_text = re.sub(r"\s+([:.,])", r"\1", re.sub(r"\s{2,}", " ", new_text)).strip()
+            box = dict(box)
+            box["text"] = new_text
+        if new_text.strip(".,:;()[]|- "):
+            kept.append(box)
+
+    return kept, [d for i, d in enumerate(dev_boxes) if i not in consumed]
 
 
 def compute_box_iou(b1: List[int], b2: List[int]) -> float:
@@ -380,6 +523,64 @@ def reconstruct_layout_rows(
     return reconstructed_rows
 
 
+# The Hindi gloss these forms print after an English label — "P.S. (थाना):",
+# "Date (दिनांक):" — which the field patterns step over to reach the value.
+_GLOSS = r"(?:\s*\([^()\n]{0,40}\))?"
+
+_TIME_VALUE = r"(?<![\d:])([0-2]?[0-9]:[0-5][0-9])(?![\d:])(\s*(?:hrs|nrs|am|pm|बजे))?"
+
+# The row that records when the police station received the information —
+# the FIR's registration time — and the rows that follow it on the form.
+# Tolerant of the scan's misreads: "Informnation 'eccived" on the Haryana FIR.
+_REGISTRATION_ROW_RE = re.compile(r"(?i)Info\w{0,8}\s+\S{0,3}c\w{0,3}ved|सूचना[^\n|]{0,15}प्राप्त")
+_AFTER_REGISTRATION_RE = re.compile(
+    r"(?i)Diary|रोजनामचा|Type\s+of\s+Information|सूचना\s+का\s+प्रकार|Place\s+of\s+Occurrence|घटना\s*स्थल"
+)
+# Labels of the occurrence period ("Time From", "समय से"), which sit above the
+# registration row and are the times it was confused with.
+_OCCURRENCE_TIME_RE = re.compile(r"(?i)Time\s*(?:From|To|Period)|Ti\w{1,2}\s+From|Perio?d|अवधि|समय\s*(?:से|तक)")
+
+
+def _format_time(m: "re.Match[str]") -> str:
+    return (m.group(1) + (m.group(2) or "")).replace("nrs", "hrs").strip()
+
+
+def _registration_time(norm_text: str) -> Optional[str]:
+    """When the FIR was registered — issue #107.
+
+    Taking the first time on the page returned the occurrence time instead
+    ("Time From 00:00" on the Haryana FIR, "Time From : 09:20" on Delhi),
+    since the occurrence block is printed above the registration row. That is
+    wrong data shown under the wrong label, which is worse than none.
+
+    Where the form has an "Information received at P.S." row, the time is
+    read from that row or the value row printed under it, and nowhere else:
+    the search stops at the next section, so an empty field (as on the Delhi
+    fixture) yields None rather than the Daily Diary time below it. Forms
+    without that row (the UP template prints "दिनांक: ... समय: ..." on one
+    line) fall back to a labelled time that is not an occurrence time.
+    """
+    lines = norm_text.split("\n")
+    for i, line in enumerate(lines):
+        if not _REGISTRATION_ROW_RE.search(line):
+            continue
+        for candidate in lines[i:i + 3]:
+            if candidate is not line and _AFTER_REGISTRATION_RE.search(candidate):
+                break
+            m = re.search(_TIME_VALUE, candidate)
+            if m:
+                return _format_time(m)
+        return None
+
+    for line in lines:
+        if _OCCURRENCE_TIME_RE.search(line):
+            continue
+        m = re.search(r"(?i)(?:Time|समय|वक्त)" + _GLOSS + r"[:\s]*" + _TIME_VALUE, line)
+        if m:
+            return _format_time(m)
+    return None
+
+
 def extract_bilingual_fir_fields(
     rows: List[Dict[str, Any]],
     raw_text: Optional[str] = None,
@@ -439,7 +640,7 @@ def extract_bilingual_fir_fields(
 
     # --- 2. District & 3. Police Station & 4. Year ---
     m_dist = re.search(
-        r"(?i)(?:District|जिला|जनपद)[:\s]*([^|\n]+?)(?=\s*\||\s*P\.?S\.?[:\s]|\s*Police\s+Station|\s*थाना|\s*कोतवाली|\s*Year|\s*वर्ष|\s*साल|$)",
+        r"(?i)(?:District|जिला|जनपद)" + _GLOSS + r"[:\s]*([^|\n]+?)(?=\s*\||\s*P\.?S\.?[:\s]|\s*Police\s+Station|\s*थाना|\s*कोतवाली|\s*Year|\s*वर्ष|\s*साल|$)",
         raw_text,
     )
     if m_dist:
@@ -448,7 +649,7 @@ def extract_bilingual_fir_fields(
             parsed["district"] = dist_val
 
     m_ps = re.search(
-        r"(?i)(?:P\.?S\.?|Police\s+Station|थाना|कोतवाली)[:\s]*([^|\n]+?)(?=\s*\||\s*Year|\s*वर्ष|\s*साल|\s*FIR|\s*मु\.?अ|\s*प्रथम|$)",
+        r"(?i)(?:P\.?S\.?|Police\s+Station|थाना|कोतवाली)" + _GLOSS + r"[:\s]*([^|\n]+?)(?=\s*\||\s*Year|\s*वर्ष|\s*साल|\s*FIR|\s*मु\.?अ|\s*प्रथम|$)",
         raw_text,
     )
     if m_ps:
@@ -456,23 +657,18 @@ def extract_bilingual_fir_fields(
         if ps_val:
             parsed["police_station"] = ps_val
 
-    m_year = re.search(r"(?i)(?:Year|वर्ष|साल)[:\s]*([12][09][0-9]{2})", norm_text)
+    m_year = re.search(r"(?i)(?:Year|वर्ष|साल)" + _GLOSS + r"[:\s]*([12][09][0-9]{2})", norm_text)
     if m_year:
         parsed["year"] = m_year.group(1).strip()
     elif parsed["fir_number"] and "/" in str(parsed["fir_number"]):
         parsed["year"] = parsed["fir_number"].split("/")[-1]
 
     # --- 5. Registration Date & 6. Registration Time ---
-    m_date = re.search(r"(?i)(?:Date|दिनांक|तारीख)[:\s]*([0-3]?[0-9][\/\-\.][01]?[0-9][\/\-\.][12][09][0-9]{2})", norm_text)
+    m_date = re.search(r"(?i)(?:Date|दिनांक|तारीख)" + _GLOSS + r"[:\s]*([0-3]?[0-9][\/\-\.][01]?[0-9][\/\-\.][12][09][0-9]{2})", norm_text)
     if m_date:
         parsed["registration_date"] = m_date.group(1).strip()
 
-    m_time = re.search(
-        r"(?i)(?:Time\s*(?:From)?|समय|वक्त)[:\s]*([0-2]?[0-9]:[0-5][0-9](?:\s*(?:hrs|nrs|am|pm|बजे))?)",
-        norm_text,
-    )
-    if m_time:
-        parsed["registration_time"] = m_time.group(1).replace("nrs", "hrs").strip()
+    parsed["registration_time"] = _registration_time(norm_text)
 
     # --- 7. Sections (IPC / BNS) ---
     sections = []
@@ -496,7 +692,7 @@ def extract_bilingual_fir_fields(
     parsed["ipc_sections"] = sections
 
     # --- 8. Type of Information ---
-    m_info = re.search(r"(?i)(?:Type\s+of\s+Information|सूचना\s+का\s+प्रकार)[:\s]*([^|\n]+)", raw_text)
+    m_info = re.search(r"(?i)(?:Type\s+of\s+Information|सूचना\s+का\s+प्रकार)" + _GLOSS + r"[:\s]*([^|\n]+)", raw_text)
     if m_info:
         parsed["type_of_information"] = m_info.group(1).strip(" !:,-|.")
 

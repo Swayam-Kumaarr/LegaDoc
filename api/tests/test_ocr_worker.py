@@ -163,8 +163,10 @@ def test_bilingual_fir_extraction_delhi():
     assert fields["year"] == "2025"
     # 5. Registration Date
     assert fields["registration_date"] == "03/09/2025"
-    # 6. Registration Time
-    assert fields["registration_time"] is not None
+    # 6. Registration Time — blank on this FIR: the "Information received at
+    # P.S." row has a "Time :" label and no value. 09:20 is the occurrence
+    # "Time From" and 21:49 the Daily Diary time (issue #107).
+    assert fields["registration_time"] is None
     # 7. Sections (BNS 303(2))
     assert any("303" in s for s in fields["ipc_sections"])
     # 8. Type of Information
@@ -613,8 +615,10 @@ def test_latin_half_of_a_mixed_script_box_survives_fusion():
     """Paddle reads the label "P.S. थाना:" as "P.S. धानn:". Dropping such a
     box wholesale because it holds Devanagari took the "P.S." with it — and
     that Latin label is what the police-station field matches on. Only the
-    untrusted Devanagari is stripped."""
-    assert layout_mod.strip_devanagari("P.S. धानn:") == "P.S. n:"
+    untrusted words are stripped, and a word mixing both scripts is untrusted
+    whole: keeping its Latin letters put "n: SHAHABAD" in the field (#107)."""
+    assert layout_mod.strip_devanagari("P.S. धानn:") == "P.S."
+    assert layout_mod.strip_devanagari("District fज़:") == "District"
     assert layout_mod.strip_devanagari("धारा") == ""
 
     # Tesseract's transliteration of Latin words carries a glyph or two among
@@ -622,3 +626,95 @@ def test_latin_half_of_a_mixed_script_box_survives_fusion():
     assert layout_mod.is_devanagari_word("रिपोर्ट") is True
     assert layout_mod.is_devanagari_word("#88१%8॥4&") is False
     assert layout_mod.is_devanagari_word("ए.5.") is False
+
+
+def _fused_haryana():
+    return layout_mod.process_ocr_boxes_to_layout(
+        _load_fixture_boxes("haryana_paddle_boxes.json"),
+        _load_fixture_boxes("haryana_tesseract_hin_boxes.json"),
+    )
+
+
+def test_english_pass_transliteration_of_hindi_is_removed():
+    """Issue #107. PaddleOCR's English pass reads the Hindi on a bilingual
+    FIR as Latin garbage, with no Devanagari for the fusion or NMS to catch.
+    Whole-box glosses are dropped; bracketed glosses inside a real label are
+    replaced by Tesseract's reading of the same spot."""
+    res = _fused_haryana()
+    text = res["reconstructed_text"]
+
+    for junk in ("(4RT 154", ">R4IuT", "(4I)", "(fai)", "(ul T aoR)", "(a$)", "(fam)", "(faftc a.)"):
+        assert junk not in text, junk
+
+    assert "HARYANA POLiCE CITIZEN SERVICES (हरियाणा पुलिस नागरिक)" in text
+    assert "(धारा 15४ दंड प्रक्रिया सहिंता के तहत)" in text
+    assert "P.S. (थाना): SHAHABAD" in text
+    assert "Date (दिनांक): 24/07/2017" in text
+    assert "FIR No. (प्र.सू.रि.): 0380" in text
+
+
+def test_removing_glosses_does_not_cost_a_field():
+    """The token-trimming attempt at #107 clipped "P.S." and the police
+    station took a wrong value. Every header field on the real Haryana FIR
+    must come out exactly — including the Latin leftovers of the Hindi pass
+    ("f:", "n:") that used to prefix the district and police station."""
+    fields = _fused_haryana()["fields"]
+
+    assert fields["fir_number"] == "0380"
+    assert fields["district"] == "KURUKSHETRA"
+    assert fields["police_station"] == "SHAHABAD"
+    assert fields["year"] == "2017"
+    assert fields["registration_date"] == "24/07/2017"
+    assert fields["type_of_information"].startswith("Written")
+
+
+def test_real_english_brackets_are_not_treated_as_glosses():
+    """Only a bracket that sits under Tesseract's Devanagari is rewritten.
+    English brackets — the statute line, the "(b)"/"(c)" item markers — have
+    no Hindi on top of them and must survive untouched."""
+    text = _fused_haryana()["reconstructed_text"]
+    assert "(Under Section 154 Cr.P.C.)" in text
+    assert "(b)Information received" in text
+    assert "(c) General Diary Reference" in text
+
+    latin = [{"text": "Accused (unknown): 2", "confidence": 0.95, "box": [0, 0, 400, 30]}]
+    kept, dev = layout_mod.resolve_latin_glosses(latin, [])
+    assert [b["text"] for b in kept] == ["Accused (unknown): 2"]
+
+    # Devanagari elsewhere on the line does not license touching the bracket.
+    far = [{"text": "थाना", "confidence": 0.95, "box": [600, 0, 700, 30]}]
+    kept, dev = layout_mod.resolve_latin_glosses(latin, far)
+    assert [b["text"] for b in kept] == ["Accused (unknown): 2"]
+    assert dev == far
+
+
+def test_registration_time_comes_from_the_information_received_row():
+    """Issue #107. The first time on the page is the occurrence "Time From",
+    printed above the registration row — 00:00 on Haryana, 09:20 on Delhi.
+    Returning it under registration_time is wrong data, not missing data."""
+    assert _fused_haryana()["fields"]["registration_time"] == "16:43 hrs"
+    # Also without the Tesseract pass, where the label reads "Informnation 'eccived".
+    paddle_only = layout_mod.process_ocr_boxes_to_layout(_load_fixture_boxes("haryana_paddle_boxes.json"))
+    assert paddle_only["fields"]["registration_time"] == "16:43 hrs"
+
+    # Delhi leaves the field blank; the Daily Diary time below it is not it.
+    delhi = layout_mod.process_ocr_boxes_to_layout(_load_delhi_test_boxes())
+    assert delhi["fields"]["registration_time"] is None
+
+
+def test_registration_time_fallback_skips_occurrence_times():
+    """Forms without an "Information received" row fall back to a labelled
+    time, but never one from the occurrence period."""
+    def time_of(lines):
+        boxes = [
+            {"box": [50, 20 + 30 * i, 600, 40 + 30 * i], "text": t, "confidence": 0.95}
+            for i, t in enumerate(lines)
+        ]
+        return layout_mod.process_ocr_boxes_to_layout(boxes)["fields"]["registration_time"]
+
+    assert time_of(["Time Period: Time From: 22:23 hrs Time To: 06:23 hrs"]) is None
+    assert time_of(["घटना का समय से: १०:०० समय तक: ११:००"]) is None
+    assert time_of([
+        "Time From: 22:23 hrs Time To: 06:23 hrs",
+        "दिनांक: १३/११/२०२४ समय: १४:३० बजे",
+    ]) == "14:30 बजे"
