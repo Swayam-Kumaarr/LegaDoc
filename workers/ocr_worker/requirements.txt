@@ -14,7 +14,11 @@ paddleocr==2.9.1
 paddlepaddle==2.6.2
 pytesseract  # fallback engine when PaddleOCR itself errors out — see worker.py
 Pillow
-opencv-python-headless  # deskew/denoise/contrast preprocessing before OCR
+# Pinned, and re-asserted in the Dockerfile after paddleocr's own OpenCV
+# dependencies are removed. Unpinned, a rebuild pulled OpenCV 5.0.0 while the
+# rest of the image was built against 4.11 — a silent major-version jump in
+# the library every scan is preprocessed with.
+opencv-python-headless==4.11.0.86  # deskew/denoise/contrast preprocessing before OCR
 # Rasterizes PDF pages to images before OCR. Neither PaddleOCR nor
 # Tesseract reads a raw PDF — without this, every real PDF upload (the
 # actual common case for a scanned FIR) silently failed OCR outright,

@@ -30,7 +30,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY workers/ocr_worker/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# --mount=type=cache instead of --no-cache-dir: this layer downloads ~486 MB
+# across ~186 wheels (paddlepaddle alone is 126 MB), and --no-cache-dir threw
+# all of it away, so touching one pinned version re-downloaded the lot — ~15
+# minutes, and one attempt died on a PyPI read timeout 11 minutes in. The
+# cache persists between builds on the same machine and never enters the image.
+#
+# Then drop the OpenCV builds we do not use. paddleocr declares BOTH
+# opencv-python and opencv-contrib-python as dependencies while this worker
+# asks for opencv-python-headless, so all three install: they overwrite one
+# another's cv2/ and each leaves its own ~90 MB .libs directory behind. That
+# is 199 MB of image for the two that lose. --no-deps on the reinstall is
+# required: without it pip pulls numpy 2.x, and imgaug (a paddleocr
+# dependency) dies on `np.sctypes` removed in NumPy 2.0.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt \
+    && pip uninstall -y opencv-python opencv-contrib-python \
+    && pip install --no-deps --force-reinstall opencv-python-headless==4.11.0.86
 
 # Pre-download and cache PaddleOCR English and Hindi models at build time
 # (Issue #37) — without this, the first real OCR request in a fresh
