@@ -11,7 +11,11 @@ number is a clean process peak. From the repo root:
     <ocr_worker image> python /probe/ocr_mem_probe.py both /samples/scan.png
 
 Modes:
-  both        what worker.py does today: preprocess, then Hindi + English passes
+  pipeline    what worker.py does today end to end, via run_ocr_on_document_bytes:
+              preprocess, Hindi + English passes, and — on a bilingual page —
+              the Tesseract Devanagari pass fused in (#91). This is the mode to
+              size a mem_limit from; the ones below measure single stages.
+  both        preprocess, then Hindi + English passes (no Devanagari fusion)
   both_nopre  same engines on the raw image (skips the 1.5x upscale + denoise)
   en | hi     one engine only
   tesseract   the fallback engine only
@@ -54,7 +58,16 @@ t0 = time.time()
 img = data if mode.endswith("_nopre") else w.preprocess_image_bytes(data)
 out["after_preprocess_mib"] = peak_mib()
 
-if mode == "tesseract":
+if mode == "pipeline":
+    # The real entry point, so the number covers every engine the page
+    # actually triggers — including the Tesseract Devanagari pass that a
+    # bilingual FIR adds on top of both Paddle models.
+    result = w.run_ocr_on_document_bytes(data, "mem-probe")
+    out["after_models_mib"] = peak_mib()
+    out["engine_used"] = result["engine_used"]
+    out["template"] = result["template"]
+    boxes = result["reconstructed_text"].split()
+elif mode == "tesseract":
     boxes = w.run_tesseract_fallback(img)
     out["after_models_mib"] = out["after_preprocess_mib"]
 else:
