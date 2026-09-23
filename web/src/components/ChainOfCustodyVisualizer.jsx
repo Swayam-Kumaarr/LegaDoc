@@ -35,12 +35,19 @@ export default function ChainOfCustodyVisualizer({ events }) {
     if (tamperedIndex === null) return events;
     return events.map((ev, i) =>
       i === tamperedIndex
-        ? { ...ev, tx_hash: ev.tx_hash.slice(0, -8) + 'deadbeef' }
+        ? { ...ev, tx_hash: (ev.tx_hash || '').slice(0, -8) + 'deadbeef', linked: true }
         : ev
     );
   }, [events, tamperedIndex]);
 
-  const shortHash = (h) => (isGenesisHash(h) ? 'GENESIS BLOCK' : `${h.slice(0, 10)}…${h.slice(-6)}`);
+  // Links this view can actually test: a block whose parent row is on screen.
+  const checkableLinks = chain.filter((ev, i) => ev.linked && (i > 0 || ev.parent_hash == null || isGenesisHash(ev.parent_hash))).length;
+
+  const shortHash = (h) => {
+    if (h == null) return 'GENESIS BLOCK';
+    if (isGenesisHash(h)) return 'GENESIS BLOCK';
+    return `${h.slice(0, 10)}…${h.slice(-6)}`;
+  };
 
   async function runVerification() {
     cancelRef.current = false;
@@ -53,7 +60,22 @@ export default function ChainOfCustodyVisualizer({ events }) {
       await new Promise((r) => setTimeout(r, 320));
       if (cancelRef.current) return;
 
-      const linkOk = i === 0 ? isGenesisHash(chain[i].parent_hash) : chain[i].parent_hash === chain[i - 1].tx_hash;
+      // A case's rows are a filtered slice of one global chain, so the row
+      // shown before this one is only its parent when `linked` says so —
+      // otherwise another case's entries sit in between. Checking the link
+      // across such a gap reported intact chains as tampered, which is the
+      // worst possible failure for the one screen that claims to prove
+      // nothing was altered. A gap is skipped, not failed.
+      // Unlinked means the parent row is not on screen — before the case's
+      // first event, or between two of them. That is not something this view
+      // can check, and reporting it as tampering is a false alarm on an
+      // intact chain. Only a link we can actually test is tested.
+      const prev = chain[i - 1];
+      const linkOk = !chain[i].linked
+        ? true
+        : i === 0
+          ? chain[i].parent_hash == null || isGenesisHash(chain[i].parent_hash)
+          : chain[i].parent_hash === prev.tx_hash;
 
       setVerifiedUpTo(i);
 
@@ -70,7 +92,16 @@ export default function ChainOfCustodyVisualizer({ events }) {
 
   function simulateTamper() {
     cancelRef.current = true;
-    const eligible = chain.length > 1 ? Math.floor(Math.random() * (chain.length - 1)) + 1 : 0;
+    // Corrupting a block breaks the link its *successor* records, so only a
+    // block whose successor is genuinely chained to it demonstrates anything.
+    // Picking blindly could land on one followed by a gap, where the walk
+    // correctly reports the chain intact and the demo appears to fail.
+    const demonstrable = chain
+      .map((_, i) => i)
+      .filter((i) => i > 0 && chain[i].linked);
+    const eligible = demonstrable.length
+      ? demonstrable[Math.floor(Math.random() * demonstrable.length)] - 1
+      : 0;
     setTamperedIndex(eligible);
     setResult(null);
     setBreakIndex(null);
@@ -106,7 +137,15 @@ export default function ChainOfCustodyVisualizer({ events }) {
         <div className="chain-viz-toolbar-right">
           {result === 'intact' && (
             <span className="status-chip status-chip-success">
-              <CheckIcon /> All {chain.length} Links Verified — Chain Intact
+              {/* Says what was actually checked. Claiming every block as a
+                  verified link overstated it: a link whose parent row is not
+                  on this screen cannot be tested here, and the screen that
+                  proves nothing was altered must not overstate its own
+                  evidence. The server verifies the chain end to end. */}
+              <CheckIcon />{' '}
+              {checkableLinks > 0
+                ? `${checkableLinks} of ${chain.length} links verified here — no break found`
+                : `${chain.length} blocks shown — links verified server-side`}
             </span>
           )}
           {result === 'broken' && (
@@ -133,6 +172,13 @@ export default function ChainOfCustodyVisualizer({ events }) {
 
           return (
             <React.Fragment key={ev.block_num}>
+              {!ev.linked && (
+                <div className="chain-viz-gap text-caption" role="listitem">
+                  {i === 0
+                    ? '⋯ earlier entries in the global chain precede this case'
+                    : '⋯ entries from other cases sit between these blocks in the global chain — not a gap in it'}
+                </div>
+              )}
               {i > 0 && (
                 <div
                   className={

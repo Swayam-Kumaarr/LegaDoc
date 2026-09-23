@@ -1505,9 +1505,61 @@ svg.india-map {
   padding: 28px;
 }
 
+/* The masthead toggle that opens the sidebar as a drawer. Hidden on wide
+   screens, where the sidebar is always in the layout. */
+.gov-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  margin-right: 10px;
+  padding: 6px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius, 3px);
+  color: #fff;
+  cursor: pointer;
+}
+
+.gov-nav-backdrop {
+  display: none;
+}
+
 @media (max-width: 900px) {
+  /* Was `display: none` with nothing replacing it, which locked every portal
+     link away on phones, tablets and half-width windows. The sidebar is now a
+     drawer opened from the masthead. */
   .gov-sidebar {
-    display: none; /* Collapsible on mobile */
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 70;
+    height: 100vh;
+    max-width: 82vw;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.28);
+  }
+
+  .gov-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .gov-nav-toggle {
+    display: inline-flex;
+  }
+
+  .gov-nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(0, 0, 0, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gov-sidebar {
+    transition: none;
   }
 }
 
@@ -1554,6 +1606,17 @@ svg.india-map {
   gap: 0;
   overflow-x: auto;
   padding: 4px 2px 10px 2px;
+}
+
+.chain-viz-gap {
+  display: flex;
+  align-items: center;
+  max-width: 150px;
+  padding: 0 10px;
+  text-align: center;
+  color: var(--color-text-muted, #6b7280);
+  font-style: italic;
+  flex: 0 0 auto;
 }
 
 .chain-viz-block {

@@ -63,6 +63,26 @@ function MainLayout() {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   };
 
+  // Below 900px the sidebar used to be `display: none` with nothing in its
+  // place, so every portal link was simply unreachable — on a phone, a
+  // tablet, or a half-width window on a laptop. It now slides in from a
+  // button in the masthead.
+  const [navOpen, setNavOpen] = useState(false);
+
+  // Close on navigation, or the drawer stays over the page it just opened.
+  useEffect(() => {
+    setNavOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!navOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setNavOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navOpen]);
+
   const isLoginPage = location.pathname === "/login" || location.pathname === "/dev-login";
   const role = user?.role?.toLowerCase() || '';
 
@@ -80,6 +100,23 @@ function MainLayout() {
       {/* Top Institutional Header */}
       <header className="gov-masthead">
         <div className="gov-masthead-left">
+          {user && !isLoginPage && (
+            <button
+              type="button"
+              className="gov-nav-toggle"
+              aria-label={navOpen ? 'Close navigation' : 'Open navigation'}
+              aria-expanded={navOpen}
+              onClick={() => setNavOpen(o => !o)}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                {navOpen ? (
+                  <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
+                ) : (
+                  <><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></>
+                )}
+              </svg>
+            </button>
+          )}
           <img
             src={emblemImg}
             alt="State Emblem of India"
@@ -186,8 +223,18 @@ function MainLayout() {
       ) : (
         /* Authenticated Two-Panel Layout (Section 5: Left Sidebar + Full-width Content) */
         <div className="app-body">
+          {user && navOpen && (
+            <div
+              className="gov-nav-backdrop"
+              onClick={() => setNavOpen(false)}
+              aria-hidden="true"
+            />
+          )}
           {user && (
-            <aside className="gov-sidebar" aria-label="Official Navigation Sidebar">
+            <aside
+              className={"gov-sidebar" + (navOpen ? " is-open" : "")}
+              aria-label="Official Navigation Sidebar"
+            >
 
               <div className="sidebar-scrollable-content">
                 <div className="sidebar-section-title">

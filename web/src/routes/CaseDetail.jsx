@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import StatusChip from '../components/StatusChip';
@@ -49,6 +49,32 @@ export default function CaseDetail() {
   const bailRecords = bailRes.data || [];
   const diaryEntries = diaryRes.data || [];
   const auditLog = auditRes.data;
+
+  // Real audit rows, shaped for ChainOfCustodyVisualizer. Two bugs lived here:
+  // `auditEvents` was referenced below without ever being defined, so opening
+  // the Chain of Custody tab threw a ReferenceError and blanked the page; and
+  // the visualiser had never been wired to the API at all — it reads tx_hash /
+  // parent_hash, while the audit log returns row_hash / prev_hash.
+  //
+  // `linked` marks whether a row is truly the chain successor of the one shown
+  // before it. A case's rows are a filtered slice of one global chain, so any
+  // other case's activity in between leaves a gap. A gap is not tampering, and
+  // only `seq` can tell them apart.
+  const auditEvents = useMemo(() => {
+    const entries = [...(auditLog?.entries || [])].sort((a, b) => a.seq - b.seq);
+    return entries.map((e, i) => ({
+      block_num: e.seq,
+      timestamp: new Date(e.created_at).toLocaleString(),
+      event: e.action,
+      authority: e.actor_name || e.actor_email || 'system',
+      tx_hash: e.row_hash,
+      parent_hash: e.prev_hash,
+      // For the first block shown, "linked" asks whether it is the global
+      // chain's own genesis row; anything else has earlier entries before it
+      // that this case cannot see, so its PREV cannot be checked here.
+      linked: i > 0 ? entries[i - 1].seq === e.seq - 1 : e.seq === 1,
+    }));
+  }, [auditLog]);
 
   // Only the first load replaces the page. A refresh after a case action keeps
   // the current case on screen while it reloads — otherwise the page swaps to

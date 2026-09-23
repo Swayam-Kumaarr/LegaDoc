@@ -408,3 +408,51 @@ def test_chain_integrity_detects_row_deletion(client, db_session, make_org, make
     assert resp.status_code == 200
     assert resp.json()["chain_intact"] is False
 
+
+def test_full_audit_view_exposes_seq_so_a_gap_is_not_read_as_a_break(client, db_session, make_org, make_user):
+    """A case's rows are a filtered slice of one global chain, so two rows
+    shown together are only linked when their seq values are consecutive.
+    Without seq the UI cannot tell another case's entries in between (a gap)
+    from a broken link (tampering), and the chain visualiser announced
+    "TAMPER DETECTED" on chains the backend confirms intact."""
+    case, tokens, _ = _setup_case_with_audit_trail(db_session, make_org, make_user)
+
+    other_case = models.Case(
+        case_number="FIR-2026-009989",
+        crime_type="theft",
+        investigation_status="FIR_Registered",
+    )
+    db_session.add(other_case)
+    db_session.commit()
+    db_session.refresh(other_case)
+    # Another case's activity lands between this case's rows, exactly as it
+    # does on a live station.
+    write_audit_log(
+        db_session,
+        action="fir_registered",
+        case_id=other_case.id,
+        actor_user_id=None,
+        target_type="case",
+        target_id=other_case.id,
+        metadata={},
+    )
+    write_audit_log(
+        db_session,
+        action="document_uploaded",
+        case_id=case.id,
+        actor_user_id=None,
+        target_type="case",
+        target_id=case.id,
+        metadata={},
+    )
+
+    resp = client.get(f"/cases/{case.id}/audit-log", headers=auth_headers(tokens["config_admin"]))
+    assert resp.status_code == 200, resp.text
+    entries = sorted(resp.json()["entries"], key=lambda e: e["seq"])
+
+    assert all(isinstance(e["seq"], int) for e in entries)
+    seqs = [e["seq"] for e in entries]
+    assert seqs == sorted(set(seqs))
+    # The interleaved row leaves a gap, and the chain is still intact.
+    assert seqs[-1] - seqs[-2] > 1
+    assert resp.json()["chain_intact"] is True
