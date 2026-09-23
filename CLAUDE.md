@@ -128,7 +128,7 @@ never a fallback to returning everything.
   docker compose build api ocr_worker ai_parser_worker web && docker compose up -d
   ```
 
-`main` currently has **209 tests, all passing**. Treat that as the baseline and
+`main` currently has **250 tests, all passing**. Treat that as the baseline and
 confirm it locally rather than trusting a number in a doc — it will drift the
 moment a branch adds or removes tests.
 
@@ -165,6 +165,31 @@ hides them from restricted roles until they are re-tagged (issue #92):
 ```bash
 docker compose exec api python -m app.retag_case_diary
 ```
+
+## Hyperledger Fabric must be running for chain writes to succeed
+
+`chain_worker` shells out to the `peer` binary against the `fabric_test`
+network from `~/fabric-samples`. Those containers are **not** part of this
+repo's compose file, so `docker compose up` does not start them, and a host
+reboot leaves them stopped. The worker then retries every 30s forever and
+documents sit at `chain_status: failed` while every container reports healthy:
+
+```
+peer command failed (exit 1): ... dial tcp: lookup peer0.org1.example.com: no such host
+```
+
+Start them again — `docker start`, **not** `network.sh up`, which tears the
+network down first and takes the existing ledger with it:
+```bash
+docker start orderer.example.com peer0.org1.example.com peer0.org2.example.com
+```
+The chaincode containers (`dev-peer0.org*`) come back on their own. Then retry
+the stranded documents; no re-upload is needed:
+```bash
+curl -X POST http://localhost:8000/documents/<doc_id>/retry-chain-write   -H "Authorization: Bearer <config_admin token>"
+```
+
+---
 
 `005_case_owning_org.sql` backfills `cases.org_id` and
 `registered_by_user_id` itself, from each case's `fir_registered` audit row.
