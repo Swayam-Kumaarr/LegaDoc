@@ -54,11 +54,25 @@ services:
     environment:
       - OMP_NUM_THREADS=2
       - MALLOC_ARENA_MAX=2
-    # One scan with the English + Hindi models: OOM-killed above 2.2 GB at
-    # PaddleOCR's default 10 threads; 1,707 MiB peak with cpu_threads=2 and
-    # rec_batch_num=1 (worker.py defaults, OCR_CPU_THREADS / OCR_REC_BATCH_NUM).
-    # Raising OCR_CPU_THREADS for speed needs this cap raised with it.
-    mem_limit: 2500m
+    # Sized from scripts/ocr_mem_probe.py in `pipeline` mode — the real entry
+    # point, both Paddle models plus the Tesseract Devanagari pass — on the two
+    # committed FIR scans, cpu_threads=2 and rec_batch_num=1:
+    #
+    #   haryana_fir.jpg (bilingual, ~150 regions)  2,717 MiB
+    #   delhi_fir.webp  (English,   ~470 regions)  4,911 MiB
+    #
+    # Peak tracks how many text regions the page has, not its file size: the
+    # dense Delhi form costs nearly twice the Haryana one. The earlier 2,500 MB
+    # cap came from a 1,707 MiB measurement that predates both the second
+    # Paddle pass and the Devanagari pass, and would OOM-kill this worker on
+    # either scan above — mid-job, leaving the document stuck at "processing"
+    # with no error surfaced to the officer who uploaded it.
+    #
+    # Confirmed not fixable by configuration: det_limit_side_len 960/736,
+    # skipping the 1.5x preprocessing upscale, FLAGS_allocator_strategy=
+    # auto_growth and FLAGS_fraction_of_cpu_memory_to_use=0.1 each moved the
+    # peak by under 5%. Raising OCR_CPU_THREADS needs this cap raised with it.
+    mem_limit: 5500m
     stop_grace_period: 120s
     command: ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "ocr_worker", "--pool=solo", "--prefetch-multiplier=1"]
     restart: unless-stopped

@@ -37,11 +37,15 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   ocr_worker:
-    # 3 GB, not 2.2: #106 added a Tesseract Devanagari pass on bilingual pages
-    # on top of both Paddle models. The cap only helps if the VM can actually
-    # hand it over — stop other projects' containers first, or this becomes a
-    # VM-level kill instead.
-    mem_limit: 3000m
+    # 5.5 GB, measured rather than guessed. scripts/ocr_mem_probe.py in
+    # `pipeline` mode peaks at 2,717 MiB on the bilingual Haryana scan and
+    # 4,911 MiB on the denser English Delhi scan — peak tracks how many text
+    # regions the page has. 3 GB passed the bilingual page and OOM-killed the
+    # English one; 2.2 GB predates the Devanagari pass entirely.
+    #
+    # The cap only helps if the VM can actually hand it over — stop other
+    # projects' containers first, or this becomes a VM-level kill instead.
+    mem_limit: 5500m
     environment:
       - OBJECT_STORAGE_BACKEND=minio
       # Paddle/OpenCV spawn one OpenMP thread per visible CPU, each with its
