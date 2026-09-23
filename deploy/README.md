@@ -1,8 +1,16 @@
 # Single-VM demo deployment
 
-Runs the whole LegaDoc stack on one VM (8 GB minimum, 12 GB comfortable) behind
+Runs the whole LegaDoc stack on one VM (**12 GB minimum**) behind
 Cloudflare. Uses the same `docker-compose.yml` as local dev, with
 `docker-compose.prod.yml` layered on top.
+
+8 GB is not enough, despite what this file said before. One OCR job on a dense
+scanned FIR peaks at **4.9 GB** (measured with `scripts/ocr_mem_probe.py` in
+`pipeline` mode — see the comment on `ocr_worker` in
+`docker-compose.prod.yml`), and the other services' caps add up to 3.3 GB. On
+an 8 GB VM the OCR worker is OOM-killed part-way through a job and the
+document sits at `processing` with nothing surfaced to the officer who
+uploaded it.
 
 | File | Purpose |
 |---|---|

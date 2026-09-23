@@ -28,6 +28,19 @@ container exits 137 — treat that as "needs more than the cap".
 
 Measured on an arm64 Mac, Docker cap 2.2 GB, one 768x1024 FIR scan (Sep 2026):
   tesseract 469 MiB · hi 1,467 MiB · en OOM (>2.2 GB) · both OOM · both_nopre OOM
+
+Measured on x86_64, Docker cap 6.5 GB, cpu_threads=2, rec_batch_num=1, on the
+two committed fixtures (Sep 2026), which is what the mem_limits are set from:
+
+  haryana_fir.jpg  ~150 regions   pipeline 2,717 · both_nopre 2,572 · hi 2,274
+  delhi_fir.webp   ~470 regions   pipeline 4,911 · both 5,010 · en 4,560
+
+Peak tracks the number of text regions on the page, not its file size or the
+preprocessing upscale. Confirmed not configurable away: det_limit_side_len
+960/736, skipping the 1.5x upscale, FLAGS_allocator_strategy=auto_growth and
+FLAGS_fraction_of_cpu_memory_to_use=0.1 each moved it by under 5%. Note the
+peak also drifts up as the cap does (4,793 at 5 GB, 4,911 at 6.5 GB), so read
+it as "needs roughly this much", not as a hard floor.
 """
 
 import json
