@@ -106,6 +106,7 @@ def get_audit_log(
                     action_metadata=r.action_metadata,
                     prev_hash=r.prev_hash,
                     row_hash=r.row_hash,
+                    seq=r.seq,
                     created_at=r.created_at,
                 )
             )

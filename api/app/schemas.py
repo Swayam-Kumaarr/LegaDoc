@@ -450,6 +450,12 @@ class AuditLogEntry(BaseModel):
     action_metadata: Optional[dict] = None
     prev_hash: Optional[str] = None
     row_hash: str
+    # The chain's ordering key. A case's entries are a *filtered slice* of one
+    # global chain, so two consecutive rows here are only linked when their
+    # seq values are consecutive too. Without it a reader cannot tell another
+    # case's rows in between (a gap) from a broken link (tampering), and the
+    # chain visualiser reported intact chains as tampered.
+    seq: int
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
