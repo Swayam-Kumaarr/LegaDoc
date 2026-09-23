@@ -1,0 +1,17 @@
+# Shell scripts must keep LF endings in the working tree.
+#
+# Git on Windows defaults to core.autocrlf=true, which rewrites them to CRLF on
+# checkout. The blobs in the repository are LF and look fine in review, but the
+# checked-out file is not runnable: bash reads the trailing \r as part of each
+# command, so `scripts/staged_test.sh preflight` dies at line 33 with
+# `$'\r': command not found` before it does anything. scripts/setup.sh — the
+# documented way to bring up and seed the stack — fails the same way.
+#
+# eol=lf overrides autocrlf for these paths, so a Windows clone gets a file it
+# can actually run under WSL2, Git Bash, or inside a container.
+*.sh text eol=lf
+
+# Same reasoning: these are read by tools that do not tolerate CRLF, and they
+# are copied into Linux images as-is.
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
