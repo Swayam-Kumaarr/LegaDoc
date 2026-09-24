@@ -1,6 +1,6 @@
 fastapi==0.141.1
 uvicorn[standard]==0.53.0
-sqlalchemy==2.0.52
+sqlalchemy==2.0.54
 psycopg2-binary==2.9.12
 pydantic-settings==2.15.0
 email-validator==2.3.0  # required for pydantic's EmailStr — declared explicitly, not left as an undeclared transitive dep
