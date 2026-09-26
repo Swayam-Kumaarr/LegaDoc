@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { apiClient, apiUpload } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import StatusChip from '../components/StatusChip';
+import SearchableSelect from '../components/SearchableSelect';
 
 // Turns a thrown apiClient error into a readable string. err.detail comes
 // straight from the backend's JSON body (see client.js handleApiError) —
@@ -295,20 +296,17 @@ export default function PoliceInvestigation() {
 
             <form onSubmit={handleFileUpload}>
               <div className="form-group">
-                <label className="form-label">Case Identifier</label>
-                <select
-                  className="form-select"
+                <label className="form-label" htmlFor="ingest-case">Case Identifier</label>
+                {/* Searchable: picking from a flat dropdown stops working
+                    once a station has more cases than fit on screen. */}
+                <SearchableSelect
+                  id="ingest-case"
                   value={selectedCaseId}
-                  onChange={(e) => setSelectedCaseId(e.target.value)}
+                  onChange={setSelectedCaseId}
                   disabled={cases.length === 0}
-                >
-                  {cases.length === 0 && <option value="">No cases available</option>}
-                  {cases.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.case_number} — {c.crime_type}
-                    </option>
-                  ))}
-                </select>
+                  placeholder={cases.length === 0 ? 'No cases available' : 'Type a case number or crime type'}
+                  options={cases.map((c) => ({ value: c.id, label: c.case_number, hint: c.crime_type }))}
+                />
               </div>
 
               <div className="form-group">
@@ -377,20 +375,16 @@ export default function PoliceInvestigation() {
           )}
 
           <form onSubmit={handleAddDiaryEntry} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <select
-              className="form-select"
-              style={{ minWidth: '220px' }}
-              value={diaryCaseId}
-              onChange={(e) => setDiaryCaseId(e.target.value)}
-              disabled={cases.length === 0}
-            >
-              {cases.length === 0 && <option value="">No cases available</option>}
-              {cases.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.case_number}
-                </option>
-              ))}
-            </select>
+            <div style={{ minWidth: '240px' }}>
+              <SearchableSelect
+                id="diary-case"
+                value={diaryCaseId}
+                onChange={setDiaryCaseId}
+                disabled={cases.length === 0}
+                placeholder={cases.length === 0 ? 'No cases available' : 'Type a case number'}
+                options={cases.map((c) => ({ value: c.id, label: c.case_number, hint: c.crime_type }))}
+              />
+            </div>
             <input
               type="text"
               className="form-input"

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient, apiUpload } from '../api/client';
 import StatusChip from '../components/StatusChip';
+import SearchableSelect from '../components/SearchableSelect';
 
 function formatError(err) {
   const detail = err?.detail;
@@ -207,22 +208,29 @@ export default function OfficerOnboarding() {
                   <input type="email" className="form-input" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} required />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Claimed Role</label>
-                  <select className="form-select" value={newRole} onChange={(e) => setNewRole(e.target.value)} required>
-                    <option value="">Select role...</option>
-                    {roles.map((r) => (
-                      <option key={r.code} value={r.code}>{r.name} ({r.code})</option>
-                    ))}
-                  </select>
+                  <label className="form-label" htmlFor="claimed-role">Claimed Role</label>
+                  {/* Searchable: the role list is long and every label reads
+                      "Duty Officer (duty_officer)", so a native select's
+                      first-letter jump never finds "duty" or "officer". */}
+                  <SearchableSelect
+                    id="claimed-role"
+                    value={newRole}
+                    onChange={setNewRole}
+                    required
+                    placeholder="Type a role — e.g. duty, court, prosecutor"
+                    options={roles.map((r) => ({ value: r.code, label: r.name, hint: r.code }))}
+                  />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Organization</label>
-                  <select className="form-select" value={newOrgId} onChange={(e) => setNewOrgId(e.target.value)} required>
-                    <option value="">Select organization...</option>
-                    {orgs.map((o) => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
-                    ))}
-                  </select>
+                  <label className="form-label" htmlFor="claimed-org">Organization</label>
+                  <SearchableSelect
+                    id="claimed-org"
+                    value={newOrgId}
+                    onChange={setNewOrgId}
+                    required
+                    placeholder="Type an organisation — e.g. forensic, court, police"
+                    options={orgs.map((o) => ({ value: o.id, label: o.name, hint: o.org_type }))}
+                  />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Designation</label>
