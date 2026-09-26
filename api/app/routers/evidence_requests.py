@@ -26,6 +26,27 @@ from app.upload_validator import validate_upload_stream
 
 router = APIRouter(tags=["evidence-requests"])
 
+
+def _with_requester(req: models.EvidenceRequest, db: Session) -> schemas.EvidenceRequestResponse:
+    """Response carrying the requesting officer's name. requested_by_user_id
+    is an id; every reader of a requisition wants the name, and none of them
+    can look a user up themselves."""
+    name = None
+    if req.requested_by_user_id:
+        user = db.get(models.User, req.requested_by_user_id)
+        name = user.name if user else None
+    return schemas.EvidenceRequestResponse(
+        id=req.id,
+        case_id=req.case_id,
+        requested_org_id=req.requested_org_id,
+        doc_type_expected=req.doc_type_expected,
+        notes=req.notes,
+        requested_by_name=name,
+        status=req.status,
+        created_at=req.created_at,
+        completed_at=req.completed_at,
+    )
+
 # Organisations a Section 91 requisition can be addressed to — the bodies that
 # hold evidence an investigation needs to compel. Police, courts, the Bar,
 # NCRB and oversight bodies are not requisition targets.
@@ -76,6 +97,8 @@ def create_evidence_request(
         case_id=case_uuid,
         requested_org_id=body.requested_org_id,
         doc_type_expected=body.doc_type_expected,
+        notes=body.notes,
+        requested_by_user_id=UUID(claims["sub"]),
         status="requested",
     )
     db.add(req)
@@ -96,7 +119,7 @@ def create_evidence_request(
         },
     )
 
-    return req
+    return _with_requester(req, db)
 
 
 # Roles with cross-case oversight of the requisition registry. Deliberately
@@ -180,6 +203,16 @@ def list_my_evidence_requests(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Role not permitted to browse the evidence-request inbox")
 
     rows = query.order_by(models.EvidenceRequest.created_at.asc()).all()
+
+    # The requesting officer's name, so the lab knows who to answer to. One
+    # query for the whole inbox rather than one per row.
+    requester_ids = {r.requested_by_user_id for r, _ in rows if r.requested_by_user_id}
+    requesters = (
+        {u.id: u.name for u in db.query(models.User).filter(models.User.id.in_(requester_ids)).all()}
+        if requester_ids
+        else {}
+    )
+
     return [
         schemas.EvidenceRequestInboxItem(
             id=r.id,
@@ -187,6 +220,8 @@ def list_my_evidence_requests(
             case_number=case_number,
             requested_org_id=r.requested_org_id,
             doc_type_expected=r.doc_type_expected,
+            notes=r.notes,
+            requested_by_name=requesters.get(r.requested_by_user_id),
             status=r.status,
             created_at=r.created_at,
             completed_at=r.completed_at,
@@ -228,17 +263,20 @@ def list_evidence_requests(
             .order_by(models.EvidenceRequest.created_at.desc())
             .all()
         )
-        return requests
+        return [_with_requester(r, db) for r in requests]
 
     # All other roles must pass case access
     assert_case_access(case_uuid, claims, db)
 
-    return (
-        db.query(models.EvidenceRequest)
-        .filter(models.EvidenceRequest.case_id == case_uuid)
-        .order_by(models.EvidenceRequest.created_at.desc())
-        .all()
-    )
+    return [
+        _with_requester(r, db)
+        for r in (
+            db.query(models.EvidenceRequest)
+            .filter(models.EvidenceRequest.case_id == case_uuid)
+            .order_by(models.EvidenceRequest.created_at.desc())
+            .all()
+        )
+    ]
 
 
 @router.post(
@@ -326,4 +364,4 @@ async def submit_evidence_request(
         },
     )
 
-    return req
+    return _with_requester(req, db)

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { apiClient, apiUpload } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import StatusChip from '../components/StatusChip';
+import SearchableSelect from '../components/SearchableSelect';
 
 // Turns a thrown apiClient error into a readable string. err.detail comes
 // straight from the backend's JSON body (see client.js handleApiError) —
@@ -26,6 +27,15 @@ export default function PoliceInvestigation() {
   const [cases, setCases] = useState([]);
   const [loadingCases, setLoadingCases] = useState(false);
   const [casesError, setCasesError] = useState(null);
+
+  // Worklist filters. The worklist used to sit above the action forms and
+  // list every case flat, which stops working the moment a station has more
+  // than a screenful: the thing an officer came here to do — register an FIR
+  // — was pushed below an ever-growing table.
+  const [worklistOpen, setWorklistOpen] = useState(false);
+  const [filterDate, setFilterDate] = useState('');
+  const [filterCrime, setFilterCrime] = useState('');
+  const [filterQuery, setFilterQuery] = useState('');
 
   // FIR Form State
   const [crimeType, setCrimeType] = useState('Cybercrime');
@@ -138,6 +148,36 @@ export default function PoliceInvestigation() {
     }
   };
 
+  // Filtering and grouping for the worklist. Dates are compared on the local
+  // calendar day, matching what the table prints, so a case registered at
+  // 23:40 does not fall under the previous day for the officer reading it.
+  const dayKey = (iso) => (iso ? new Date(iso).toLocaleDateString() : 'Unknown date');
+
+  const crimeTypes = Array.from(new Set(cases.map((c) => c.crime_type).filter(Boolean))).sort();
+
+  const filteredCases = cases.filter((c) => {
+    if (filterCrime && c.crime_type !== filterCrime) return false;
+    if (filterDate && dayKey(c.created_at) !== new Date(filterDate + 'T00:00:00').toLocaleDateString()) return false;
+    if (filterQuery) {
+      const q = filterQuery.trim().toLowerCase();
+      const haystack = `${c.case_number || ''} ${c.crime_type || ''} ${c.investigation_status || ''}`.toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
+
+  // Newest registration day first — an officer is looking for today's work,
+  // not the oldest case on the station's books.
+  const groupedCases = Object.entries(
+    filteredCases.reduce((acc, c) => {
+      const key = dayKey(c.created_at);
+      (acc[key] = acc[key] || []).push(c);
+      return acc;
+    }, {})
+  ).sort((a, b) => new Date(b[1][0].created_at || 0) - new Date(a[1][0].created_at || 0));
+
+  const filtersActive = Boolean(filterDate || filterCrime || filterQuery);
+
   return (
     <div>
       <div className="gov-breadcrumb-bar">
@@ -179,76 +219,6 @@ export default function PoliceInvestigation() {
             <span className="stat-label">Cases Past Initial Registration</span>
             <span className="stat-sub">Beyond FIR-only stage</span>
           </div>
-        </div>
-
-        {/* Primary Data Table: Cases */}
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div>
-              <h2 className="card-title" style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>
-                Active Case Worklist
-              </h2>
-              <span className="table-caption" style={{ marginTop: '2px', marginBottom: 0 }}>
-                {loadingCases ? 'Loading...' : `${cases.length} case${cases.length === 1 ? '' : 's'} visible to this account.`}
-              </span>
-            </div>
-            <button className="btn btn-secondary" onClick={fetchCases} disabled={loadingCases} style={{ height: '32px', fontSize: '12px' }}>
-              {loadingCases ? 'Refreshing...' : 'Refresh Table'}
-            </button>
-          </div>
-
-          {casesError && (
-            <div className="alert alert-warning" style={{ marginBottom: '12px' }}>
-              Could not load cases: {casesError}
-            </div>
-          )}
-
-          {!casesError && !loadingCases && cases.length === 0 && (
-            <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-              No cases yet. Register a FIR below to create the first one.
-            </p>
-          )}
-
-          {cases.length > 0 && (
-            <div className="table-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Case Identifier</th>
-                    <th>Crime Classification</th>
-                    <th>Investigation Stage</th>
-                    <th>Registration Date</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cases.map((c) => (
-                    <tr key={c.id}>
-                      <td>
-                        <span className="mono-text">{c.case_number}</span>
-                      </td>
-                      <td>{c.crime_type}</td>
-                      <td>
-                        <StatusChip status={c.investigation_status} label={c.investigation_status ? c.investigation_status.replace(/_/g, ' ') : 'Registered'} />
-                      </td>
-                      <td style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                        {c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}
-                      </td>
-                      <td>
-                        <Link
-                          to={`/cases/${c.id}`}
-                          className="btn btn-secondary"
-                          style={{ height: '28px', fontSize: '12px', padding: '0 8px' }}
-                        >
-                          Inspect Docket
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
 
         {/* Action Forms Grid */}
@@ -326,20 +296,17 @@ export default function PoliceInvestigation() {
 
             <form onSubmit={handleFileUpload}>
               <div className="form-group">
-                <label className="form-label">Case Identifier</label>
-                <select
-                  className="form-select"
+                <label className="form-label" htmlFor="ingest-case">Case Identifier</label>
+                {/* Searchable: picking from a flat dropdown stops working
+                    once a station has more cases than fit on screen. */}
+                <SearchableSelect
+                  id="ingest-case"
                   value={selectedCaseId}
-                  onChange={(e) => setSelectedCaseId(e.target.value)}
+                  onChange={setSelectedCaseId}
                   disabled={cases.length === 0}
-                >
-                  {cases.length === 0 && <option value="">No cases available</option>}
-                  {cases.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.case_number} — {c.crime_type}
-                    </option>
-                  ))}
-                </select>
+                  placeholder={cases.length === 0 ? 'No cases available' : 'Type a case number or crime type'}
+                  options={cases.map((c) => ({ value: c.id, label: c.case_number, hint: c.crime_type }))}
+                />
               </div>
 
               <div className="form-group">
@@ -408,20 +375,16 @@ export default function PoliceInvestigation() {
           )}
 
           <form onSubmit={handleAddDiaryEntry} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <select
-              className="form-select"
-              style={{ minWidth: '220px' }}
-              value={diaryCaseId}
-              onChange={(e) => setDiaryCaseId(e.target.value)}
-              disabled={cases.length === 0}
-            >
-              {cases.length === 0 && <option value="">No cases available</option>}
-              {cases.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.case_number}
-                </option>
-              ))}
-            </select>
+            <div style={{ minWidth: '240px' }}>
+              <SearchableSelect
+                id="diary-case"
+                value={diaryCaseId}
+                onChange={setDiaryCaseId}
+                disabled={cases.length === 0}
+                placeholder={cases.length === 0 ? 'No cases available' : 'Type a case number'}
+                options={cases.map((c) => ({ value: c.id, label: c.case_number, hint: c.crime_type }))}
+              />
+            </div>
             <input
               type="text"
               className="form-input"
@@ -434,6 +397,147 @@ export default function PoliceInvestigation() {
               Append Entry
             </button>
           </form>
+        </div>
+
+        {/* Active Case Worklist — below the action forms, and collapsed by
+            default. A station accumulates cases indefinitely; putting the
+            table first buried the reason an officer opens this page. */}
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => setWorklistOpen((o) => !o)}
+              aria-expanded={worklistOpen}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', color: 'inherit', font: 'inherit' }}
+            >
+              <h2 className="card-title" style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>
+                {worklistOpen ? '▾' : '▸'} Active Case Worklist
+              </h2>
+              <span className="table-caption" style={{ marginTop: '2px', marginBottom: 0 }}>
+                {loadingCases
+                  ? 'Loading…'
+                  : `${cases.length} case${cases.length === 1 ? '' : 's'} visible to this account` +
+                    (filtersActive ? ` — ${filteredCases.length} match the current filter` : '')}
+              </span>
+            </button>
+            <button className="btn btn-secondary" onClick={fetchCases} disabled={loadingCases} style={{ height: '32px', fontSize: '12px' }}>
+              {loadingCases ? 'Refreshing…' : 'Refresh Table'}
+            </button>
+          </div>
+
+          {worklistOpen && (
+            <>
+              <div className="grid-3" style={{ marginTop: '14px', marginBottom: '14px' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" htmlFor="worklist-query">Search case identifier</label>
+                  <input
+                    id="worklist-query"
+                    className="form-input"
+                    type="search"
+                    placeholder="e.g. THE-2026-873593"
+                    value={filterQuery}
+                    onChange={(e) => setFilterQuery(e.target.value)}
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" htmlFor="worklist-crime">Crime classification</label>
+                  <select
+                    id="worklist-crime"
+                    className="form-select"
+                    value={filterCrime}
+                    onChange={(e) => setFilterCrime(e.target.value)}
+                  >
+                    <option value="">All classifications</option>
+                    {crimeTypes.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" htmlFor="worklist-date">Registration date</label>
+                  <input
+                    id="worklist-date"
+                    className="form-input"
+                    type="date"
+                    value={filterDate}
+                    onChange={(e) => setFilterDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {filtersActive && (
+                <button
+                  className="btn btn-secondary"
+                  style={{ height: '28px', fontSize: '12px', marginBottom: '12px' }}
+                  onClick={() => { setFilterQuery(''); setFilterCrime(''); setFilterDate(''); }}
+                >
+                  Clear filters
+                </button>
+              )}
+
+              {casesError && (
+                <div className="alert alert-warning" style={{ marginBottom: '12px' }}>
+                  Could not load cases: {casesError}
+                </div>
+              )}
+
+              {!casesError && !loadingCases && cases.length === 0 && (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                  No cases yet. Register a FIR above to create the first one.
+                </p>
+              )}
+
+              {!casesError && cases.length > 0 && filteredCases.length === 0 && (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                  No case matches these filters.
+                </p>
+              )}
+
+              {groupedCases.map(([day, dayCases]) => (
+                <div key={day} style={{ marginBottom: '18px' }}>
+                  <h3 className="table-caption" style={{ marginBottom: '6px', fontWeight: 600 }}>
+                    Registered {day} · {dayCases.length} case{dayCases.length === 1 ? '' : 's'}
+                  </h3>
+                  <div className="table-container">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Case Identifier</th>
+                          <th>Crime Classification</th>
+                          <th>Investigation Stage</th>
+                          <th>Registration Date</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dayCases.map((c) => (
+                          <tr key={c.id}>
+                            <td><span className="mono-text">{c.case_number}</span></td>
+                            <td>{c.crime_type}</td>
+                            <td>
+                              <StatusChip status={c.investigation_status} label={c.investigation_status ? c.investigation_status.replace(/_/g, ' ') : 'Registered'} />
+                            </td>
+                            <td style={{ color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                              {c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}
+                            </td>
+                            <td>
+                              <Link
+                                to={`/cases/${c.id}`}
+                                className="btn btn-secondary"
+                                style={{ height: '28px', fontSize: '12px', padding: '0 8px' }}
+                              >
+                                Inspect Docket
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
     </div>
