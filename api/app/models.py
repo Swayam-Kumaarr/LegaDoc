@@ -214,6 +214,13 @@ class EvidenceRequest(Base):
     requested_org_id = Column(GUID(), ForeignKey("organizations.id"), nullable=False)
     doc_type_expected = Column(String, nullable=True)
     status = Column(String, nullable=False, default="requested")  # requested | completed
+    # What the investigating officer actually asked the lab to do, and who
+    # asked. The notes were collected by the API and written only into the
+    # audit log, so the organisation receiving the requisition saw a document
+    # type and a case number and nothing else — the instruction never reached
+    # the person meant to act on it.
+    notes = Column(String, nullable=True)
+    requested_by_user_id = Column(GUID(), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
 

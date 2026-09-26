@@ -373,6 +373,8 @@ class EvidenceRequestResponse(BaseModel):
     case_id: UUID
     requested_org_id: UUID
     doc_type_expected: Optional[str] = None
+    notes: Optional[str] = None
+    requested_by_name: Optional[str] = None
     status: str
     created_at: datetime
     completed_at: Optional[datetime] = None
@@ -390,6 +392,8 @@ class EvidenceRequestInboxItem(BaseModel):
     case_number: str
     requested_org_id: UUID
     doc_type_expected: Optional[str] = None
+    notes: Optional[str] = None
+    requested_by_name: Optional[str] = None
     status: str
     created_at: datetime
     completed_at: Optional[datetime] = None
