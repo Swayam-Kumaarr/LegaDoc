@@ -344,6 +344,97 @@ def _get_analyzer_engine():
     return _analyzer_engine
 
 
+# Statutory references, which must survive redaction intact. A citation is
+# the one thing on an FIR that every later reader — magistrate, prosecutor,
+# defence — has to be able to check, and it identifies no one.
+#
+# spaCy reads the abbreviations in them as place names on OCR'd text: on a
+# real Haryana FIR "Cr.P.C." came back as LOCATION, so the Duty Officer's
+# copy of the statute line read "(Under Section 154 Cr.[REDACTED:LOCATION])".
+# Redacting the law itself is worse than showing it — nothing is protected
+# and the document stops being usable as a legal record.
+# An Act's name or the word "Section", plus the section numbers and further
+# Act names chained onto it ("154 Cr.P.C.", "379/411 IPC", "303(2) BNS").
+# Deliberately narrow: the continuation only accepts numbers and known Act
+# abbreviations, never an arbitrary capitalised word, or a citation would
+# swallow the name printed after it and protect that from redaction too.
+_ACT_ABBREV = (
+    r"Cr\.?\s?P\.?\s?C\.?|I\.?P\.?C\.?|B\.?N\.?S\.?S\.?|B\.?N\.?S\.?|B\.?S\.?A\.?"
+    r"|P\.?O\.?C\.?S\.?O\.?|N\.?D\.?P\.?S\.?|P\.?M\.?L\.?A\.?|M\.?C\.?O\.?C\.?A\.?"
+    r"|IT\s+Act|भा\.?दं\.?सं\.?"
+)
+_STATUTE_CITATION_RE = re.compile(
+    r"(?ix)"
+    r"(?: Section\s*|Sec\.?\s*|धारा\s*|अधिनियम\s*|संहिता\s*|U/s\s*)?"
+    r"(?: \d{1,4}[A-Z]{0,2}(?:\(\w{1,3}\))? (?:\s*[/,&]\s*\d{1,4}[A-Z]{0,2}(?:\(\w{1,3}\))?)* \s* )?"
+    r"(?: " + _ACT_ABBREV + r" )"
+    r"(?: \s* \d{1,4}[A-Z]{0,2}(?:\(\w{1,3}\))? )?"
+)
+
+# Captions printed on the form, as opposed to the values beside them. "P.S."
+# is the police-station caption; the station's name after the colon is the
+# value and stays redactable.
+_FORM_LABEL_RE = re.compile(
+    r"(?i)(?<![A-Za-z])(?:P\.\s?S\.?|F\.?I\.?R\.?\s*No\.?|S\.?\s?No\.?|G\.?D\.?\s*No\.?|District"
+    # The Devanagari captions these bilingual forms print beside the English
+    # ones. "प्र.सू.रि" (प्रथम सूचना रिपोर्ट) came back tagged LOCATION, so
+    # the FIR number's own label was redacted.
+    r"|थाना|जिला|प्र\.?\s?सू\.?\s?रि\.?|दिनांक|समय|वर्ष|अधिनियम|धाराएँ|धाराएं)"
+)
+
+
+def _protected_ranges(text: str) -> List[tuple]:
+    """Character ranges that must never be redacted."""
+    ranges = [(m.start(), m.end()) for m in _STATUTE_CITATION_RE.finditer(text)]
+    ranges += [(m.start(), m.end()) for m in _FORM_LABEL_RE.finditer(text)]
+    return ranges
+
+
+def _drop_spans_over_protected_text(
+    spans: List[Dict[str, Any]], text: str
+) -> List[Dict[str, Any]]:
+    """Removes detections that sit on a statutory citation or a form label.
+
+    Only whole-span containment counts: a name that merely happens to touch a
+    citation's last character still gets redacted. A detection that IS the
+    citation is the false positive worth dropping.
+    """
+    protected = _protected_ranges(text)
+    if not protected:
+        return spans
+
+    kept = []
+    for span in spans:
+        start, end = span["span_start"], span["span_end"]
+
+        # Trim the protected part out rather than only dropping spans that
+        # sit entirely inside one: spaCy returns "I. District" as a single
+        # LOCATION, which is the caption plus a stray initial, and dropping
+        # only whole matches left that redacting the caption.
+        for p_start, p_end in protected:
+            if p_start <= start and end <= p_end:
+                start = end = 0  # the span IS the protected text
+                break
+            if p_start < end and start < p_end:  # partial overlap
+                if start < p_start:
+                    end = min(end, p_start)
+                else:
+                    start = max(start, p_end)
+
+        fragment = text[start:end].strip(" .,:;()[]|-	")
+        if end <= start or len(fragment) < 3:
+            logger.info(
+                "Dropped %s span over protected text %r",
+                span.get("entity_type"), text[span["span_start"]:span["span_end"]],
+            )
+            continue
+
+        trimmed = dict(span)
+        trimmed["span_start"], trimmed["span_end"] = start, end
+        kept.append(trimmed)
+    return kept
+
+
 def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List[Dict[str, Any]]:
     """Runs entity detection over raw text:
     1. Runs Presidio Analyzer if available in environment.
@@ -382,7 +473,9 @@ def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List
     native_spans = LegalPIIRecognizer.find_spans(text)
     all_spans.extend(native_spans)
 
-    # 3. Resolve overlaps
+    # 3. Drop detections that landed on a statute citation or a form label,
+    #    then resolve overlaps.
+    all_spans = _drop_spans_over_protected_text(all_spans, text)
     return _resolve_overlapping_spans(all_spans)
 
 

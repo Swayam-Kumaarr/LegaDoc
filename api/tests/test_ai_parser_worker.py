@@ -473,3 +473,55 @@ def test_retag_backfill_hides_untagged_ready_entries_until_retagged(db_session, 
     assert already_tagged.status == "ready"       # had spans — untouched
     queued = [j["kwargs"]["case_diary_entry_id"] for j in fake_queue.enqueued]
     assert queued == [str(legacy.id)]
+
+
+def _redacted(text):
+    """What a restricted role would see for this text."""
+    from app.redaction import apply_redaction
+    spans = ai_worker.parse_text_for_sensitive_spans(text)
+    tags = [
+        type("Tag", (), {
+            "entity_type": s["entity_type"],
+            "span_start": s["span_start"],
+            "span_end": s["span_end"],
+        })()
+        for s in spans
+    ]
+    return apply_redaction(text, tags)
+
+
+def test_a_statute_citation_is_never_redacted():
+    """Taken from a real Haryana FIR through the live stack: spaCy read the
+    abbreviations in "Cr.P.C." as a place name, so the Duty Officer's copy of
+    the statute line came out as "(Under Section 154 Cr.[REDACTED:LOCATION])".
+    A citation identifies nobody, and every later reader — magistrate,
+    prosecutor, defence — has to be able to check it."""
+    line = "FIRST INFORMATION REPORT (Under Section 154 Cr.P.C.)"
+    assert _redacted(line) == line
+
+    for citation in ("IPC 1860", "Sections 379/411 IPC", "BNSS 2023", "U/s 303(2) BNS"):
+        assert "[REDACTED" not in _redacted(f"Charge under {citation} is made out."), citation
+
+
+def test_the_form_caption_survives_but_its_value_is_still_redactable():
+    """"P.S." and "District" are captions printed on the form. The station
+    and district names beside them are the values, and stay redactable —
+    protecting the caption must not protect what it labels."""
+    spans = ai_worker.parse_text_for_sensitive_spans("I. District KURUKSHETRA | P.S. (थाना): SHAHABAD")
+
+    covered = {"KURUKSHETRA", "SHAHABAD"}
+    line = "I. District KURUKSHETRA | P.S. (थाना): SHAHABAD"
+    tagged_text = {line[s["span_start"]:s["span_end"]] for s in spans}
+    # The captions must not be tagged.
+    assert not any(t.strip(" .:()") in {"P.S", "P.S.", "District", "थाना"} for t in tagged_text), tagged_text
+
+
+def test_ordinary_personal_data_is_still_redacted_next_to_a_citation():
+    """The guard drops detections that ARE a citation, not detections that
+    merely sit near one."""
+    text = "Under Section 154 Cr.P.C., complainant Rajesh Kumar, phone 9876543210, was examined."
+    out = _redacted(text)
+
+    assert "Section 154 Cr.P.C." in out
+    assert "9876543210" not in out
+    assert "[REDACTED" in out
