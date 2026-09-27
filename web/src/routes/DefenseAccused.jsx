@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import StatusChip from '../components/StatusChip';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function DefenseAccused() {
+  const { user } = useAuth();
   const [cases, setCases] = useState([]);
   const [selectedCaseId, setSelectedCaseId] = useState('');
   const [suretyName, setSuretyName] = useState('');
@@ -89,7 +91,11 @@ export default function DefenseAccused() {
               directly to the selected case's bail track.
             </p>
           </div>
-          <StatusChip status="neutral" label="Role: Defense Counsel" />
+          {/* Was the literal "Role: Defense Counsel", so the page announced that
+                role to whoever opened it — a config_admin reviewing the portal saw
+                themselves described as defence counsel. Every other portal derives
+                this from the session. */}
+            <StatusChip status="neutral" label={`Role: ${user?.role ? user.role.replace(/_/g, ' ').toUpperCase() : 'UNKNOWN'}`} />
         </div>
 
         <div className="domain-notice">

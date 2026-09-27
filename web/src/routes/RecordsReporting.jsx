@@ -136,14 +136,30 @@ export default function RecordsReporting() {
           reverse mapping back to the case without already holding that identifier.
         </div>
 
+        {/* The failure is stated where it happens. This page is reachable by
+            roles the endpoint refuses — config_admin among them — and the
+            error was only rendered inside the table body, far below these
+            tiles. A reader saw "0 Active Cohort Records" and "0.0 Days" and
+            read it as "there is no crime data", not as "you are not permitted
+            to see this". Zero is an answer; a refusal is not. */}
+        {error && (
+          <div className="alert alert-warning" style={{ marginBottom: '16px' }}>
+            <strong>No cohort data was returned.</strong> {error}
+            {' '}This view is restricted to the NCRB analyst role; the figures below are
+            not a count of zero cases.
+          </div>
+        )}
+
         <div className="grid-3" style={{ marginBottom: '16px' }}>
           <div className="stat-widget">
-            <span className="stat-value">{filteredRecords.length}</span>
+            <span className="stat-value">{error ? '—' : filteredRecords.length}</span>
             <span className="stat-label">Active Cohort Records</span>
             <span className="stat-sub">Structured for policy & empirical analysis</span>
           </div>
           <div className="stat-widget">
-            <span className="stat-value" style={{ color: 'var(--color-primary)' }}>{meanDuration} Days</span>
+            <span className="stat-value" style={{ color: 'var(--color-primary)' }}>
+              {error ? '—' : `${meanDuration} Days`}
+            </span>
             <span className="stat-label">Mean Investigation Duration</span>
             <span className="stat-sub">BNSS § 193 60/90 day statutory window</span>
           </div>

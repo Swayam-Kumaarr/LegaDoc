@@ -66,6 +66,12 @@ export default function Judiciary() {
   }, []);
 
   const selectedCase = cases.find((c) => c.id === selectedCaseId) || null;
+  // Trial listing follows the charge sheet: Section 173 CrPC / BNSS 193 puts
+  // the police report before the court, and only then is there a case to try.
+  // Statuses are the ones register/file-charge-sheet/trial actually write.
+  const TRIAL_STAGES = ['Charge_Sheet_Filed', 'Trial', 'Judgment'];
+  const trialEligibleCases = cases.filter((c) => TRIAL_STAGES.includes(c.investigation_status));
+
   const trialCase = cases.find((c) => c.id === trialCaseId) || null;
 
   const fetchBailRecords = async (caseId) => {
@@ -442,18 +448,30 @@ export default function Judiciary() {
         {activeTab === 'trial' && (
           <div className="grid-2">
             <div className="card">
+              {/* The caption promised "Charge Sheet filed or later" while the
+                  list held every case on the bench, most of them still at FIR
+                  Registered — so a magistrate could pick a case for trial that
+                  has no charge sheet. The filter the caption describes is now
+                  actually applied. */}
               <span className="table-caption">Cases eligible for trial proceedings (Charge Sheet filed or later).</span>
               <div className="form-group" style={{ marginTop: '10px' }}>
                 <label className="form-label">Select Case</label>
                 <select className="form-select" value={trialCaseId} onChange={(e) => setTrialCaseId(e.target.value)}>
-                  {cases.length === 0 && <option value="">No cases available</option>}
-                  {cases.map((c) => (
+                  {trialEligibleCases.length === 0 && <option value="">No case has reached the trial stage</option>}
+                  {trialEligibleCases.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.case_number} — {c.investigation_status?.replace(/_/g, ' ')}
                     </option>
                   ))}
                 </select>
               </div>
+              {cases.length > trialEligibleCases.length && (
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' }}>
+                  {cases.length - trialEligibleCases.length} case
+                  {cases.length - trialEligibleCases.length === 1 ? ' is' : 's are'} still under
+                  investigation and cannot be listed for trial.
+                </p>
+              )}
               {trialCase && (
                 <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                   Current investigation status: <strong>{trialCase.investigation_status?.replace(/_/g, ' ')}</strong>

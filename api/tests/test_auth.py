@@ -326,3 +326,68 @@ def test_every_seeded_persona_can_authenticate(db_session):
         assert security.verify_password(DEFAULT_TEST_PASSWORD, row.hashed_password), (
             f"{u['email']} does not accept the documented password"
         )
+
+
+def test_every_sign_in_attempt_lands_on_the_audit_chain(client, db_session, make_user):
+    """The login page tells officers "all access attempts are cryptographically
+    stamped and logged". Nothing wrote those rows: the audit log held nineteen
+    kinds of action and not one was an authentication event, so a station could
+    not answer who opened the system and when. Failed attempts existed only in
+    an in-memory rate limiter that a restart discards."""
+    from app import models
+
+    user = make_user("io", email="audit.login@police.gov.in", password="pw")
+
+    login(client, "audit.login@police.gov.in", "wrong-password")
+    login(client, "audit.login@police.gov.in", "pw")
+    login(client, "ghost@police.gov.in", "pw")
+
+    rows = (
+        db_session.query(models.AuditLog)
+        .filter(models.AuditLog.target_type == "auth")
+        .order_by(models.AuditLog.seq)
+        .all()
+    )
+    actions = [r.action for r in rows]
+    assert actions == ["login_failed", "login_succeeded", "login_failed"], actions
+
+    # The successful one is attributed to the account; the chain still verifies.
+    assert rows[1].actor_user_id == user.id
+    assert rows[1].action_metadata["identifier"] == "audit.login@police.gov.in"
+    from app.audit import verify_chain_intact
+    assert verify_chain_intact(db_session)
+
+
+def test_a_login_audit_row_never_records_the_password_or_whether_the_account_exists():
+    """The response deliberately refuses to distinguish a wrong password from
+    an unknown address. An audit row saying "no such user" would undo that for
+    anyone who can read the log."""
+    import inspect
+    from app.routers import auth as auth_router
+
+    source = inspect.getsource(auth_router.login)
+    assert "body.password" not in source.split("_audit(")[-1]
+    # Both credential failures report the same reason.
+    assert source.count('_record_failure("bad_credentials"') == 2
+    assert "no_such_user" not in source
+
+
+def test_failed_attempts_are_recorded_even_when_the_rate_limiter_trips(client, make_user):
+    """The row has to exist for exactly the attempts anyone would investigate."""
+    from app import models
+    from tests.conftest import TestSessionLocal
+
+    make_user("io", email="brute@police.gov.in", password="pw")
+    for _ in range(4):
+        login(client, "brute@police.gov.in", "nope")
+
+    session = TestSessionLocal()
+    try:
+        failures = (
+            session.query(models.AuditLog)
+            .filter(models.AuditLog.action == "login_failed")
+            .count()
+        )
+    finally:
+        session.close()
+    assert failures >= 4, failures

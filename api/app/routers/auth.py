@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app import models, schemas, security
+from app.audit import write_audit_log
 from app.config import settings
 from app.database import get_db
 from app.rate_limit import login_ip_limiter, login_rate_limiter
@@ -49,9 +50,35 @@ def login(request: Request, body: schemas.LoginRequest, db: Session = Depends(ge
         detail="Too many failed sign-in attempts from this location. Please wait a minute and try again."
     )
 
-    def _record_failure() -> None:
+    def _audit(action: str, user_id=None, reason: str = "") -> None:
+        """Every sign-in attempt, successful or not, on the same hash chain as
+        every other action in the system.
+
+        The login page tells officers "all access attempts are cryptographically
+        stamped and logged". Nothing wrote these rows, so the audit log held
+        nineteen kinds of action and not one of them was an authentication
+        event: a station could not answer "who opened this system, and when".
+        Failed attempts were visible only to an in-memory rate limiter that is
+        discarded when the process restarts.
+
+        The identifier that was tried is recorded, never the password, and
+        never whether the account exists — the response already refuses to
+        distinguish those, and the audit row must not undo that by saying
+        "unknown account" where the caller was told "invalid email or
+        password".
+        """
+        write_audit_log(
+            db,
+            action=action,
+            actor_user_id=user_id,
+            target_type="auth",
+            metadata={"identifier": ident, "source_ip": client_ip, "reason": reason},
+        )
+
+    def _record_failure(reason: str, user_id=None) -> None:
         login_rate_limiter.record(ident_key)
         login_ip_limiter.record(ip_key)
+        _audit("login_failed", user_id=user_id, reason=reason)
 
     user = (
         db.query(models.User)
@@ -61,11 +88,13 @@ def login(request: Request, body: schemas.LoginRequest, db: Session = Depends(ge
 
     if user is None:
         security.dummy_password_check(body.password)
-        _record_failure()
+        # "bad_credentials", not "no such user": the row is readable by roles
+        # that are not entitled to learn which addresses hold accounts here.
+        _record_failure("bad_credentials")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     if not security.verify_password(body.password, user.hashed_password):
-        _record_failure()
+        _record_failure("bad_credentials", user_id=user.id)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     # MFA evaluation: enforced when user.mfa_enabled is True
@@ -74,13 +103,14 @@ def login(request: Request, body: schemas.LoginRequest, db: Session = Depends(ge
             # Not a failed credential attempt — the password was right and the
             # client is being challenged. Charging quota here would mean a user
             # with MFA on burns an attempt every single sign-in.
+            _audit("login_mfa_challenged", user_id=user.id, reason="mfa_code_required")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="MFA code required",
             )
         secret = security.get_user_mfa_secret(str(user.id), user.email, settings.JWT_SECRET)
         if not security.verify_totp_code(secret, body.mfa_code):
-            _record_failure()
+            _record_failure("bad_mfa_code", user_id=user.id)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid MFA code",
@@ -89,6 +119,7 @@ def login(request: Request, body: schemas.LoginRequest, db: Session = Depends(ge
     # Authenticated: forget this account's failures so a few mistyped
     # passwords followed by the right one don't leave it near the limit.
     login_rate_limiter.clear(ident_key)
+    _audit("login_succeeded", user_id=user.id, reason=user.role)
 
     org_id = str(user.org_id)
     return schemas.TokenResponse(

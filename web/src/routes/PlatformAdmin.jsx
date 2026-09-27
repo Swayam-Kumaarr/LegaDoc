@@ -313,7 +313,7 @@ export default function PlatformAdmin() {
         </div>
 
         <div className="domain-notice">
-          <strong>Security Standard (Audit Section 1.6 & 5.0):</strong> Only authorized administrators with
+          <strong>Security Standard (Audit Section 1.6 & 5.0):</strong> Only authorized administrators with{' '}
           <code>admin:roles_manage</code> clearance can modify roles or assign permissions. Normal users cannot elevate
           their own privileges. All assignment changes and administrative actions are logged to the immutable SHA-256 hash chain.
         </div>
@@ -919,9 +919,18 @@ export default function PlatformAdmin() {
               />
             </div>
 
+            {/* This said "Two-Person Control Requirement (Section 7.8) … you
+                will be required to type the confirmation code", naming a
+                control that does not exist: retry-chain-write is guarded by
+                require_role("config_admin") and nothing else, so any holder of
+                an admin token dispatches it directly, modal or no modal. A
+                prompt in one browser is not two-person control, and claiming
+                it on screen is worse than claiming nothing. */}
             <div className="domain-notice" style={{ borderLeftColor: 'var(--status-pending-text)' }}>
-              <strong>Two-Person Control Requirement (Section 7.8):</strong> Chain recovery is a high-privilege administrative operation.
-              You will be required to type the confirmation code before dispatching.
+              <strong>High-privilege operation:</strong> chain recovery re-dispatches a ledger write.
+              The confirmation below guards against a mistyped document ID; it is not a second approval.
+              The operation is authorised by your Config Admin role alone and is recorded in the audit
+              trail against your account.
             </div>
 
             <button
@@ -936,7 +945,8 @@ export default function PlatformAdmin() {
           </div>
         )}
 
-        {/* Section 7.8 Two-Person Control Confirmation Modal */}
+        {/* Confirmation prompt — a guard against a mistyped document ID, not
+            an approval step. See the notice above. */}
         {showConfirmModal && (
           <div style={{
             position: 'fixed',
