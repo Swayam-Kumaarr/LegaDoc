@@ -330,16 +330,34 @@ def test_redact_tag_adds_a_correction_and_extends_the_audit_hash_chain(client, m
 
     # _setup_case_with_io's FIR registration wrote the first entry
     # (fir_registered), the explicit upload above wrote a second
-    # (document_uploaded), and redact-tag wrote a third — the chain must
-    # still verify end to end across all three.
-    entries = db_session.query(models.AuditLog).order_by(models.AuditLog.seq.asc()).all()
-    assert len(entries) == 3
-    assert entries[0].action == "fir_registered"
-    assert entries[0].prev_hash is None
-    assert entries[1].action == "document_uploaded"
-    assert entries[1].prev_hash == entries[0].row_hash
-    assert entries[2].action == "redact_tag_correction"
-    assert entries[2].prev_hash == entries[1].row_hash
+    # (document_uploaded), and redact-tag wrote a third.
+    #
+    # Scoped to this case rather than counting every row in the database:
+    # the three sign-ins _setup_case_with_io performs now write their own
+    # audit rows too, and a global count made this assert 6 == 3. What the
+    # test is about is the case's own trail, and that it links.
+    entries = (
+        db_session.query(models.AuditLog)
+        .filter(models.AuditLog.case_id == UUID(case["id"]))
+        .order_by(models.AuditLog.seq.asc())
+        .all()
+    )
+    assert [e.action for e in entries] == [
+        "fir_registered",
+        "document_uploaded",
+        "redact_tag_correction",
+    ]
+
+    # Each row links to the one before it in the global chain — which is not
+    # the row before it in this list, since other cases' and the sign-ins'
+    # rows are interleaved. seq is what says whether two rows are adjacent.
+    all_rows = {r.seq: r for r in db_session.query(models.AuditLog).all()}
+    for entry in entries:
+        previous = all_rows.get(entry.seq - 1)
+        if previous is None:
+            assert entry.prev_hash is None
+        else:
+            assert entry.prev_hash == previous.row_hash
     assert verify_chain_intact(db_session)
 
     # And the metadata never contains the actual phone number — only the span.
