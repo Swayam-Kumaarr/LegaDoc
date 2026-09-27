@@ -16,10 +16,12 @@ import React, { useState, useMemo, useRef } from 'react';
  *      live — a concrete answer to "how do you know no one edited this
  *      after the fact," not a claim.
  *
- * This never talks to Fabric or Postgres directly; it operates on
- * whatever audit events are passed in (mock or real, once wired to
- * GET /cases/:id/audit-log). The verification LOGIC is real; only the
- * data source is currently a prop.
+ * This never talks to Fabric or Postgres directly; it operates on the
+ * audit events passed in, which CaseDetail now loads from
+ * GET /cases/:id/audit-log — real row_hash / prev_hash values, mapped to
+ * this component's block shape. Both the verification logic and the data
+ * are real; what a block cannot check (a parent row outside this case's
+ * slice of the chain) is labelled rather than assumed.
  */
 export default function ChainOfCustodyVisualizer({ events }) {
   const [verifying, setVerifying] = useState(false);
