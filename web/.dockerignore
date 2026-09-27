@@ -1,0 +1,22 @@
+# node_modules must never enter the image.
+#
+# The Dockerfile installs dependencies and then runs `COPY . .`, so without
+# this a node_modules directory left on the host is copied in on top of the
+# install and silently replaces it. That happened: a stale host tree carrying
+# vite 8.2.2 overwrote the 8.3.0 that the lockfile pins, and the container
+# then died at startup inside vite's own config loader —
+#
+#   failed to load config from /app/vite.config.js
+#   TypeError: The "paths[1]" argument must be of type string.
+#
+# with nothing in the repository having changed to explain it. An isolated
+# `npm ci` from the same package.json and lockfile installed 8.3.0 correctly,
+# which is what made the cause hard to see.
+node_modules
+
+# Build output and local env: neither belongs in a dev-server image, and
+# .env could carry secrets.
+dist
+.env
+.env.*
+npm-debug.log*
