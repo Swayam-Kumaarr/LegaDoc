@@ -435,6 +435,69 @@ def _drop_spans_over_protected_text(
     return kept
 
 
+_DEVANAGARI_LETTER_RE_SIMPLE = re.compile(r"[ऀ-ॿ]")
+_VOWELS = set("aeiouAEIOU")
+# Four consonants in a row, ignoring the usual English clusters. OCR turns
+# "Intervening Days" into "Laisrvrtint Diy?", which reads as a name to an
+# NER model but never occurs in one.
+_LONG_CONSONANT_RUN_RE = re.compile(r"(?i)[bcdfghjklmnpqrstvwxz]{4,}")
+_HONORIFIC_RE = re.compile(
+    r"(?i)(?:Shri|Sri|Smt|Kum|Mr|Mrs|Ms|Dr|Inspector|Sub-?Inspector|SI|ASI|Constable|Advocate|Hon'?ble|श्री|श्रीमती|कुमारी)\.?\s*$"
+)
+
+
+def _score_span(span: Dict[str, Any], text: str) -> int:
+    """Confidence that reflects the evidence for this particular detection.
+
+    Presidio's spaCy recognizer returns a flat 0.85 for every name-like
+    entity, so on a scanned FIR the OCR debris "Laisrvrtint Diy?" scored
+    exactly what "Rajesh Kumar" scored. Nothing downstream could tell them
+    apart: needs_review routing, and any per-role policy built on top, had no
+    signal to work with.
+
+    Structured identifiers (Aadhaar, PAN, phone) keep their own score — those
+    come from checksums and formats, not a model's guess. Only free-text
+    entity types are adjusted, by properties that actually distinguish a name
+    from OCR noise on this corpus.
+    """
+    entity = span.get("entity_type", "")
+    score = int(span.get("confidence", 50))
+    if entity not in ("PERSON", "LOCATION", "ORGANIZATION", "MEDICAL_CONDITION"):
+        return score
+
+    fragment = text[span["span_start"]:span["span_end"]].strip()
+    letters = [c for c in fragment if c.isalpha()]
+
+    # An English NER model judging Devanagari is guessing: it has no Hindi
+    # tokens in its vocabulary, so "घटना" (incident) came back PERSON.
+    if letters and all(_DEVANAGARI_LETTER_RE_SIMPLE.match(c) for c in letters):
+        score -= 35
+
+    # OCR debris. Checked per word, not across the whole span: "Ttn Perod Wf"
+    # has vowels somewhere, but "Ttn" and "Wf" have none, and a real name does
+    # not contain a word like that. Likewise "Laisrvrtint" — five consonants
+    # in a row is not something Latin-script names do.
+    words = [w.strip(".,:;()[]|-") for w in fragment.split()]
+    words = [w for w in words if len(w) >= 2 and any(c.isalpha() for c in w)]
+    if any(not any(c in _VOWELS for c in w) for w in words if w.isascii()):
+        score -= 30
+    if any(_LONG_CONSONANT_RUN_RE.search(w) for w in words):
+        score -= 30
+    if any(c.isdigit() for c in fragment):
+        score -= 20
+    if len(fragment) < 4:
+        score -= 15
+
+    # Evidence the other way: a title in front of it is how these documents
+    # actually introduce a person.
+    if entity == "PERSON" and _HONORIFIC_RE.search(text[max(0, span["span_start"] - 24):span["span_start"]]):
+        score += 12
+    if " " in fragment and len(fragment) > 7:  # "Rajesh Kumar", not a single token
+        score += 5
+
+    return max(5, min(99, score))
+
+
 def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List[Dict[str, Any]]:
     """Runs entity detection over raw text:
     1. Runs Presidio Analyzer if available in environment.
@@ -476,6 +539,8 @@ def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List
     # 3. Drop detections that landed on a statute citation or a form label,
     #    then resolve overlaps.
     all_spans = _drop_spans_over_protected_text(all_spans, text)
+    for span in all_spans:
+        span["confidence"] = _score_span(span, text)
     return _resolve_overlapping_spans(all_spans)
 
 

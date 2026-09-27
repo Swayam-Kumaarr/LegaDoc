@@ -525,3 +525,36 @@ def test_ordinary_personal_data_is_still_redacted_next_to_a_citation():
     assert "Section 154 Cr.P.C." in out
     assert "9876543210" not in out
     assert "[REDACTED" in out
+
+
+def test_confidence_separates_a_real_name_from_ocr_debris():
+    """Presidio's spaCy recognizer returns a flat 0.85 for every name-like
+    entity, so on a scanned FIR the OCR debris "Laisrvrtint Diy?" scored
+    exactly what "Rajesh Kumar" scored — and needs_review routing, or any
+    per-role policy built on top, had no signal to work with.
+
+    Scored directly rather than through the analyzer: which spans a model
+    proposes varies with what is installed, but what we do with a proposed
+    span must not."""
+    def score(text, fragment, entity="PERSON"):
+        start = text.index(fragment)
+        span = {"entity_type": entity, "span_start": start, "span_end": start + len(fragment), "confidence": 85}
+        return ai_worker._score_span(span, text)
+
+    real = score("Complainant Shri Rajesh Kumar attended the station.", "Rajesh Kumar")
+    debris = score("Dccurtenct Offence: Laisrvrtint Diy recorded", "Laisrvrtint Diy")
+    no_vowels = score("Ttn Perod Wf recorded at the desk.", "Ttn Perod Wf")
+    hindi = score("Offence (अपराध की घटना): recorded", "घटना", entity="LOCATION")
+
+    assert real >= ai_worker.CONFIDENCE_REVIEW_THRESHOLD, real
+    assert debris < ai_worker.CONFIDENCE_REVIEW_THRESHOLD, debris
+    assert no_vowels < ai_worker.CONFIDENCE_REVIEW_THRESHOLD, no_vowels
+    assert hindi < ai_worker.CONFIDENCE_REVIEW_THRESHOLD, hindi
+
+
+def test_structured_identifiers_keep_their_own_confidence():
+    """A phone number or Aadhaar comes from a format and a checksum, not a
+    model's guess, so the text-shape penalties must not touch it."""
+    text = "Contact 9876543210 regarding the matter."
+    span = {"entity_type": "PHONE_NUMBER", "span_start": 8, "span_end": 18, "confidence": 85}
+    assert ai_worker._score_span(span, text) == 85
