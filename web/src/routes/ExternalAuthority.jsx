@@ -187,7 +187,26 @@ export default function ExternalAuthority() {
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
                     Case Docket: {selectedReq.case_number}
+                    {selectedReq.requested_by_name ? ` · Raised by ${selectedReq.requested_by_name}` : ''}
+                    {selectedReq.created_at ? ` · ${new Date(selectedReq.created_at).toLocaleDateString()}` : ''}
                   </div>
+                </div>
+
+                {/* What the officer actually asked for. Without it this panel
+                    showed a document type and a case number, and the lab had
+                    no way to know what examination was wanted. */}
+                <div className="form-group">
+                  <label className="form-label">Examination Requested</label>
+                  {selectedReq.notes ? (
+                    <p style={{ fontSize: '13px', color: 'var(--text-primary)', whiteSpace: 'pre-wrap', margin: 0 }}>
+                      {selectedReq.notes}
+                    </p>
+                  ) : (
+                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+                      No instructions were recorded with this requisition. Contact the
+                      investigating officer before certifying a report.
+                    </p>
+                  )}
                 </div>
 
                 <form onSubmit={handleSubmitReport}>

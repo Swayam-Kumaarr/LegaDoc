@@ -403,3 +403,30 @@ def test_requisition_to_a_non_authority_organisation_is_refused(client, make_use
     )
     assert resp.status_code == 400
     assert "court" in resp.json()["detail"]
+
+
+def test_the_requisition_reaches_the_lab_with_the_instruction_that_was_written(client, make_user, make_org):
+    """The notes an IO writes when raising a Section 91 requisition were
+    accepted by the API and written only into the audit log, so the lab
+    received a document type and a case number and no statement of what
+    examination was wanted."""
+    case, io_user, io_token = _register_and_assign_case(client, make_user)
+    fsl = make_org(name="Central FSL", org_type="fsl")
+    lab_user = make_user("external_authority", email="lab@fsl.gov.in", password="pw", org=fsl)
+    lab_token = login(client, "lab@fsl.gov.in", "pw").json()["access_token"]
+
+    instruction = "Examine the recovered handset for tool marks; lift latent prints from the casing."
+    created = client.post(
+        f"/cases/{case['id']}/evidence-requests",
+        json={"requested_org_id": str(fsl.id), "doc_type_expected": "FSL Report", "notes": instruction},
+        headers=auth_headers(io_token),
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["notes"] == instruction
+    assert created.json()["requested_by_name"] == io_user.name
+
+    inbox = client.get("/evidence-requests", headers=auth_headers(lab_token))
+    assert inbox.status_code == 200, inbox.text
+    item = next(r for r in inbox.json() if r["case_id"] == case["id"])
+    assert item["notes"] == instruction
+    assert item["requested_by_name"] == io_user.name
