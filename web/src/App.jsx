@@ -20,6 +20,7 @@ import Judiciary from "./routes/Judiciary.jsx";
 import DefenseAccused from "./routes/DefenseAccused.jsx";
 import RecordsReporting from "./routes/RecordsReporting.jsx";
 import PlatformAdmin from "./routes/PlatformAdmin.jsx";
+import RedactionPolicy from "./routes/RedactionPolicy.jsx";
 import OfficerOnboarding from "./routes/OfficerOnboarding.jsx";
 // Dev-only quick-login helper — only imported/registered in the Vite dev
 // server, never bundled into a production build. See routes/DevLogin.jsx.
@@ -380,6 +381,12 @@ function MainLayout() {
                         </svg>
                         <span>Officer Onboarding</span>
                       </NavLink>
+                      <NavLink to="/redaction-policy" className={({ isActive }) => "sidebar-nav-item" + (isActive ? " active" : "")}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                        </svg>
+                        <span>Redaction Blueprint</span>
+                      </NavLink>
                     </div>
                   )}
                 </nav>
@@ -466,6 +473,15 @@ function MainLayout() {
                 <Route path="/onboarding" element={
                   <PrivateRoute allowedRoles={['config_admin', 'admin']}>
                     <OfficerOnboarding />
+                  </PrivateRoute>
+                } />
+
+                {/* The security auditor may read the blueprint — what a role
+                    is allowed to see is exactly what an auditor checks — but
+                    only the config admin can change it (enforced server-side). */}
+                <Route path="/redaction-policy" element={
+                  <PrivateRoute allowedRoles={['config_admin', 'security_auditor', 'admin']}>
+                    <RedactionPolicy />
                   </PrivateRoute>
                 } />
 
