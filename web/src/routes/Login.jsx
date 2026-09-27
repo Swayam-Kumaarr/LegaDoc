@@ -212,7 +212,17 @@ export default function Login() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <p className="text-[11px] leading-relaxed text-amber-800">
-              <strong className="font-semibold text-amber-900">Official Access Only:</strong> All access attempts are cryptographically stamped and logged. Unauthorized access is punishable under <span className="font-medium">Sec. 66 IT Act</span>.
+              {/* The statute reference was removed rather than corrected.
+                  It read "Unauthorized access is punishable under Sec. 66 IT
+                  Act", but unauthorised access itself is Section 43 (civil
+                  liability); Section 66 applies where a Section 43 act is
+                  done dishonestly or fraudulently. Naming the wrong provision
+                  on the first screen of an evidentiary system invites exactly
+                  the scrutiny it was meant to deter, and picking the right
+                  one is a decision for counsel, not for this file. The access
+                  warning stands on its own — and, since login auditing, the
+                  logging half is now true. */}
+              <strong className="font-semibold text-amber-900">Official Access Only:</strong> Every sign-in attempt, successful or not, is recorded in this system&rsquo;s tamper-evident audit log. Access is restricted to authorised officials.
             </p>
           </div>
 
