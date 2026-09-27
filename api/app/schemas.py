@@ -619,3 +619,40 @@ class StageRequirementResponse(BaseModel):
     mandatory: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RedactionPolicyRule(BaseModel):
+    role: str
+    doc_type: str = "*"
+    entity_type: str
+    action: str  # mask | show | flag
+    min_confidence: int = 0
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.action not in ("mask", "show", "flag"):
+            raise ValueError("action must be mask, show or flag")
+        if not 0 <= self.min_confidence <= 100:
+            raise ValueError("min_confidence must be between 0 and 100")
+        if not self.role or not self.entity_type:
+            raise ValueError("role and entity_type are required")
+        return self
+
+
+class RedactionPolicyResponse(RedactionPolicyRule):
+    id: UUID
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RedactionPolicyUpdate(BaseModel):
+    """The whole blueprint, replaced in one call: a partial update would
+    leave an administrator guessing which of the rules they are looking at
+    are still in force."""
+    rules: list[RedactionPolicyRule]
+
+
+class RedactionPreviewRequest(BaseModel):
+    document_id: UUID
+    roles: list[str]

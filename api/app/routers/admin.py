@@ -16,10 +16,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app import models, schemas
+from app import models, redaction, schemas
 from app.audit import write_audit_log
 from app.database import get_db
-from app.security import require_role, hash_api_key
+from app.security import FULL_TEXT_ACCESS_ROLES, require_role, hash_api_key
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -816,3 +816,147 @@ def revoke_api_key(
     )
 
     return {"status": "revoked", "key_id": str(key_id), "key_prefix": row.key_prefix}
+
+
+# --- Redaction blueprint ---------------------------------------------------
+# Which entity types a restricted role sees, per document type. This does not
+# touch FULL_TEXT_ACCESS_ROLES, which stays an explicit literal in
+# security.py: the blueprint decides what a *restricted* role sees, and can
+# never promote one to unrestricted access.
+
+
+@router.get("/redaction-policy", response_model=list[schemas.RedactionPolicyResponse])
+def get_redaction_policy(
+    claims: dict = Depends(require_role("config_admin", "security_auditor")),
+    db: Session = Depends(get_db),
+):
+    """GET /admin/redaction-policy — the blueprint as currently in force.
+
+    Readable by the security auditor as well as the config admin: what a role
+    is allowed to see is exactly the kind of thing an auditor is there to
+    check, and reading it exposes no case data.
+    """
+    return (
+        db.query(models.RedactionPolicy)
+        .order_by(
+            models.RedactionPolicy.role,
+            models.RedactionPolicy.doc_type,
+            models.RedactionPolicy.entity_type,
+        )
+        .all()
+    )
+
+
+@router.put("/redaction-policy", response_model=list[schemas.RedactionPolicyResponse])
+def replace_redaction_policy(
+    body: schemas.RedactionPolicyUpdate,
+    claims: dict = Depends(require_role("config_admin")),
+    db: Session = Depends(get_db),
+):
+    """PUT /admin/redaction-policy — Config Admin only. Replaces the whole
+    blueprint in one call.
+
+    Whole-document replacement rather than per-rule edits: an administrator
+    deciding who may see a witness's phone number should be looking at the
+    complete matrix as they change it, not at one row out of context.
+
+    A rule that reveals an entity type to a role is a widening of access, so
+    the audit row records the rules that changed and who changed them — the
+    same evidentiary standard as every other privileged action here.
+    """
+    existing = {(p.role, p.doc_type, p.entity_type): p.action for p in db.query(models.RedactionPolicy).all()}
+    incoming = {(r.role, r.doc_type, r.entity_type): r.action for r in body.rules}
+
+    widened = sorted(
+        f"{role}/{doc_type}/{entity}: {existing.get((role, doc_type, entity), 'mask')} -> {action}"
+        for (role, doc_type, entity), action in incoming.items()
+        if action != "mask" and existing.get((role, doc_type, entity), "mask") == "mask"
+    )
+
+    db.query(models.RedactionPolicy).delete()
+    actor_id = UUID(claims["sub"]) if "sub" in claims else None
+    for rule in body.rules:
+        db.add(
+            models.RedactionPolicy(
+                role=rule.role,
+                doc_type=rule.doc_type,
+                entity_type=rule.entity_type,
+                action=rule.action,
+                min_confidence=rule.min_confidence,
+                updated_by_user_id=actor_id,
+            )
+        )
+    db.commit()
+
+    write_audit_log(
+        db,
+        action="redaction_policy_updated",
+        actor_user_id=actor_id,
+        target_type="redaction_policy",
+        metadata={"rule_count": len(body.rules), "widened": widened},
+    )
+
+    return (
+        db.query(models.RedactionPolicy)
+        .order_by(
+            models.RedactionPolicy.role,
+            models.RedactionPolicy.doc_type,
+            models.RedactionPolicy.entity_type,
+        )
+        .all()
+    )
+
+
+@router.post("/redaction-policy/preview")
+def preview_redaction_policy(
+    body: schemas.RedactionPreviewRequest,
+    claims: dict = Depends(require_role("config_admin")),
+    db: Session = Depends(get_db),
+):
+    """POST /admin/redaction-policy/preview — what a real document looks like
+    to each named role under the blueprint as it stands.
+
+    A matrix of entity types against roles is not something anyone can read
+    and be sure of; the only way to know a rule does what was intended is to
+    see the document through it.
+    """
+    document = db.get(models.Document, body.document_id)
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+
+    tags = (
+        db.query(models.DocumentSensitivityTag)
+        .filter(models.DocumentSensitivityTag.document_id == document.id)
+        .all()
+    )
+    policies = redaction.load_policies(db)
+
+    # Deliberately not get_document_view: that withholds the text of any
+    # document still in needs_review, which is fail-closed and right for a
+    # case reader, but would leave an administrator unable to preview a
+    # policy against exactly the documents that need attention. Nothing new
+    # is exposed — this endpoint is config_admin only, and that role already
+    # holds full-text access.
+    out = []
+    for role in body.roles:
+        if role in FULL_TEXT_ACCESS_ROLES:
+            text = document.raw_text
+        else:
+            text = redaction.apply_redaction(
+                document.raw_text, tags, policies=policies, role=role, doc_type=document.doc_type
+            )
+        out.append({
+            "role": role,
+            "full_text_access": role in FULL_TEXT_ACCESS_ROLES,
+            "text": text,
+        })
+    return {
+        "document_id": str(document.id),
+        "doc_type": document.doc_type,
+        "document_status": document.status,
+        # A document awaiting review shows no text to a case reader at all,
+        # whatever the policy says; the preview states that rather than
+        # implying these views are live.
+        "withheld_pending_review": document.status != "ready",
+        "views": out,
+    }
