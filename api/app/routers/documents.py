@@ -23,7 +23,7 @@ from app.audit import write_audit_log
 from app.config import settings
 from app.database import get_db
 from app.queue import QueueClient, get_queue
-from app.redaction import get_document_view
+from app.redaction import get_document_view, load_policies
 from app.security import FULL_TEXT_ACCESS_ROLES, assert_case_access, get_current_claims, require_role
 from app.storage import ObjectStorage, get_storage, object_key, sha256_hex
 from app.upload_validator import validate_upload_stream
@@ -245,7 +245,10 @@ def get_document(
     assert_case_access(document.case_id, claims, db)
 
     tags = db.query(models.DocumentSensitivityTag).filter(models.DocumentSensitivityTag.document_id == document.id).all()
-    view = get_document_view(document, tags, claims.get("role"), FULL_TEXT_ACCESS_ROLES)
+    view = get_document_view(
+        document, tags, claims.get("role"), FULL_TEXT_ACCESS_ROLES,
+        policies=load_policies(db),
+    )
     download_url = storage.get_presigned_url(document.storage_path) if document.storage_path else None
 
     return schemas.DocumentView(
@@ -389,7 +392,10 @@ def correct_redaction_tag(
     )
 
     tags = db.query(models.DocumentSensitivityTag).filter(models.DocumentSensitivityTag.document_id == document.id).all()
-    view = get_document_view(document, tags, claims.get("role"), FULL_TEXT_ACCESS_ROLES)
+    view = get_document_view(
+        document, tags, claims.get("role"), FULL_TEXT_ACCESS_ROLES,
+        policies=load_policies(db),
+    )
     return schemas.DocumentView(
         id=document.id,
         case_id=document.case_id,

@@ -207,6 +207,47 @@ class DocumentSensitivityTag(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class RedactionPolicy(Base):
+    """One rule in the redaction blueprint: for this role, on this document
+    type, what happens to this kind of entity.
+
+    Before this, masking was all-or-nothing — a role either held full-text
+    access in code or saw every tagged span masked. Real practice is finer
+    than that: a station officer may legitimately need the location of an
+    incident while still being kept away from the complainant's name and
+    phone number.
+
+    action:
+      mask  — replace the span (the default for every restricted role)
+      show  — leave it in place for this role
+      flag  — leave it in place but mark it, so a reader knows the parser
+              thought it was sensitive and a human has not confirmed it
+
+    role and doc_type accept "*" to mean "any". The most specific rule wins:
+    an exact role+doc_type beats role+"*", which beats "*"+"*".
+
+    This never widens access beyond FULL_TEXT_ACCESS_ROLES, which stays an
+    explicit literal in security.py — the policy decides what a *restricted*
+    role sees, and every change to it is audited.
+    """
+    __tablename__ = "redaction_policies"
+    id = uuid_pk()
+    role = Column(String, nullable=False)          # "duty_officer", or "*"
+    doc_type = Column(String, nullable=False, default="*")
+    entity_type = Column(String, nullable=False)   # "PERSON", "PHONE_NUMBER", … or "*"
+    action = Column(String, nullable=False, default="mask")  # mask | show | flag
+    # Below this confidence the span is treated as unconfirmed: a "show" rule
+    # does not apply to it, so a weak guess is never revealed on the strength
+    # of a policy written for solid ones.
+    min_confidence = Column(Integer, nullable=False, default=0)
+    updated_by_user_id = Column(GUID(), ForeignKey("users.id"), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("role", "doc_type", "entity_type", name="uq_redaction_policy_scope"),
+    )
+
+
 class EvidenceRequest(Base):
     __tablename__ = "evidence_requests"
     id = uuid_pk()

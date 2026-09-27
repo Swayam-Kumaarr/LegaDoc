@@ -28,7 +28,22 @@ export default function NeedsReviewQueue() {
   }, []);
 
   const ageHours = (createdAt) => Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60)));
-  const oldestAge = items.length ? Math.max(...items.map((i) => ageHours(i.created_at))) : 0;
+
+  // "456 hrs" is not a length of time anyone reads as nineteen days. Hours
+  // stay for the first day, where they are what a reviewer is judging
+  // against; past that the unit changes to days, then months.
+  const ageLabel = (createdAt) => {
+    const hrs = ageHours(createdAt);
+    if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'}`;
+    const days = Math.floor(hrs / 24);
+    if (days < 31) return `${days} day${days === 1 ? '' : 's'}`;
+    const months = Math.floor(days / 30);
+    const rem = days % 30;
+    return rem ? `${months} mo ${rem}d` : `${months} month${months === 1 ? '' : 's'}`;
+  };
+  const oldestItem = items.length
+    ? items.reduce((a, b) => (ageHours(a.created_at) >= ageHours(b.created_at) ? a : b))
+    : null;
 
   return (
     <div>
@@ -50,7 +65,7 @@ export default function NeedsReviewQueue() {
           {!loading && !error && (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <StatusChip status="pending" label={`Queue Depth: ${items.length}`} />
-              {items.length > 0 && <StatusChip status="critical" label={`Oldest: ${oldestAge}h`} />}
+              {oldestItem && <StatusChip status="critical" label={`Oldest: ${ageLabel(oldestItem.created_at)}`} />}
             </div>
           )}
         </div>
@@ -100,7 +115,7 @@ export default function NeedsReviewQueue() {
                       <td><StatusChip status={item.chain_status} label={item.chain_status.replace(/_/g, ' ')} /></td>
                       <td><HashCell hash={item.doc_hash} prefix="SHA256" /></td>
                       <td>
-                        <StatusChip status={ageHours(item.created_at) >= 24 ? 'error' : 'neutral'} label={`${ageHours(item.created_at)} hrs`} />
+                        <StatusChip status={ageHours(item.created_at) >= 24 ? 'error' : 'neutral'} label={ageLabel(item.created_at)} />
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <Link

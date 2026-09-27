@@ -344,6 +344,160 @@ def _get_analyzer_engine():
     return _analyzer_engine
 
 
+# Statutory references, which must survive redaction intact. A citation is
+# the one thing on an FIR that every later reader — magistrate, prosecutor,
+# defence — has to be able to check, and it identifies no one.
+#
+# spaCy reads the abbreviations in them as place names on OCR'd text: on a
+# real Haryana FIR "Cr.P.C." came back as LOCATION, so the Duty Officer's
+# copy of the statute line read "(Under Section 154 Cr.[REDACTED:LOCATION])".
+# Redacting the law itself is worse than showing it — nothing is protected
+# and the document stops being usable as a legal record.
+# An Act's name or the word "Section", plus the section numbers and further
+# Act names chained onto it ("154 Cr.P.C.", "379/411 IPC", "303(2) BNS").
+# Deliberately narrow: the continuation only accepts numbers and known Act
+# abbreviations, never an arbitrary capitalised word, or a citation would
+# swallow the name printed after it and protect that from redaction too.
+_ACT_ABBREV = (
+    r"Cr\.?\s?P\.?\s?C\.?|I\.?P\.?C\.?|B\.?N\.?S\.?S\.?|B\.?N\.?S\.?|B\.?S\.?A\.?"
+    r"|P\.?O\.?C\.?S\.?O\.?|N\.?D\.?P\.?S\.?|P\.?M\.?L\.?A\.?|M\.?C\.?O\.?C\.?A\.?"
+    r"|IT\s+Act|भा\.?दं\.?सं\.?"
+)
+_STATUTE_CITATION_RE = re.compile(
+    r"(?ix)"
+    r"(?: Section\s*|Sec\.?\s*|धारा\s*|अधिनियम\s*|संहिता\s*|U/s\s*)?"
+    r"(?: \d{1,4}[A-Z]{0,2}(?:\(\w{1,3}\))? (?:\s*[/,&]\s*\d{1,4}[A-Z]{0,2}(?:\(\w{1,3}\))?)* \s* )?"
+    r"(?: " + _ACT_ABBREV + r" )"
+    r"(?: \s* \d{1,4}[A-Z]{0,2}(?:\(\w{1,3}\))? )?"
+)
+
+# Captions printed on the form, as opposed to the values beside them. "P.S."
+# is the police-station caption; the station's name after the colon is the
+# value and stays redactable.
+_FORM_LABEL_RE = re.compile(
+    r"(?i)(?<![A-Za-z])(?:P\.\s?S\.?|F\.?I\.?R\.?\s*No\.?|S\.?\s?No\.?|G\.?D\.?\s*No\.?|District"
+    # The Devanagari captions these bilingual forms print beside the English
+    # ones. "प्र.सू.रि" (प्रथम सूचना रिपोर्ट) came back tagged LOCATION, so
+    # the FIR number's own label was redacted.
+    r"|थाना|जिला|प्र\.?\s?सू\.?\s?रि\.?|दिनांक|समय|वर्ष|अधिनियम|धाराएँ|धाराएं)"
+)
+
+
+def _protected_ranges(text: str) -> List[tuple]:
+    """Character ranges that must never be redacted."""
+    ranges = [(m.start(), m.end()) for m in _STATUTE_CITATION_RE.finditer(text)]
+    ranges += [(m.start(), m.end()) for m in _FORM_LABEL_RE.finditer(text)]
+    return ranges
+
+
+def _drop_spans_over_protected_text(
+    spans: List[Dict[str, Any]], text: str
+) -> List[Dict[str, Any]]:
+    """Removes detections that sit on a statutory citation or a form label.
+
+    Only whole-span containment counts: a name that merely happens to touch a
+    citation's last character still gets redacted. A detection that IS the
+    citation is the false positive worth dropping.
+    """
+    protected = _protected_ranges(text)
+    if not protected:
+        return spans
+
+    kept = []
+    for span in spans:
+        start, end = span["span_start"], span["span_end"]
+
+        # Trim the protected part out rather than only dropping spans that
+        # sit entirely inside one: spaCy returns "I. District" as a single
+        # LOCATION, which is the caption plus a stray initial, and dropping
+        # only whole matches left that redacting the caption.
+        for p_start, p_end in protected:
+            if p_start <= start and end <= p_end:
+                start = end = 0  # the span IS the protected text
+                break
+            if p_start < end and start < p_end:  # partial overlap
+                if start < p_start:
+                    end = min(end, p_start)
+                else:
+                    start = max(start, p_end)
+
+        fragment = text[start:end].strip(" .,:;()[]|-	")
+        if end <= start or len(fragment) < 3:
+            logger.info(
+                "Dropped %s span over protected text %r",
+                span.get("entity_type"), text[span["span_start"]:span["span_end"]],
+            )
+            continue
+
+        trimmed = dict(span)
+        trimmed["span_start"], trimmed["span_end"] = start, end
+        kept.append(trimmed)
+    return kept
+
+
+_DEVANAGARI_LETTER_RE_SIMPLE = re.compile(r"[ऀ-ॿ]")
+_VOWELS = set("aeiouAEIOU")
+# Four consonants in a row, ignoring the usual English clusters. OCR turns
+# "Intervening Days" into "Laisrvrtint Diy?", which reads as a name to an
+# NER model but never occurs in one.
+_LONG_CONSONANT_RUN_RE = re.compile(r"(?i)[bcdfghjklmnpqrstvwxz]{4,}")
+_HONORIFIC_RE = re.compile(
+    r"(?i)(?:Shri|Sri|Smt|Kum|Mr|Mrs|Ms|Dr|Inspector|Sub-?Inspector|SI|ASI|Constable|Advocate|Hon'?ble|श्री|श्रीमती|कुमारी)\.?\s*$"
+)
+
+
+def _score_span(span: Dict[str, Any], text: str) -> int:
+    """Confidence that reflects the evidence for this particular detection.
+
+    Presidio's spaCy recognizer returns a flat 0.85 for every name-like
+    entity, so on a scanned FIR the OCR debris "Laisrvrtint Diy?" scored
+    exactly what "Rajesh Kumar" scored. Nothing downstream could tell them
+    apart: needs_review routing, and any per-role policy built on top, had no
+    signal to work with.
+
+    Structured identifiers (Aadhaar, PAN, phone) keep their own score — those
+    come from checksums and formats, not a model's guess. Only free-text
+    entity types are adjusted, by properties that actually distinguish a name
+    from OCR noise on this corpus.
+    """
+    entity = span.get("entity_type", "")
+    score = int(span.get("confidence", 50))
+    if entity not in ("PERSON", "LOCATION", "ORGANIZATION", "MEDICAL_CONDITION"):
+        return score
+
+    fragment = text[span["span_start"]:span["span_end"]].strip()
+    letters = [c for c in fragment if c.isalpha()]
+
+    # An English NER model judging Devanagari is guessing: it has no Hindi
+    # tokens in its vocabulary, so "घटना" (incident) came back PERSON.
+    if letters and all(_DEVANAGARI_LETTER_RE_SIMPLE.match(c) for c in letters):
+        score -= 35
+
+    # OCR debris. Checked per word, not across the whole span: "Ttn Perod Wf"
+    # has vowels somewhere, but "Ttn" and "Wf" have none, and a real name does
+    # not contain a word like that. Likewise "Laisrvrtint" — five consonants
+    # in a row is not something Latin-script names do.
+    words = [w.strip(".,:;()[]|-") for w in fragment.split()]
+    words = [w for w in words if len(w) >= 2 and any(c.isalpha() for c in w)]
+    if any(not any(c in _VOWELS for c in w) for w in words if w.isascii()):
+        score -= 30
+    if any(_LONG_CONSONANT_RUN_RE.search(w) for w in words):
+        score -= 30
+    if any(c.isdigit() for c in fragment):
+        score -= 20
+    if len(fragment) < 4:
+        score -= 15
+
+    # Evidence the other way: a title in front of it is how these documents
+    # actually introduce a person.
+    if entity == "PERSON" and _HONORIFIC_RE.search(text[max(0, span["span_start"] - 24):span["span_start"]]):
+        score += 12
+    if " " in fragment and len(fragment) > 7:  # "Rajesh Kumar", not a single token
+        score += 5
+
+    return max(5, min(99, score))
+
+
 def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List[Dict[str, Any]]:
     """Runs entity detection over raw text:
     1. Runs Presidio Analyzer if available in environment.
@@ -382,7 +536,11 @@ def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List
     native_spans = LegalPIIRecognizer.find_spans(text)
     all_spans.extend(native_spans)
 
-    # 3. Resolve overlaps
+    # 3. Drop detections that landed on a statute citation or a form label,
+    #    then resolve overlaps.
+    all_spans = _drop_spans_over_protected_text(all_spans, text)
+    for span in all_spans:
+        span["confidence"] = _score_span(span, text)
     return _resolve_overlapping_spans(all_spans)
 
 
