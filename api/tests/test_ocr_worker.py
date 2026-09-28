@@ -596,15 +596,14 @@ def test_fusion_keeps_latin_and_digits_from_paddleocr():
 
 def test_an_english_only_page_is_left_to_paddleocr_alone():
     """The Devanagari pass is a second opinion on Hindi, not a general
-    improvement. On the real Delhi FIR — English, 4 spurious Devanagari
-    detections out of 371 — Tesseract contributes only its own Latin-as-
-    Devanagari garbage ("हार" over "Act(s)"), so the page must not be fused
-    at all."""
+    improvement. On the real Delhi FIR — English — Tesseract finds only a
+    handful of one-to-three-glyph "words" forced onto Latin print ("हार" over
+    "Act(s)"), so the page must be neither masked nor fused."""
     paddle = _load_delhi_test_boxes()
     tess = _load_fixture_boxes("delhi_tesseract_hin_boxes.json")
 
-    assert layout_mod.page_is_bilingual(paddle) is False
-    assert layout_mod.page_is_bilingual(_load_fixture_boxes("haryana_paddle_boxes.json")) is True
+    assert layout_mod.is_devanagari_page(tess) is False
+    assert layout_mod.is_devanagari_page(_load_fixture_boxes("haryana_tesseract_hin_boxes.json")) is True
 
     unfused = layout_mod.process_ocr_boxes_to_layout(paddle)["reconstructed_text"]
     offered = layout_mod.process_ocr_boxes_to_layout(paddle, tess)["reconstructed_text"]
@@ -835,3 +834,94 @@ def test_bounded_recognizer_merges_pieces_back_into_one_reading(monkeypatch):
     assert text == "Registered the case1124"
     assert score == pytest.approx((0.9 + 0.6 + 0.3) / 3)
     assert elapse == 0.1
+
+
+# --- Hindi is masked out of the English pass (issue #107) ------------------
+#
+# Tesseract's `hin` pass runs first; on a page with real Hindi its words are
+# painted out of the image PaddleOCR's English engine reads, so there is no
+# Devanagari left for it to transliterate into Latin junk. Fixtures below are
+# that pipeline's real output on haryana_fir.jpg: the Tesseract words, and the
+# English boxes read from the masked page.
+
+def _masked_haryana():
+    return layout_mod.process_ocr_boxes_to_layout(
+        _load_fixture_boxes("haryana_masked_paddle_en_boxes.json"),
+        _load_fixture_boxes("haryana_masked_tesseract_hin_boxes.json"),
+    )
+
+
+def test_masked_english_pass_has_no_transliteration_junk():
+    text = _masked_haryana()["reconstructed_text"]
+    for junk in ("R4IuT", "4RT 154", "(4I)", "(fai)", "(ul T aoR)", "(a$)", "(fam)", "Laisrvrtint",
+                 "Ttn Perod", "lxry", "SEVCES", "SEATICES", "3QA44", "faftc", "iaaur", "Dccurtenct", "qfa anI"):
+        assert junk not in text, junk
+
+
+def test_masked_page_keeps_every_field_and_its_hindi():
+    res = _masked_haryana()
+    fields, text = res["fields"], res["reconstructed_text"]
+    assert fields["fir_number"] == "0380"
+    assert fields["district"] == "KURUKSHETRA"
+    assert fields["police_station"] == "SHAHABAD"
+    assert fields["year"] == "2017"
+    assert fields["registration_date"] == "24/07/2017"
+    assert fields["registration_time"] == "16:43 hrs"
+    assert fields["ipc_sections"] == ["IPC 380", "IPC 457"]
+    assert fields["type_of_information"] == "Written"
+
+    assert "HARYANA POLICE CITIZEN SERVICES (हरियाणा पुलिस नागरिक सेवा)" in text
+    # The statute number, read by the English pass once the Hindi around it
+    # is masked — the old Paddle Hindi pass read it as "15४".
+    assert "(धारा 154 दंड प्रक्रिया सहिंता के तहत)" in text
+    assert "P.S. (थाना): SHAHABAD" in text
+    assert "Year (वर्ष): 2017" in text, "a low-confidence bracketed gloss is kept, not left as a gap"
+    assert "Occurrence of offence" in text
+
+
+def test_bracketed_glosses_are_kept_at_a_lower_confidence():
+    words = [
+        {"text": "थाना", "confidence": 0.9, "box": [0, 0, 10, 10]},
+        {"text": "(वर्ष):", "confidence": 0.28, "box": [0, 0, 10, 10]},
+        {"text": "वर्ष", "confidence": 0.28, "box": [0, 0, 10, 10]},   # no bracket: not enough
+        {"text": "(ज़िला):", "confidence": 0.1, "box": [0, 0, 10, 10]},  # below even the gloss bar
+        {"text": "#88१%8॥4&", "confidence": 0.9, "box": [0, 0, 10, 10]},  # not a Devanagari word
+    ]
+    trusted, glosses = layout_mod.select_devanagari_words(words)
+    assert [w["text"] for w in trusted] == ["थाना"]
+    assert [w["text"] for w in glosses] == ["(वर्ष):"]
+
+
+def _hindi_words(n):
+    return [{"text": "थाना", "confidence": 0.9, "box": [10 * i, 0, 10 * i + 8, 10], "lang": "hi_tesseract"} for i in range(n)]
+
+
+def test_hindi_page_is_masked_before_the_english_pass(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ocr_worker, "preprocess_image_bytes", lambda b: b)
+    monkeypatch.setattr(ocr_worker, "run_tesseract_devanagari", lambda b: _hindi_words(12))
+    monkeypatch.setattr(ocr_worker, "mask_regions", lambda b, boxes: seen.setdefault("masked", len(boxes)) and b"MASKED")
+    monkeypatch.setattr(ocr_worker, "run_paddle_ocr", lambda b: seen.setdefault("paddle_input", b) and [
+        {"text": "P.S.", "confidence": 0.99, "box": [200, 0, 240, 10], "lang": "en"}])
+
+    res = ocr_worker.run_ocr_on_document_bytes(b"PAGE", "test")
+
+    assert seen["masked"] == 12
+    assert seen["paddle_input"] == b"MASKED"
+    assert res["engine_used"] == "paddleocr+tesseract_hin"
+    assert "थाना" in res["reconstructed_text"] and "P.S." in res["reconstructed_text"]
+
+
+def test_english_page_is_read_unmasked_and_unfused(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ocr_worker, "preprocess_image_bytes", lambda b: b)
+    monkeypatch.setattr(ocr_worker, "run_tesseract_devanagari", lambda b: _hindi_words(6))
+    monkeypatch.setattr(ocr_worker, "mask_regions", lambda b, boxes: pytest.fail("English page was masked"))
+    monkeypatch.setattr(ocr_worker, "run_paddle_ocr", lambda b: seen.setdefault("paddle_input", b) and [
+        {"text": "FIR NO: 035008", "confidence": 0.99, "box": [200, 0, 400, 10], "lang": "en"}])
+
+    res = ocr_worker.run_ocr_on_document_bytes(b"PAGE", "test")
+
+    assert seen["paddle_input"] == b"PAGE"
+    assert res["engine_used"] == "paddleocr"
+    assert "थाना" not in res["reconstructed_text"]
