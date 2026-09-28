@@ -9,7 +9,7 @@ import io
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 from uuid import UUID
 
 # Adjust sys.path to locate api/app as a package
@@ -82,7 +82,7 @@ def _is_pdf(data: bytes) -> bool:
     return bool(data) and data[:5] == b"%PDF-"
 
 
-def pdf_bytes_to_page_images(pdf_bytes: bytes, dpi: int = 200) -> List[bytes]:
+def iter_pdf_page_images(pdf_bytes: bytes, dpi: int = 200) -> Iterator[bytes]:
     """Rasterizes each page of a PDF to PNG bytes via PyMuPDF — no external
     binary dependency (unlike pdf2image, which needs poppler installed
     separately), just a pip package. Confirmed live: a real submitted FIR
@@ -90,19 +90,20 @@ def pdf_bytes_to_page_images(pdf_bytes: bytes, dpi: int = 200) -> List[bytes]:
     returns None on non-raster bytes, so preprocessing was skipped
     unnoticed) and then failed both OCR engines outright, since neither
     PaddleOCR nor Tesseract reads a raw PDF as an image — every real PDF
-    upload was quietly failing OCR entirely, not just running degraded."""
+    upload was quietly failing OCR entirely, not just running degraded.
+
+    A generator: each page is rasterized only when the OCR loop reaches it,
+    so one page image is held at a time instead of all of them (up to
+    MAX_PDF_PAGES PNGs of a 200 dpi scan) for the whole job."""
     if not _HAS_PYMUPDF:
         raise RuntimeError("PyMuPDF not installed — cannot rasterize PDF pages for OCR")
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
-        images = []
         for i, page in enumerate(doc):
             if i >= MAX_PDF_PAGES:
                 logger.warning(f"PDF has more than {MAX_PDF_PAGES} pages — truncating OCR to the first {MAX_PDF_PAGES}")
                 break
-            pix = page.get_pixmap(dpi=dpi)
-            images.append(pix.tobytes("png"))
-        return images
+            yield page.get_pixmap(dpi=dpi).tobytes("png")
     finally:
         doc.close()
 
@@ -167,7 +168,8 @@ def run_ocr_on_document_bytes(data: bytes, log_label: str) -> Dict[str, Any]:
                 "page_count": page_count,
             }
 
-    page_images = pdf_bytes_to_page_images(data) if _is_pdf(data) else [data]
+    page_images = iter_pdf_page_images(data) if _is_pdf(data) else iter([data])
+    page_count = 0
 
     page_texts: List[str] = []
     row_count = 0
@@ -176,6 +178,7 @@ def run_ocr_on_document_bytes(data: bytes, log_label: str) -> Dict[str, Any]:
     engine_used = "paddleocr"
 
     for page_bytes in page_images:
+        page_count += 1
         processed_bytes = preprocess_image_bytes(page_bytes)
 
         # Tesseract's `hin` pass runs first, on every page. It is cheap (1-5 s,
@@ -228,7 +231,7 @@ def run_ocr_on_document_bytes(data: bytes, log_label: str) -> Dict[str, Any]:
         "token_count": token_count,
         "template": first_layout["template"] if first_layout else "unknown",
         "fields": first_layout["fields"] if first_layout else {},
-        "page_count": len(page_images),
+        "page_count": page_count,
     }
 
 
