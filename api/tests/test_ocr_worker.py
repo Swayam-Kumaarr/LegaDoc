@@ -748,3 +748,90 @@ def test_sections_are_read_per_line_and_per_act():
     # A number printed before the Act name is not one of its sections; the
     # Section/s heading fallback still catches it.
     assert sections(["धाराएं: 379, 411 भा.दं.सं."]) == ["379"]
+
+
+# --- Bounded recognition: wide line crops are recognized in pieces ---------
+#
+# PaddleOCR's recognizer memory grows with a crop's width and is never given
+# back; the full-width lines of a dense FIR drove one OCR job to 4.9 GB. These
+# pin the cut planning and the merge; the memory effect itself is measured
+# with scripts/ocr_mem_probe.py (see _MAX_REC_RATIO in worker.py).
+
+def _ink_line(words, height=10, space=6, letter_gap=1, letter=4):
+    """Per-column ink counts for a line of words: letters `letter` columns
+    wide separated by `letter_gap` blank columns, words by `space`."""
+    ink = [0, 0]
+    for n in words:
+        for i in range(n):
+            ink += [height] * letter + ([0] * letter_gap if i < n - 1 else [])
+        ink += [0] * space
+    return ink[:-space] + [0, 0]
+
+
+def _pieces(width, cuts):
+    edges = [0] + [c for c, _ in cuts] + [width]
+    return [b - a for a, b in zip(edges, edges[1:])]
+
+
+def test_a_line_within_the_bound_is_not_cut():
+    ink = _ink_line([5, 5])
+    assert len(ink) < 14 * 10
+    assert ocr_worker.plan_line_cuts(ink, ink, 10, 14) == []
+
+
+def test_a_wide_line_is_cut_only_between_words_and_every_piece_is_bounded():
+    ink = _ink_line([6] * 20)                       # ~20 words, far wider than 14x
+    cuts = ocr_worker.plan_line_cuts(ink, ink, 10, 14)
+    assert cuts
+    assert all(w <= 14 * 10 for w in _pieces(len(ink), cuts))
+    for cut, gap in cuts:
+        assert ink[cut] == 0
+        assert gap == 6, "cut in a 1 px letter gap instead of a word gap"
+
+
+def test_an_underlined_heading_is_still_cut_at_its_word_gaps():
+    """The rule under a heading touches every column, so the full-height ink
+    has no gap; the middle band still shows the spaces between words."""
+    band = _ink_line([6] * 20)
+    full = [v + 1 for v in band]                   # the underline
+    cuts = ocr_worker.plan_line_cuts(band, full, 10, 14)
+    assert cuts and all(gap == 6 for _, gap in cuts)
+
+
+def test_a_line_with_no_gap_is_still_bounded():
+    """No blank column at all (e.g. a long unbroken identifier): the cut falls
+    on the emptiest column, flagged gap 0 so no space is inserted on rejoin."""
+    ink = [5] * 400
+    ink[200] = 1
+    cuts = ocr_worker.plan_line_cuts(ink, ink, 10, 14)
+    assert cuts and all(gap == 0 for _, gap in cuts)
+    assert all(w <= 14 * 10 for w in _pieces(len(ink), cuts))
+
+
+class _Crop:
+    def __init__(self, width):
+        self.shape = (10, width, 3)
+
+
+def test_bounded_recognizer_merges_pieces_back_into_one_reading(monkeypatch):
+    narrow, wide = _Crop(50), _Crop(900)
+    parts = {id(wide): [(_Crop(300), ""), (_Crop(300), " "), (_Crop(300), "")]}
+    monkeypatch.setattr(ocr_worker, "split_wide_crop", lambda c: parts.get(id(c), [(c, "")]))
+
+    readings = iter([("Time :", 0.99), ("Registered", 0.9), ("the case", 0.6), ("1124", 0.3)])
+    calls = []
+
+    def recognizer(crops):
+        calls.append(len(crops))
+        return [next(readings) for _ in crops], 0.1
+
+    merged, elapse = ocr_worker._BoundedRecognizer(recognizer)([narrow, wide])
+
+    assert calls == [4], "all pieces go to the model in one call"
+    assert merged[0] == ("Time :", 0.99), "a narrow line is passed through untouched"
+    text, score = merged[1]
+    # " " only where the cut was at a space-sized gap; "" keeps "the case1124"
+    # together the way an identifier cut mid-token must be.
+    assert text == "Registered the case1124"
+    assert score == pytest.approx((0.9 + 0.6 + 0.3) / 3)
+    assert elapse == 0.1

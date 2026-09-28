@@ -276,6 +276,135 @@ _OCR_CPU_THREADS = int(os.environ.get("OCR_CPU_THREADS", "2"))
 _OCR_REC_BATCH_NUM = int(os.environ.get("OCR_REC_BATCH_NUM", "1"))
 
 
+# Widest line crop, as width/height, handed to the recognizer in one piece.
+# The PP-OCR recognizers resize every crop to a fixed 48 px height and keep
+# its aspect ratio, and their memory grows with the resulting width and is
+# never returned. Measured on the Delhi FIR (768x1024, English pass alone):
+# crops up to ~320 px wide add nothing over detection, but the full-width
+# form lines (ratio 20-53, 1,000-2,500 px) take the process from 733 MiB to
+# 1,846 MiB — they, not the page size or the number of lines, set the peak.
+#
+# 14 is measured, not picked. The whole OCR job (both Paddle passes and
+# Tesseract) peaked at 1,213 MiB on the Haryana FIR and 1,235 MiB on Delhi,
+# against 2,717 and 4,911 before, with every extracted field unchanged. 10
+# held both near 1,050 MiB but cut often enough to split the transliterated
+# Hindi glosses issue #107 relies on finding in one piece, and a header's
+# Latin junk and `type_of_information` came back. 18 kept the text but let
+# Delhi back up to 1,527 MiB.
+_MAX_REC_RATIO = float(os.environ.get("OCR_MAX_REC_RATIO", "14"))
+
+
+def _blank_runs(ink: List[int]) -> List[tuple]:
+    """(start, end) runs of columns whose ink count is zero."""
+    runs, start = [], None
+    for x, v in enumerate(ink):
+        if v == 0 and start is None:
+            start = x
+        elif v != 0 and start is not None:
+            runs.append((start, x))
+            start = None
+    return runs
+
+
+def plan_line_cuts(band_ink: List[int], full_ink: List[int], height: int, max_ratio: float) -> List[tuple]:
+    """Where to cut a line crop so no piece is wider than max_ratio * height.
+
+    band_ink / full_ink are per-column counts of ink pixels, over the middle
+    band of rows and over the whole height. Returns [(column, gap_width)].
+
+    Each cut goes in the widest ink-free gap of its window, read from the
+    middle band so an underlined heading, whose rule touches every column,
+    still shows the gaps between its words. That is the space between words,
+    not the 1-2 px between letters. gap_width is 0 when a window has no gap
+    at all and the cut falls on its emptiest column instead — the bound on
+    piece width is what keeps memory flat, so it always holds.
+    """
+    w = len(full_ink)
+    limit = max_ratio * height
+    if height <= 0 or w <= limit:
+        return []
+    runs = [(a, b) for a, b in _blank_runs(band_ink) if a > 0 and b < w]
+    cuts, x = [], 0
+    while w - x > limit:
+        lo, hi = x + 2 * height, x + limit
+        window = [(a, b) for a, b in runs if lo < (a + b) / 2 <= hi]
+        if window:
+            a, b = max(window, key=lambda r: (r[1] - r[0], r[0]))
+            cut, gap = (a + b) // 2, b - a
+        else:
+            lo_i, hi_i = int(lo), int(hi)
+            span = full_ink[lo_i:hi_i]
+            cut, gap = lo_i + span.index(min(span)), 0
+        cuts.append((cut, gap))
+        x = cut
+    return cuts
+
+
+def split_wide_crop(crop) -> List[tuple]:
+    """Splits a line crop wider than _MAX_REC_RATIO into pieces for the
+    recognizer; returns [(piece, joiner)], joiner being the text that goes
+    before that piece's reading when the line is put back together.
+
+    A piece is joined back with a space only when it was cut at a
+    space-sized gap, so an identifier with no spaces ("DL3SDF1124",
+    "JF32AAFG037425") that had to be cut comes back without one.
+    """
+    h, w = crop.shape[:2]
+    if h <= 0 or w <= _MAX_REC_RATIO * h:
+        return [(crop, "")]
+    gray = crop.mean(axis=2) if crop.ndim == 3 else crop
+    dark = gray < 128
+    band = dark[int(0.15 * h): max(int(0.85 * h), int(0.15 * h) + 1)]
+    cuts = plan_line_cuts(band.sum(axis=0).tolist(), dark.sum(axis=0).tolist(), h, _MAX_REC_RATIO)
+
+    pieces, x, joiner = [], 0, ""
+    for cut, gap in cuts:
+        pieces.append((crop[:, x:cut], joiner))
+        joiner = " " if gap >= 0.25 * h else ""
+        x = cut
+    pieces.append((crop[:, x:], joiner))
+    return pieces
+
+
+class _BoundedRecognizer:
+    """Wraps a PaddleOCR engine's text recognizer so no crop wider than
+    _MAX_REC_RATIO reaches the model (see _MAX_REC_RATIO).
+
+    Everything else in the engine — detection, rotated cropping, the angle
+    classifier, reading order, the drop-score filter, the result format — is
+    PaddleOCR's own, so a line narrower than the bound is recognized exactly
+    as before. A wider one is recognized piece by piece and returned as one
+    reading, scored by the pieces' width-weighted confidence.
+    """
+
+    def __init__(self, recognizer):
+        self._recognizer = recognizer
+
+    def __call__(self, img_crop_list):
+        plan, flat = [], []
+        for crop in img_crop_list:
+            pieces = split_wide_crop(crop)
+            plan.append([(len(flat) + i, joiner, piece.shape[1]) for i, (piece, joiner) in enumerate(pieces)])
+            flat.extend(piece for piece, _ in pieces)
+
+        results, elapse = self._recognizer(flat)
+
+        merged = []
+        for parts in plan:
+            if len(parts) == 1:
+                merged.append(results[parts[0][0]])
+                continue
+            text, weighted, width = "", 0.0, 0
+            for idx, joiner, piece_w in parts:
+                piece_text, score = results[idx][0], float(results[idx][1])
+                if piece_text.strip():
+                    text += (joiner if text else "") + piece_text.strip()
+                weighted += score * piece_w
+                width += piece_w
+            merged.append((text, weighted / width if width else 0.0))
+        return merged, elapse
+
+
 def get_paddle_ocr_engines():
     """Initializes and caches PaddleOCR engines for English and Hindi.
     Explicitly loads and validates Hindi language model (PP-OCR Devanagari) to prevent
@@ -295,11 +424,13 @@ def get_paddle_ocr_engines():
     if _OCR_EN is None:
         logger.info("Initializing PaddleOCR English model (lang='en')...")
         _OCR_EN = PaddleOCR(lang="en", **engine_kwargs)
+        _OCR_EN.text_recognizer = _BoundedRecognizer(_OCR_EN.text_recognizer)
 
     if _OCR_HI is None:
         logger.info("Initializing PaddleOCR Hindi model (lang='hi')...")
         try:
             _OCR_HI = PaddleOCR(lang="hi", **engine_kwargs)
+            _OCR_HI.text_recognizer = _BoundedRecognizer(_OCR_HI.text_recognizer)
         except Exception as exc:
             logger.error(f"Failed to load PaddleOCR Hindi language pack: {exc}")
             raise RuntimeError(f"PaddleOCR Hindi language pack failed to initialize: {exc}")

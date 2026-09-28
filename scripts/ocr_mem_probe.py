@@ -41,6 +41,15 @@ preprocessing upscale. Confirmed not configurable away: det_limit_side_len
 FLAGS_fraction_of_cpu_memory_to_use=0.1 each moved it by under 5%. Note the
 peak also drifts up as the cap does (4,793 at 5 GB, 4,911 at 6.5 GB), so read
 it as "needs roughly this much", not as a hard floor.
+
+What actually sets that peak is the widest line crops, not the region count:
+the recognizer's memory grows with a crop's width and is not returned, and
+dense forms are full of full-width lines. worker.py now recognizes any crop
+wider than OCR_MAX_REC_RATIO (14) x its height in pieces cut at word gaps.
+Same arm64 Mac, same 2.2 GB cap, pipeline mode, main vs that change:
+  haryana_fir.jpg   1,599 -> 1,376 MiB   (fields unchanged)
+  delhi_fir.webp    OOM   -> 1,421 MiB   (fields unchanged)
+Re-measure on x86_64 before lowering the mem_limits above.
 """
 
 import json
