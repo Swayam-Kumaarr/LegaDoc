@@ -313,7 +313,7 @@ export default function PlatformAdmin() {
         </div>
 
         <div className="domain-notice">
-          <strong>Security Standard (Audit Section 1.6 & 5.0):</strong> Only authorized administrators with{' '}
+          <strong>Access control:</strong> Only authorized administrators with{' '}
           <code>admin:roles_manage</code> clearance can modify roles or assign permissions. Normal users cannot elevate
           their own privileges. All assignment changes and administrative actions are logged to the immutable SHA-256 hash chain.
         </div>

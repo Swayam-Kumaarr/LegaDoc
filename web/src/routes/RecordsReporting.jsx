@@ -131,9 +131,13 @@ export default function RecordsReporting() {
         </div>
 
         <div className="domain-notice">
-          <strong>Domain 7 Architecture Guarantee:</strong> Every case token below is a real
-          SHA-256 digest of that case's identifier, computed in your browser — there is no
-          reverse mapping back to the case without already holding that identifier.
+          {/* This claimed there was "no reverse mapping back to the case". The
+              endpoint returns each case's number and the table shows it in the
+              next column, so the token hides nothing; it is a stable key for
+              joining records, which is what it is described as now. */}
+          <strong>How case tokens work:</strong> each case token is a SHA-256 digest of
+          the case's internal ID, computed in your browser. It gives every record a
+          stable key for analysis; the case number is shown alongside it.
         </div>
 
         {/* The failure is stated where it happens. This page is reachable by
@@ -161,7 +165,7 @@ export default function RecordsReporting() {
               {error ? '—' : `${meanDuration} Days`}
             </span>
             <span className="stat-label">Mean Investigation Duration</span>
-            <span className="stat-sub">BNSS § 193 60/90 day statutory window</span>
+            <span className="stat-sub">Average days since registration</span>
           </div>
         </div>
 
@@ -354,7 +358,17 @@ export default function RecordsReporting() {
               </div>
 
               <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '14px', marginTop: '16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                <strong>Statutory Compliance:</strong> This record satisfies Section 43A IT Act & Digital Personal Data Protection (DPDP) Act 2023. Real FIR numbers, victim identities, and investigating officer details are omitted by construction — never fetched by this view in the first place.
+                {/* Removed two claims. "This record satisfies Section 43A IT Act &
+                    DPDP Act 2023" is a compliance finding nobody here is in a
+                    position to make. "Real FIR numbers … are omitted by
+                    construction — never fetched by this view" was false: the
+                    endpoint returns case_number, this table displays it, and the
+                    CSV export includes it. What follows is what the schema
+                    actually guarantees. */}
+                <strong>What this dataset contains:</strong> crime type, investigation and
+                bail status, court level, registration date and case number. Complainant
+                names, victim identities, witness contacts and document text are not part
+                of it and are never sent to this page.
               </div>
             </div>
           </div>

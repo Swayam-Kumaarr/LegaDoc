@@ -156,7 +156,7 @@ export default function DocumentViewer() {
               <h2 className="text-heading" style={{ fontSize: '15px' }}>
                 Sanitized Evidentiary Document
               </h2>
-              <span className="text-caption">Section 65B Certified Output</span>
+              <span className="text-caption">Redacted for your role</span>
             </div>
 
             {doc.text ? (
