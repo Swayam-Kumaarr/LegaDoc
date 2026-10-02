@@ -17,9 +17,9 @@ WORKDIR /worker
 #     binary that was never apt-installed, so the fallback engine failed
 #     too, with BOTH engines down every real (non-mocked) OCR job silently
 #     degraded to needs_review.
-#   - tesseract-ocr-hin: worker.py runs a bilingual (en+hi) PaddleOCR pass
-#     and falls back to Tesseract for either — without the Hindi language
-#     pack, the Tesseract fallback silently can't read Hindi/Devanagari text.
+#   - tesseract-ocr-hin: Tesseract's `hin` model reads every page's Hindi
+#     (worker.run_tesseract_devanagari, #129) and the fallback engine reads
+#     hin+eng — without it no Devanagari is read at all.
 #   - libglib2.0-0/libsm6/libxext6/libxrender1: opencv-python-headless's
 #     other common missing-.so list on a slim base — added preemptively.
 # Installed BEFORE pip so the model-preload step below can actually import
@@ -48,7 +48,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && pip uninstall -y opencv-python opencv-contrib-python \
     && pip install --no-deps --force-reinstall opencv-python-headless==4.11.0.86
 
-# Pre-download and cache PaddleOCR English and Hindi models at build time
+# Pre-download and cache the PaddleOCR models the worker uses at build time
 # (Issue #37) — without this, the first real OCR request in a fresh
 # container pays the full model-download cost inline (confirmed live: ~80s
 # on first use) instead of at build time where it belongs.
@@ -66,6 +66,11 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 #
 # The synthetic image needs actual glyphs: detection must find a box for the
 # recognizer to be invoked at all, and a blank canvas would find none.
+#
+# English only, no angle classifier — exactly what worker.get_paddle_ocr_engine
+# builds. Since #129 the Hindi model is never loaded (Devanagari comes from
+# Tesseract) and the classifier is off, so baking either only added download
+# time and image size.
 RUN python -c "\
 import numpy as np;\
 from PIL import Image, ImageDraw;\
@@ -73,7 +78,7 @@ from paddleocr import PaddleOCR;\
 _img = Image.new('RGB', (320, 96), 'white');\
 ImageDraw.Draw(_img).text((12, 36), 'Test 123', fill='black');\
 _arr = np.array(_img);\
-[PaddleOCR(use_angle_cls=True, lang=_l, show_log=False).ocr(_arr, cls=True) for _l in ('en', 'hi')]"
+PaddleOCR(use_angle_cls=False, lang='en', show_log=False).ocr(_arr, cls=False)"
 
 COPY workers/ocr_worker/worker.py .
 # worker.py imports this as a bare module (`from layout_reconstruction
