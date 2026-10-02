@@ -6,6 +6,9 @@ else; the row_hash chain is only correct if every write goes through here.
 
 import hashlib
 import json
+import os
+import threading
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -135,6 +138,78 @@ def verify_chain_intact(db: Session) -> bool:
             return False
         prev_hash = row.row_hash
     return True
+
+
+def _row_hash_ok(row, prev_hash) -> bool:
+    content = _row_content(row.case_id, row.actor_user_id, row.action, row.target_type, row.target_id, row.action_metadata, row.created_at)
+    expected = hashlib.sha256(f"{prev_hash}|{content}".encode("utf-8")).hexdigest()
+    return expected == row.row_hash and row.prev_hash == prev_hash
+
+
+# How long the incremental check (chain_intact_for_request) may go without a
+# full walk. Between full walks it re-verifies the last row it vouched for and
+# every row written since, so tampering with anything recent is still caught
+# on the next request; an edit to an older row is caught by the next full walk
+# — within this many seconds — and at once by verify_chain_intact, which the
+# Config Admin chain-integrity endpoint still runs in full.
+AUDIT_FULL_VERIFY_SECONDS = float(os.environ.get("AUDIT_FULL_VERIFY_SECONDS", "300"))
+
+_checkpoint_lock = threading.Lock()
+_checkpoint = {"seq": None, "row_hash": None, "full_at": 0.0}
+
+
+def _full_walk(db: Session):
+    """Full verification; returns (intact, last_seq, last_row_hash)."""
+    prev_hash, last_seq = None, None
+    for row in _chain_in_order(db):
+        if not _row_hash_ok(row, prev_hash):
+            return False, None, None
+        prev_hash, last_seq = row.row_hash, row.seq
+    return True, last_seq, prev_hash
+
+
+def chain_intact_for_request(db: Session) -> bool:
+    """The chain_status shown with every GET /cases/:id/audit-log.
+
+    verify_chain_intact re-hashes the entire audit log, so a request path
+    calling it slowed down with the life of the system: 6 s at 300k rows.
+    This keeps a checkpoint — the last row a check vouched for — and on each
+    call verifies only that row and the rows after it, with a full walk at
+    least every AUDIT_FULL_VERIFY_SECONDS. See that constant for what it
+    trades. A failed check never moves the checkpoint, so once broken it
+    stays reported broken.
+    """
+    with _checkpoint_lock:
+        if _checkpoint["seq"] is None or time.monotonic() - _checkpoint["full_at"] >= AUDIT_FULL_VERIFY_SECONDS:
+            intact, last_seq, last_hash = _full_walk(db)
+            if intact:
+                _checkpoint.update(seq=last_seq, row_hash=last_hash, full_at=time.monotonic())
+            return intact
+
+        anchor = db.query(models.AuditLog).filter(models.AuditLog.seq == _checkpoint["seq"]).one_or_none()
+        if anchor is None or anchor.row_hash != _checkpoint["row_hash"] or not _row_hash_ok(anchor, anchor.prev_hash):
+            return False
+        prev_hash, expected_seq = anchor.row_hash, anchor.seq + 1
+        result = db.execute(
+            select(models.AuditLog).where(models.AuditLog.seq > anchor.seq)
+            .order_by(models.AuditLog.seq.asc()).execution_options(yield_per=_CHAIN_BATCH_ROWS)
+        ).scalars()
+        try:
+            for row in result:
+                if row.seq != expected_seq or not _row_hash_ok(row, prev_hash):
+                    return False
+                prev_hash, expected_seq = row.row_hash, expected_seq + 1
+        finally:
+            result.close()
+        _checkpoint.update(seq=expected_seq - 1, row_hash=prev_hash)
+        return True
+
+
+def _reset_chain_checkpoint() -> None:
+    """Forget the checkpoint, forcing the next request check to walk in full.
+    For tests, and for anything that rewrites audit_log wholesale."""
+    with _checkpoint_lock:
+        _checkpoint.update(seq=None, row_hash=None, full_at=0.0)
 
 
 def verify_case_chain_integrity(db: Session, case_id) -> dict:

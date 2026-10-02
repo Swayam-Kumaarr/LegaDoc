@@ -40,7 +40,10 @@ TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=TEST_ENG
 @pytest.fixture(autouse=True)
 def _fresh_schema():
     """Recreate every table before each test — cheap at this data size, and
-    it means no test can leak state into another."""
+    it means no test can leak state into another. That includes the audit
+    chain checkpoint, which remembers rows of a schema about to be dropped."""
+    from app.audit import _reset_chain_checkpoint
+    _reset_chain_checkpoint()
     Base.metadata.create_all(bind=TEST_ENGINE)
     yield
     Base.metadata.drop_all(bind=TEST_ENGINE)
