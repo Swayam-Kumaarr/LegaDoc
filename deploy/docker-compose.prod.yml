@@ -55,24 +55,21 @@ services:
       - OMP_NUM_THREADS=2
       - MALLOC_ARENA_MAX=2
     # Sized from scripts/ocr_mem_probe.py in `pipeline` mode — the real entry
-    # point, both Paddle models plus the Tesseract Devanagari pass — on the two
-    # committed FIR scans, cpu_threads=2 and rec_batch_num=1:
+    # point — on the two committed FIR scans, x86_64, cpu_threads=2, measured
+    # under the cap itself rather than estimated from an uncapped run:
     #
-    #   haryana_fir.jpg (bilingual, ~150 regions)  2,717 MiB
-    #   delhi_fir.webp  (English,   ~470 regions)  4,911 MiB
+    #   haryana_fir.jpg (bilingual)  1,651 MiB   5 s
+    #   delhi_fir.webp  (English)    2,393 MiB  12 s   — completes at 3,000 MB
     #
-    # Peak tracks how many text regions the page has, not its file size: the
-    # dense Delhi form costs nearly twice the Haryana one. The earlier 2,500 MB
-    # cap came from a 1,707 MiB measurement that predates both the second
-    # Paddle pass and the Devanagari pass, and would OOM-kill this worker on
-    # either scan above — mid-job, leaving the document stuck at "processing"
-    # with no error surfaced to the officer who uploaded it.
+    # Down from 4,911 MiB on the Delhi page: #129 recognises wide line crops
+    # in pieces, and recogniser memory had been tracking the width of the
+    # widest crop. That is also what made the 1920px preprocessing target
+    # affordable — the same upscale on the old recogniser reached 5,800 MiB.
     #
-    # Confirmed not fixable by configuration: det_limit_side_len 960/736,
-    # skipping the 1.5x preprocessing upscale, FLAGS_allocator_strategy=
-    # auto_growth and FLAGS_fraction_of_cpu_memory_to_use=0.1 each moved the
-    # peak by under 5%. Raising OCR_CPU_THREADS needs this cap raised with it.
-    mem_limit: 5500m
+    # 3,500 MB leaves about 1.1 GB of headroom over the measured peak, which
+    # varies by ~100 MiB between runs. Raising OCR_CPU_THREADS or
+    # OCR_MAX_REC_RATIO needs this cap raised with it.
+    mem_limit: 3500m
     stop_grace_period: 120s
     command: ["celery", "-A", "worker", "worker", "--loglevel=info", "-Q", "ocr_worker", "--pool=solo", "--prefetch-multiplier=1"]
     restart: unless-stopped

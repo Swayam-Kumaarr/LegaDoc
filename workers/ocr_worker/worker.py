@@ -235,6 +235,32 @@ def run_ocr_on_document_bytes(data: bytes, log_label: str) -> Dict[str, Any]:
     }
 
 
+def upscale_factor(width: int) -> float:
+    """How much to enlarge a scan of this width before OCR; 1.0 means leave it.
+
+    This was a flat 1.5x, which leaves the small print on a typical 768px
+    phone scan too small to read. On the Delhi FIR fixture it read the FIR
+    number itself wrong — 035009 against the 035008 printed on the page —
+    and missed the district and the BNS section entirely. Scaling to a 1920px
+    target (2.5x for 768px) reads all three correctly.
+
+    This only became affordable with #129. Before it, recogniser memory
+    tracked the width of the widest line crop, so the larger image took the
+    dense Delhi page from 4.9 GB to 5.8 GB. With wide crops recognised in
+    pieces, the same page at 2.5x peaks at 2.3 GB on x86 — lower than 1.5x
+    on main.
+
+    A target width rather than a fixed factor, so a 1100px scan is not blown
+    up by the same 2.5x. The set of images that get upscaled at all is the
+    same as before (narrower than 1200px). Kept separate from
+    preprocess_image_bytes so the rule is testable without OpenCV, which the
+    API's test environment does not install.
+    """
+    if width <= 0 or width >= 1200:
+        return 1.0
+    return min(_OCR_TARGET_WIDTH / width, _OCR_MAX_UPSCALE)
+
+
 def preprocess_image_bytes(image_bytes: bytes) -> bytes:
     """Enhances scanned document image for OCR:
     - Grayscale conversion
@@ -252,8 +278,8 @@ def preprocess_image_bytes(image_bytes: bytes) -> bytes:
 
         # Resize 1.5x if resolution is low
         h, w = img.shape[:2]
-        if w < 1200:
-            scale = 1.5
+        scale = upscale_factor(w)
+        if scale > 1.0:
             img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -287,6 +313,9 @@ _OCR_EN = None
 # SIGKILLed this worker on 8 GB machines. Override per deployment if a larger
 # VM should trade memory for speed.
 _OCR_CPU_THREADS = int(os.environ.get("OCR_CPU_THREADS", "2"))
+# See upscale_factor. A 768px scan becomes 1920px; nothing is enlarged past 3x.
+_OCR_TARGET_WIDTH = int(os.environ.get("OCR_TARGET_WIDTH", "1920"))
+_OCR_MAX_UPSCALE = float(os.environ.get("OCR_MAX_UPSCALE", "3.0"))
 _OCR_REC_BATCH_NUM = int(os.environ.get("OCR_REC_BATCH_NUM", "1"))
 
 

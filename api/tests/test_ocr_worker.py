@@ -925,3 +925,23 @@ def test_english_page_is_read_unmasked_and_unfused(monkeypatch):
     assert seen["paddle_input"] == b"PAGE"
     assert res["engine_used"] == "paddleocr"
     assert "थाना" not in res["reconstructed_text"]
+
+
+def test_small_scans_are_upscaled_to_the_target_width():
+    """A flat 1.5x left the small print on a 768px phone scan too small to
+    read: the Delhi FIR's own number came out as 035009 against the 035008
+    printed on it, and its district and BNS section were missed. A 1920px
+    target reads all three. The set of images upscaled at all is unchanged —
+    anything 1200px or wider is left alone.
+
+    Tested as a pure function because the API's test image does not install
+    OpenCV, so a test that decoded an image would never run in CI."""
+    def width_after(width):
+        return round(width * ocr_worker.upscale_factor(width))
+
+    assert ocr_worker.upscale_factor(768) == 2.5   # the factor that was measured
+    assert width_after(768) == 1920
+    assert width_after(1100) == 1920               # a larger scan gets less than 2.5x
+    assert ocr_worker.upscale_factor(1200) == 1.0  # same eligibility boundary as before
+    assert ocr_worker.upscale_factor(1300) == 1.0
+    assert width_after(400) == 1200                # capped at 3x, not blown up to 1920
