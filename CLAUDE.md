@@ -91,10 +91,13 @@ role to the case set silently granted it every witness name, phone number and
 address in the system, with nothing at the call site to review.
 
 A **Duty Officer** may read the FIRs it registered and nothing else. That link is
-the `fir_registered` audit-log row, since `Case` has no org or registrant column.
-Match that string exactly — `assert_case_access` and `list_cases` both filter on
-it, so a near-miss like `register_fir` silently returns no cases rather than
-failing loudly.
+`cases.registered_by_user_id`, stamped by `register_fir` and backfilled by
+`005_case_owning_org.sql`; both `assert_case_access` and `list_cases` use
+`security.registered_by()`. For a case the migration could not attribute (column
+still NULL) it falls back to the `fir_registered` audit row, matched exactly, so
+no officer gained or lost a case in the move (issue #74). Access is per officer,
+not per station: widening it to "the station's FIRs" is the open policy question
+on #74.
 It is deliberately not a `CaseAssignment` row: that table means "the current IO
 for this case", and `reassign_io` deletes every row for a case when the IO
 changes. Duty Officer reads those documents **redacted**.
@@ -193,8 +196,8 @@ curl -X POST http://localhost:8000/documents/<doc_id>/retry-chain-write   -H "Au
 
 `005_case_owning_org.sql` backfills `cases.org_id` and
 `registered_by_user_id` itself, from each case's `fir_registered` audit row.
-Nothing enforces access on those columns yet (issue #74) — the Duty Officer
-rule above still reads the audit row.
+The Duty Officer rule above reads `registered_by_user_id`; `cases.org_id` is
+not yet used for access (issue #74).
 
 ---
 

@@ -29,6 +29,7 @@ from app.security import (
     FULL_TEXT_ACCESS_ROLES,
     assert_case_access,
     get_current_claims,
+    registered_by,
     require_role,
     verify_case_access,
 )
@@ -174,17 +175,7 @@ def list_cases(claims: dict = Depends(get_current_claims), db: Session = Depends
             )
 
     if role == "duty_officer":
-        user_id = UUID(claims["sub"])
-        return (
-            db.query(models.Case)
-            .join(models.AuditLog, models.AuditLog.case_id == models.Case.id)
-            .filter(
-                models.AuditLog.actor_user_id == user_id,
-                models.AuditLog.action == "fir_registered",
-            )
-            .distinct()
-            .all()
-        )
+        return db.query(models.Case).filter(registered_by(UUID(claims["sub"]))).all()
 
     if role == EXTERNAL_AUTHORITY_ROLE:
         # The only case link an external organization has is a requisition

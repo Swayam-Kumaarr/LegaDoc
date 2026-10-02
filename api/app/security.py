@@ -18,6 +18,7 @@ import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from jose import JWTError, jwt
+from sqlalchemy import and_, exists, or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -315,6 +316,34 @@ _POLICE_SPECIALIST_ROLES = {
 FULL_TEXT_ACCESS_ROLES = {"config_admin", "security_auditor", "court", "prosecutor", "sho", "io"}
 
 
+def registered_by(user_id: UUID):
+    """SQL condition: the case was registered by this user — the whole of a
+    Duty Officer's case access (see assert_case_access and list_cases).
+
+    The case's own registered_by_user_id is the record (issue #74; written
+    by register_fir and backfilled by 005_case_owning_org.sql). The
+    fir_registered audit row is consulted only for a case where that column
+    is still NULL — one migration 005 could not attribute — so no officer
+    gains or loses a case in the move. A case whose column names someone
+    else is not theirs, whatever the audit log says.
+
+    Deliberately not station-wide: "a Duty Officer reads their station's
+    FIRs" is the policy #74 asks about, and it widens access, so it waits on
+    a decision rather than arriving inside this change.
+    """
+    return or_(
+        models.Case.registered_by_user_id == user_id,
+        and_(
+            models.Case.registered_by_user_id.is_(None),
+            exists().where(
+                models.AuditLog.case_id == models.Case.id,
+                models.AuditLog.actor_user_id == user_id,
+                models.AuditLog.action == "fir_registered",
+            ),
+        ),
+    )
+
+
 def assert_case_access(case_id, claims: dict, db: Session) -> None:
     """The plain (non-Depends) version — call this directly from a route
     that doesn't have case_id as a path parameter (e.g. a multipart upload
@@ -337,21 +366,14 @@ def assert_case_access(case_id, claims: dict, db: Session) -> None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
 
         # A Duty Officer keeps access to the FIRs it registered, and to
-        # nothing else. The fir_registered audit row (written in
-        # cases.register_fir, alongside the case and its first Document) is
-        # the only record of who registered a case, so it is what grants
-        # this — see cases.register_fir for why this is not a
-        # CaseAssignment row. Access is still narrow: documents come back
-        # redacted, because duty_officer is deliberately absent from
-        # FULL_TEXT_ACCESS_ROLES.
+        # nothing else — see registered_by, and cases.register_fir for why
+        # this is not a CaseAssignment row. Access is still narrow: documents
+        # come back redacted, because duty_officer is deliberately absent
+        # from FULL_TEXT_ACCESS_ROLES.
         if role == "duty_officer":
             registered = (
-                db.query(models.AuditLog)
-                .filter(
-                    models.AuditLog.case_id == case_uuid,
-                    models.AuditLog.actor_user_id == user_id,
-                    models.AuditLog.action == "fir_registered",
-                )
+                db.query(models.Case.id)
+                .filter(models.Case.id == case_uuid, registered_by(user_id))
                 .first()
             )
             if registered is None:

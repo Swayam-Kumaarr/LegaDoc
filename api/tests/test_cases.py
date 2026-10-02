@@ -94,6 +94,79 @@ def test_duty_officer_scoped_to_the_firs_it_registered(client, make_user):
     assert client.get(f"/cases/{other_case['id']}", headers=auth_headers(token_a)).status_code == 403
 
 
+def _duty_officer_sees(client, token, case_id):
+    listed = {c["id"] for c in client.get("/cases", headers=auth_headers(token)).json()}
+    opened = client.get(f"/cases/{case_id}", headers=auth_headers(token)).status_code
+    assert (case_id in listed) == (opened == 200), "list and detail must agree"
+    return opened == 200
+
+
+def test_duty_officer_access_reads_the_registrant_column(client, make_user, db_session):
+    """Issue #74: access comes from cases.registered_by_user_id, which
+    register_fir stamps. The audit row is no longer what grants it."""
+    officer = make_user("duty_officer", email="duty_col@example.com", password="pw")
+    token = login(client, "duty_col@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, token)
+
+    stored = db_session.get(models.Case, UUID(case["id"]))
+    assert stored.registered_by_user_id == officer.id
+    assert _duty_officer_sees(client, token, case["id"])
+
+    # The column alone decides: with the audit row gone, access stays.
+    db_session.query(models.AuditLog).filter(models.AuditLog.case_id == stored.id).delete()
+    db_session.commit()
+    assert _duty_officer_sees(client, token, case["id"])
+
+
+def test_a_case_migration_005_could_not_attribute_falls_back_to_the_audit_row(client, make_user, db_session):
+    """No officer loses a case in the move: where registered_by_user_id is
+    still NULL, the fir_registered audit row grants it as before."""
+    make_user("duty_officer", email="duty_legacy@example.com", password="pw")
+    token = login(client, "duty_legacy@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, token)
+
+    stored = db_session.get(models.Case, UUID(case["id"]))
+    stored.registered_by_user_id = None
+    db_session.commit()
+    assert _duty_officer_sees(client, token, case["id"])
+
+    # And with neither record, nobody gets it: fail closed.
+    db_session.query(models.AuditLog).filter(models.AuditLog.case_id == stored.id).delete()
+    db_session.commit()
+    assert not _duty_officer_sees(client, token, case["id"])
+
+
+def test_the_registrant_column_outranks_a_stray_audit_row(client, make_user, db_session):
+    """A case whose column names another officer is not this one's, whatever
+    the audit log says."""
+    make_user("duty_officer", email="duty_owner@example.com", password="pw")
+    owner_token = login(client, "duty_owner@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, owner_token)
+
+    other = make_user("duty_officer", email="duty_other@example.com", password="pw")
+    other_token = login(client, "duty_other@example.com", "pw").json()["access_token"]
+    db_session.add(models.AuditLog(
+        seq=10_000, case_id=UUID(case["id"]), actor_user_id=other.id, action="fir_registered",
+        row_hash="x", prev_hash=None,
+    ))
+    db_session.commit()
+
+    assert not _duty_officer_sees(client, other_token, case["id"])
+
+
+def test_a_colleague_at_the_same_station_still_cannot_see_the_fir(client, make_user):
+    """Station-wide access is the open policy question on #74. Until it is
+    decided, sharing an organisation grants nothing."""
+    first = make_user("duty_officer", email="duty_st_a@example.com", password="pw")
+    make_user("duty_officer", email="duty_st_b@example.com", password="pw", org=first.organization)
+    token_a = login(client, "duty_st_a@example.com", "pw").json()["access_token"]
+    token_b = login(client, "duty_st_b@example.com", "pw").json()["access_token"]
+    case = _register_fir(client, token_a)
+
+    assert _duty_officer_sees(client, token_a, case["id"])
+    assert not _duty_officer_sees(client, token_b, case["id"])
+
+
 def test_only_duty_officer_can_register_a_fir(client, make_user):
     make_user("io", email="io@example.com", password="pw")
     token = login(client, "io@example.com", "pw").json()["access_token"]
