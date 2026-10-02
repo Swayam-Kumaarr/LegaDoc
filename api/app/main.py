@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import (
-    auth, orgs, cases, evidence_requests, documents, bail, trial, audit, admin, reports, demo,
+    auth, orgs, cases, evidence_requests, documents, bail, trial, audit, admin, reports,
     onboarding,
 )
 
@@ -30,7 +30,7 @@ async def add_security_headers(request: Request, call_next):
     - X-Content-Type-Options: nosniff
     - X-Frame-Options: DENY
     - Strict-Transport-Security: max-age=31536000; includeSubDomains
-    - Content-Security-Policy: strict for JSON API, scoped for demo/docs
+    - Content-Security-Policy: strict for JSON API, scoped for docs
     """
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -38,12 +38,7 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
     path = request.url.path
-    if path.startswith("/demo"):
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; frame-ancestors 'none';"
-        )
-    elif path.startswith(("/docs", "/redoc", "/openapi.json")):
+    if path.startswith(("/docs", "/redoc", "/openapi.json")):
         response.headers["Content-Security-Policy"] = (
             "default-src 'self' https://cdn.jsdelivr.net; "
             "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
@@ -76,7 +71,6 @@ app.include_router(trial.router)
 app.include_router(audit.router)
 app.include_router(admin.router)
 app.include_router(reports.router)
-app.include_router(demo.router)
 app.include_router(onboarding.router)
 
 

@@ -412,12 +412,12 @@ sequenceDiagram
 
 **Use case**: `investigation_status` and `bail_status` are two independent columns on the same case
 row — a case can be "Charge Sheet Ready" while bail is still "Hearing Scheduled," and vice versa.
-Domestic Violence was chosen as the demo showcase specifically because it's the only women-safety
-case in the taxonomy with a *confirmed* bail pathway, so this flow can actually run live in a demo.
+The track records stages; it does not classify offences. An earlier per-crime "statutory bail
+pathway" table (`bail_pathways.py`, `GET /cases/:id/bail/pathway`) was removed: it cited repealed
+CrPC/IPC sections and invented bail conditions, no qualified person had reviewed it, and the UI had
+stopped using it.
 
-**Statutory Confirmation**: All 15 canonical crime types in the DMS taxonomy have confirmed statutory bail pathways mapped directly to CrPC/BNSS provisions and special acts (e.g. NDPS Section 37 twin conditions, PMLA Section 45 bars, Section 439(1A) mandatory victim notice for sexual assault, Section 436 bailable matter-of-right releases for simple theft/road accident). All 15 pathways are cataloged in `api/app/bail_pathways.py` and queryable via `GET /cases/:id/bail/pathway`.
-
-**Drawbacks**: While statutory pathways and judicial stages are rigorously defined across all 15 crime types, judicial determination times and case backlog vary across trial courts. Automated reminder escalations for prolonged pre-trial detentions remain deferred to production scaling.
+**Drawbacks**: Automated reminder escalations for prolonged pre-trial detentions are not built.
 
 **Tooling**: same as Flow 3 — synchronous API + DB state transition, no queue.
 
@@ -698,7 +698,6 @@ flowchart TD
 | POST | /cases/:id/bail/hearing-notice | Court | Schedule hearing | — |
 | POST | /cases/:id/bail/order | Court | Issue bail order | Same role as hearing-notice; differentiated by audit-log action, not a separate "Judge" role |
 | POST | /cases/:id/bail/surety | Accused (submission-only) | Register surety bond | — |
-| GET | /cases/:id/bail/pathway | Role-filtered | Statutory bail pathway & conditions for the case's crime type | Backed by confirmed 15-crime taxonomy in `app/bail_pathways.py` |
 | POST | /cases/:id/trial/hearing-notice | Court | Schedule a trial hearing | Mirrors bail's hearing-notice; moves `investigation_status` to `Trial` |
 | POST | /cases/:id/judgment | Court | Record final judgment | Mirrors bail's order pattern; moves `investigation_status` to `Judgment` — closes the state diagram's `Trial → Judgment` transition |
 | GET | /cases/:id/audit-log | Role-filtered | Full or summarized audit trail incl. chain_status | Full for Config Admin/Security Auditor/Court, summarized elsewhere |
@@ -711,7 +710,7 @@ flowchart TD
 | POST | /admin/api-keys/:id/revoke | Config Admin | Revoke an API key immediately | Soft delete — the row stays for the audit trail, revoked_at stops it being accepted |
 | GET | /reports/case-metadata | Records / NCRB Analyst | De-identified case metadata only | Backed by a dedicated Postgres view (e.g. `case_metadata_deidentified`) exposing only non-sensitive columns — no separate redaction logic to build or keep in sync |
 
-*(40 endpoints — every route maps to a resource + verb derived mechanically from the case/document/evidence/bail resource model, not invented ad hoc. `/auth/refresh` and `/auth/logout` are the two additions from this pass — required once the access-token TTL was tightened to 15 minutes. `/admin/api-keys*` (×3) added with the API-key slice. `GET /cases/:id/bail/pathway` added to expose confirmed statutory bail pathways across all 15 crime types.)*
+*(40 endpoints — every route maps to a resource + verb derived mechanically from the case/document/evidence/bail resource model, not invented ad hoc. `/auth/refresh` and `/auth/logout` are the two additions from this pass — required once the access-token TTL was tightened to 15 minutes. `/admin/api-keys*` (×3) added with the API-key slice.)*
 
 ### Arrow Specifications (every connection in the container diagram)
 
@@ -1043,10 +1042,8 @@ function analogously to separate tenant organizations, each with their own users
 1. **Role-model capacity** — can the team build the full expanded role set (Women Cell, Cyber Cell,
    Records/NCRB Analyst, etc.) in the time remaining, or do some fold back into generic buckets for
    the demo?
-2. **Bail-pathway data gaps (RESOLVED)** — Confirmed statutory bail pathways for all 15 canonical
-   crime types have been codified in `api/app/bail_pathways.py` and exposed via `/cases/:id/bail/pathway`.
-   Covers statutory classifications (CrPC/BNSS), special statutory bars (NDPS Section 37 twin conditions,
-   PMLA Section 45), victim notice requirements (Section 439(1A) for sexual offenses), and bail conditions.
+2. **Bail-pathway data (WITHDRAWN)** — a per-crime statutory bail table was built, found to cite
+   repealed sections and invented conditions, and deleted. Offence classification stays with the court.
 3. **Conscious exclusions, carried forward from the project's original scoping** — POCSO/juvenile
    pathways, appeals, multi-jurisdiction FIR transfer, victim compensation tracking, and full
    evidence disposal/retention rules (the `retention_legal_hold` column is a placeholder for the

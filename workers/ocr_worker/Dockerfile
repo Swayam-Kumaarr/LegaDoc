@@ -17,9 +17,8 @@ WORKDIR /worker
 #     binary that was never apt-installed, so the fallback engine failed
 #     too, with BOTH engines down every real (non-mocked) OCR job silently
 #     degraded to needs_review.
-#   - tesseract-ocr-hin: worker.py runs a bilingual (en+hi) PaddleOCR pass
-#     and falls back to Tesseract for either — without the Hindi language
-#     pack, the Tesseract fallback silently can't read Hindi/Devanagari text.
+#   - tesseract-ocr-hin: Hindi/Devanagari is read by Tesseract (`hin`), not
+#     PaddleOCR — without this language pack it silently reads nothing.
 #   - libglib2.0-0/libsm6/libxext6/libxrender1: opencv-python-headless's
 #     other common missing-.so list on a slim base — added preemptively.
 # Installed BEFORE pip so the model-preload step below can actually import
@@ -48,7 +47,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && pip uninstall -y opencv-python opencv-contrib-python \
     && pip install --no-deps --force-reinstall opencv-python-headless==4.11.0.86
 
-# Pre-download and cache PaddleOCR English and Hindi models at build time
+# Pre-download and cache the PaddleOCR English models at build time
 # (Issue #37) — without this, the first real OCR request in a fresh
 # container pays the full model-download cost inline (confirmed live: ~80s
 # on first use) instead of at build time where it belongs.
@@ -73,7 +72,11 @@ from paddleocr import PaddleOCR;\
 _img = Image.new('RGB', (320, 96), 'white');\
 ImageDraw.Draw(_img).text((12, 36), 'Test 123', fill='black');\
 _arr = np.array(_img);\
-[PaddleOCR(use_angle_cls=True, lang=_l, show_log=False).ocr(_arr, cls=True) for _l in ('en', 'hi')]"
+PaddleOCR(use_angle_cls=False, lang='en', show_log=False).ocr(_arr, cls=False)"
+# English only, angle classifier off: exactly what worker.py builds. The
+# Paddle Hindi model was preloaded here until #129 moved Hindi to Tesseract;
+# nothing loaded it after. (PaddleOCR's constructor still fetches the small
+# cls model even with use_angle_cls=False, so that one stays in the image.)
 
 COPY workers/ocr_worker/worker.py .
 # worker.py imports this as a bare module (`from layout_reconstruction
