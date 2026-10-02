@@ -408,6 +408,86 @@ def correct_redaction_tag(
     )
 
 
+@router.post("/{document_id}/release-review", response_model=schemas.DocumentView)
+def release_from_review(
+    document_id: str,
+    claims: dict = Depends(require_role("io", "sho", "config_admin")),
+    db: Session = Depends(get_db),
+):
+    """POST /documents/:id/release-review — a human confirms the redaction on a
+    document the AI parser was not confident about, and releases it to the
+    roles that read the redacted copy.
+
+    This step was described everywhere and implemented nowhere. The review
+    queue said documents stay held "until an Investigating Officer or Config
+    Admin reviews them — this queue is the only way to clear that state", but
+    no endpoint changed a document's status after the parser set it, so a
+    document in review stayed there for good and nobody could read it. Since
+    confidence became evidence-based, a scanned FIR with any OCR noise in it
+    goes to review, which made that the ordinary path for scans.
+
+    The reviewer is expected to add any missing span with /redact-tag first;
+    releasing applies whatever spans exist at that moment. Case access is
+    checked as for any other document action, so an IO can release only
+    documents on their own cases.
+    """
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+    document = db.get(models.Document, doc_uuid)
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+
+    assert_case_access(document.case_id, claims, db)
+
+    if document.status != "needs_review":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Only a document awaiting review can be released (this one is '{document.status}')",
+        )
+    if not document.raw_text:
+        # Nothing was extracted, so there is nothing to review and nothing a
+        # restricted reader could be shown. Releasing it would only change the
+        # label on an empty document.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This document has no extracted text to review; re-upload a clearer scan",
+        )
+
+    tags = db.query(models.DocumentSensitivityTag).filter(models.DocumentSensitivityTag.document_id == document.id).all()
+    document.status = "ready"
+    db.commit()
+
+    write_audit_log(
+        db,
+        action="document_review_released",
+        case_id=document.case_id,
+        actor_user_id=UUID(claims["sub"]),
+        target_type="document",
+        target_id=document.id,
+        metadata={
+            "tag_count": len(tags),
+            "officer_corrections": sum(1 for t in tags if t.source == "officer_correction"),
+        },
+    )
+
+    view = get_document_view(
+        document, tags, claims.get("role"), FULL_TEXT_ACCESS_ROLES,
+        policies=load_policies(db),
+    )
+    return schemas.DocumentView(
+        id=document.id,
+        case_id=document.case_id,
+        doc_type=document.doc_type,
+        version=document.version,
+        status=document.status,
+        chain_status=document.chain_status,
+        retention_legal_hold=document.retention_legal_hold or False,
+        text=view["text"],
+    )
+
+
 @router.post("/{document_id}/legal-hold", response_model=schemas.LegalHoldResponse)
 def set_document_legal_hold(
     document_id: str,
