@@ -42,6 +42,17 @@ FLAGS_fraction_of_cpu_memory_to_use=0.1 each moved it by under 5%. Note the
 peak also drifts up as the cap does (4,793 at 5 GB, 4,911 at 6.5 GB), so read
 it as "needs roughly this much", not as a hard floor.
 
+After #129 (wide line crops recognised in pieces, Paddle's Hindi model
+dropped) and the 1920px preprocessing target, measured on x86_64 under the
+cap itself:
+
+  haryana_fir.jpg  1,651 MiB   5 s
+  delhi_fir.webp   2,393 MiB  12 s   completes at a 3,000 MB cap
+
+The same 1920px target on the old recogniser reached 5,800 MiB, because
+memory tracked the width of the widest line crop. #129's arm64 figures (953 /
+989 MiB) do not carry over to x86: the Delhi page is killed at a 2,000 MB cap.
+
 What actually sets that peak is the widest line crops, not the region count:
 the recognizer's memory grows with a crop's width and is not returned, and
 dense forms are full of full-width lines. worker.py now recognizes any crop

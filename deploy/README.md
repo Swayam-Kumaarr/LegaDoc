@@ -1,16 +1,20 @@
 # Single-VM demo deployment
 
-Runs the whole LegaDoc stack on one VM (**12 GB minimum**) behind
-Cloudflare. Uses the same `docker-compose.yml` as local dev, with
+Runs the whole LegaDoc stack on one VM (**8 GB minimum, 12 GB comfortable**)
+behind Cloudflare. Uses the same `docker-compose.yml` as local dev, with
 `docker-compose.prod.yml` layered on top.
 
-8 GB is not enough, despite what this file said before. One OCR job on a dense
-scanned FIR peaks at **4.9 GB** (measured with `scripts/ocr_mem_probe.py` in
-`pipeline` mode — see the comment on `ocr_worker` in
-`docker-compose.prod.yml`), and the other services' caps add up to 3.3 GB. On
-an 8 GB VM the OCR worker is OOM-killed part-way through a job and the
+One OCR job on a dense scanned FIR peaks at **2.4 GB** (measured with
+`scripts/ocr_mem_probe.py` in `pipeline` mode under the cap itself — see the
+comment on `ocr_worker` in `docker-compose.prod.yml`), so that worker is capped
+at 3.5 GB. With the other services' caps (3.3 GB) the stack needs 6.8 GB,
+leaving about 1.2 GB for the host on an 8 GB machine.
+
+This file briefly said 12 GB minimum, when the same page peaked at 4.9 GB.
+Below the cap the OCR worker is OOM-killed part-way through a job and the
 document sits at `processing` with nothing surfaced to the officer who
-uploaded it.
+uploaded it, so if you raise `OCR_CPU_THREADS` or `OCR_MAX_REC_RATIO`, re-run
+the probe and raise the cap with it.
 
 | File | Purpose |
 |---|---|

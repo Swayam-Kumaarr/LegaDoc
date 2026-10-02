@@ -37,15 +37,14 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   ocr_worker:
-    # 5.5 GB, measured rather than guessed. scripts/ocr_mem_probe.py in
-    # `pipeline` mode peaks at 2,717 MiB on the bilingual Haryana scan and
-    # 4,911 MiB on the denser English Delhi scan — peak tracks how many text
-    # regions the page has. 3 GB passed the bilingual page and OOM-killed the
-    # English one; 2.2 GB predates the Devanagari pass entirely.
+    # 3.5 GB, measured under the cap on x86_64: 1,651 MiB on the bilingual
+    # Haryana scan and 2,393 MiB on the denser English Delhi scan, which
+    # completes at 3 GB. See deploy/docker-compose.prod.yml for how it got
+    # down from 4.9 GB.
     #
     # The cap only helps if the VM can actually hand it over — stop other
     # projects' containers first, or this becomes a VM-level kill instead.
-    mem_limit: 5500m
+    mem_limit: 3500m
     environment:
       - OBJECT_STORAGE_BACKEND=minio
       # Paddle/OpenCV spawn one OpenMP thread per visible CPU, each with its
