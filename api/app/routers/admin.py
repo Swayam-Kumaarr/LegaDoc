@@ -87,7 +87,7 @@ def create_role(
         new_role.permissions.extend(perms)
 
     db.add(new_role)
-    db.commit()
+    db.flush()
     db.refresh(new_role)
 
     actor_id = UUID(claims["sub"]) if "sub" in claims else None
@@ -139,7 +139,7 @@ def update_role(
         perms = db.query(models.Permission).filter(models.Permission.code.in_(body.permission_codes)).all()
         role.permissions = perms
 
-    db.commit()
+    db.flush()
     db.refresh(role)
 
     actor_id = UUID(claims["sub"]) if "sub" in claims else None
@@ -186,7 +186,7 @@ def delete_role(
     role_code = role.code
     role_name = role.name
     db.delete(role)
-    db.commit()
+    db.flush()
 
     actor_id = UUID(claims["sub"]) if "sub" in claims else None
     write_audit_log(
@@ -250,7 +250,7 @@ def assign_user_role(
 
     user.role = target_role.code
     user.role_id = target_role.id
-    db.commit()
+    db.flush()
     db.refresh(user)
 
     actor_id = UUID(claims["sub"]) if "sub" in claims else None
@@ -298,7 +298,7 @@ def remove_user_role(
     previous_role = user.role
     user.role = "unassigned"
     user.role_id = None
-    db.commit()
+    db.flush()
     db.refresh(user)
 
     actor_id = UUID(claims["sub"]) if "sub" in claims else None
@@ -370,7 +370,7 @@ def onboard_organization(
         org_type=body.org_type.strip().lower()
     )
     db.add(new_org)
-    db.commit()
+    db.flush()
     db.refresh(new_org)
 
     actor_id = UUID(claims["sub"]) if "sub" in claims else None
@@ -505,7 +505,7 @@ def create_document_schema(
         sensitivity_fields=fields_data,
     )
     db.add(schema_config)
-    db.commit()
+    db.flush()
     db.refresh(schema_config)
 
     actor_id = UUID(claims["sub"]) if "sub" in claims else None
@@ -573,7 +573,7 @@ def update_document_schema(
     schema_config.tier = target_tier
     schema_config.sensitivity_fields = target_fields
 
-    db.commit()
+    db.flush()
     db.refresh(schema_config)
 
     actor_id = UUID(claims["sub"]) if "sub" in claims else None
@@ -645,7 +645,7 @@ def set_recognizer_mappings(
         )
         db.add(rm)
 
-    db.commit()
+    db.flush()
     db.refresh(schema_config)
 
     new_mappings = schema_config.recognizer_mappings
@@ -731,7 +731,7 @@ def create_api_key(
         expires_at=body.expires_at,
     )
     db.add(row)
-    db.commit()
+    db.flush()
     db.refresh(row)
 
     actor_id = UUID(claims["sub"]) if "sub" in claims else None
@@ -803,7 +803,7 @@ def revoke_api_key(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API key is already revoked")
 
     row.revoked_at = datetime.now(timezone.utc)
-    db.commit()
+    db.flush()
 
     actor_id = UUID(claims["sub"]) if "sub" in claims else None
     write_audit_log(
@@ -886,7 +886,7 @@ def replace_redaction_policy(
                 updated_by_user_id=actor_id,
             )
         )
-    db.commit()
+    db.flush()
 
     write_audit_log(
         db,

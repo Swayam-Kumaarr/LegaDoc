@@ -144,23 +144,10 @@ async def upload_document(
         uploaded_by=UUID(claims["sub"]),
     )
     db.add(document)
-    db.commit()
-    db.refresh(document)
-
-    # Deterministic, not random — a retry derives the exact same key from
-    # the same (document_id, version) pair.
-    idempotency_key = f"{document.id}:v{document.version}"
-
-    # Track A — always, independent of Track B. See System Connections #8.
-    queue_client.enqueue("chain_worker.write_hash", document_id=str(document.id), idempotency_key=idempotency_key)
-    # Track B — text-bearing documents only. See System Connections #6.
-    # Typed text goes straight to the AI parser, exactly like the complaint
-    # narrative in POST /cases; only scans and PDFs need OCR first.
-    if typed_text is not None:
-        queue_client.enqueue("ai_parser_worker.tag_document", document_id=str(document.id))
-    elif not is_binary:
-        queue_client.enqueue("ocr_worker.extract_document", document_id=str(document.id))
-
+    db.flush()
+    # The document row and its audit row commit together (issue #140), and
+    # only then are the workers told about it: each of them loads the row
+    # by id, so enqueueing before the commit would race it.
     write_audit_log(
         db,
         action="document_uploaded",
@@ -176,6 +163,21 @@ async def upload_document(
             "doc_hash": doc_hash,
         },
     )
+    db.refresh(document)
+
+    # Deterministic, not random — a retry derives the exact same key from
+    # the same (document_id, version) pair.
+    idempotency_key = f"{document.id}:v{document.version}"
+
+    # Track A — always, independent of Track B. See System Connections #8.
+    queue_client.enqueue("chain_worker.write_hash", document_id=str(document.id), idempotency_key=idempotency_key)
+    # Track B — text-bearing documents only. See System Connections #6.
+    # Typed text goes straight to the AI parser, exactly like the complaint
+    # narrative in POST /cases; only scans and PDFs need OCR first.
+    if typed_text is not None:
+        queue_client.enqueue("ai_parser_worker.tag_document", document_id=str(document.id))
+    elif not is_binary:
+        queue_client.enqueue("ocr_worker.extract_document", document_id=str(document.id))
 
     return document
 
@@ -379,7 +381,7 @@ def correct_redaction_tag(
         source="officer_correction",
     )
     db.add(tag)
-    db.commit()
+    db.flush()
 
     write_audit_log(
         db,
@@ -457,7 +459,7 @@ def release_from_review(
 
     tags = db.query(models.DocumentSensitivityTag).filter(models.DocumentSensitivityTag.document_id == document.id).all()
     document.status = "ready"
-    db.commit()
+    db.flush()  # committed with its audit row below (issue #140)
 
     write_audit_log(
         db,
@@ -511,8 +513,7 @@ def set_document_legal_hold(
     assert_case_access(document.case_id, claims, db)
 
     document.retention_legal_hold = body.legal_hold
-    db.commit()
-    db.refresh(document)
+    db.flush()
 
     action = "document_legal_hold_placed" if body.legal_hold else "document_legal_hold_released"
     write_audit_log(
@@ -570,25 +571,31 @@ def delete_document(
             detail="Document is subject to an active retention legal hold and cannot be deleted or purged.",
         )
 
-    # Clean up physical storage object
-    if document.storage_path:
-        storage.delete(document.storage_path)
+    # The row, its tags and the audit row go in one commit, and the stored
+    # object is deleted only after that commit (issue #140). The other way
+    # round, a failure between the steps left either an audit entry for a
+    # purge that never happened or a document row whose file was already
+    # gone. Now the worst case is an orphaned object in storage.
+    storage_path = document.storage_path
+    case_id, doc_id = document.case_id, document.id
+    metadata = {"doc_type": document.doc_type, "version": document.version}
 
-    # Delete any related sensitivity tags
-    db.query(models.DocumentSensitivityTag).filter(models.DocumentSensitivityTag.document_id == document.id).delete()
+    db.query(models.DocumentSensitivityTag).filter(models.DocumentSensitivityTag.document_id == doc_id).delete()
+    db.delete(document)
+    db.flush()
 
     write_audit_log(
         db,
         action="document_purged",
-        case_id=document.case_id,
+        case_id=case_id,
         actor_user_id=UUID(claims["sub"]),
         target_type="document",
-        target_id=document.id,
-        metadata={"doc_type": document.doc_type, "version": document.version},
+        target_id=doc_id,
+        metadata=metadata,
     )
 
-    db.delete(document)
-    db.commit()
+    if storage_path:
+        storage.delete(storage_path)
 
     return {"detail": "Document successfully purged", "document_id": str(doc_uuid)}
 
