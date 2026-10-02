@@ -498,6 +498,41 @@ def _score_span(span: Dict[str, Any], text: str) -> int:
     return max(5, min(99, score))
 
 
+# Most text handed to Presidio's spaCy pipeline in one call. spaCy's parser
+# and NER need working memory in proportion to the text they are given, and
+# the whole document used to go in at once. Measured in this image on OCR
+# text of the Delhi FIR repeated to length: 5k chars peaked at 198 MiB, 200k
+# (about 40 pages) at 996 MiB — this worker's whole production mem_limit —
+# and 500k (a long charge sheet) at 2,019 MiB, which is an OOM kill mid-task
+# and a document stuck in "processing". spaCy also refuses text over its
+# 1,000,000-char max_length outright; that raised inside the try below and
+# the document was tagged by the native recognizers alone, with no names or
+# places. Analyzing in bounded pieces holds memory flat at any length.
+ANALYZE_CHUNK_CHARS = int(os.environ.get("AI_PARSER_CHUNK_CHARS", "20000"))
+
+
+def iter_text_chunks(text: str, max_chars: Optional[int] = None):
+    """Yields (offset, chunk) pieces of `text`, none longer than max_chars,
+    that concatenate back to it exactly.
+
+    A piece ends at the last line break inside the window, so no line — and
+    no entity on it — is split; failing that at the last space; only a
+    window with neither is cut hard.
+    """
+    max_chars = max_chars or ANALYZE_CHUNK_CHARS
+    start, n = 0, len(text)
+    while start < n:
+        end = min(start + max_chars, n)
+        if end < n:
+            cut = text.rfind("\n", start, end)
+            if cut <= start:
+                cut = text.rfind(" ", start, end)
+            if cut > start:
+                end = cut + 1
+        yield start, text[start:end]
+        start = end
+
+
 def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List[Dict[str, Any]]:
     """Runs entity detection over raw text:
     1. Runs Presidio Analyzer if available in environment.
@@ -513,22 +548,23 @@ def parse_text_for_sensitive_spans(text: str, doc_type: str = "general") -> List
     analyzer = _get_analyzer_engine() if _HAS_PRESIDIO else None
     if analyzer is not None:
         try:
-            results = analyzer.analyze(
-                text=text,
-                language="en",
-                entities=PRESIDIO_ENTITIES,
-                score_threshold=PRESIDIO_SCORE_THRESHOLD,
-            )
-            for res in results:
-                ent_type = res.entity_type
-                if ent_type == "US_PHONE_NUMBER":
-                    ent_type = "PHONE_NUMBER"
-                all_spans.append({
-                    "entity_type": ent_type,
-                    "span_start": res.start,
-                    "span_end": res.end,
-                    "confidence": int(round(res.score * 100)),
-                })
+            for offset, chunk in iter_text_chunks(text):
+                results = analyzer.analyze(
+                    text=chunk,
+                    language="en",
+                    entities=PRESIDIO_ENTITIES,
+                    score_threshold=PRESIDIO_SCORE_THRESHOLD,
+                )
+                for res in results:
+                    ent_type = res.entity_type
+                    if ent_type == "US_PHONE_NUMBER":
+                        ent_type = "PHONE_NUMBER"
+                    all_spans.append({
+                        "entity_type": ent_type,
+                        "span_start": res.start + offset,
+                        "span_end": res.end + offset,
+                        "confidence": int(round(res.score * 100)),
+                    })
         except Exception as exc:
             logger.warning(f"Presidio Analyzer execution skipped or failed: {exc}")
 

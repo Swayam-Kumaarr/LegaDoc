@@ -558,3 +558,69 @@ def test_structured_identifiers_keep_their_own_confidence():
     text = "Contact 9876543210 regarding the matter."
     span = {"entity_type": "PHONE_NUMBER", "span_start": 8, "span_end": 18, "confidence": 85}
     assert ai_worker._score_span(span, text) == 85
+
+
+# --- Presidio runs on bounded pieces of long documents ----------------------
+#
+# spaCy's working memory grows with the text it is given: a 500k-char
+# document peaked at 2 GB, twice this worker's mem_limit, and text over
+# spaCy's 1,000,000-char max_length was refused outright (see
+# ANALYZE_CHUNK_CHARS). The memory itself is measured in the worker image;
+# these pin the chunking and the offset arithmetic it depends on.
+
+def test_chunks_rejoin_exactly_and_are_bounded():
+    text = "\n".join(f"line {i}: Ramesh Kumar s/o Suresh, H.No. {i} Model Town" for i in range(2000))
+    chunks = list(ai_worker.iter_text_chunks(text, max_chars=1000))
+    assert "".join(c for _, c in chunks) == text
+    assert all(len(c) <= 1000 for _, c in chunks)
+    assert all(text[o:o + len(c)] == c for o, c in chunks)
+    # Every piece but the last ends at a line break, so no line is split.
+    assert all(c.endswith("\n") for _, c in chunks[:-1])
+
+
+def test_a_line_longer_than_a_chunk_is_split_at_a_space_or_hard():
+    spaced = "word " * 500
+    chunks = list(ai_worker.iter_text_chunks(spaced, max_chars=100))
+    assert "".join(c for _, c in chunks) == spaced
+    assert all(c.endswith(" ") for _, c in chunks[:-1])
+
+    solid = "x" * 250
+    assert [len(c) for _, c in ai_worker.iter_text_chunks(solid, max_chars=100)] == [100, 100, 50]
+
+
+def test_short_text_is_one_chunk():
+    assert list(ai_worker.iter_text_chunks("FIR No. 0380", max_chars=1000)) == [(0, "FIR No. 0380")]
+
+
+class _Result:
+    def __init__(self, start, end):
+        self.entity_type, self.start, self.end, self.score = "PERSON", start, end, 0.9
+
+
+class _NameFinder:
+    """Stands in for Presidio: reports every "Ramesh Kumar" in the text it is given."""
+    def __init__(self):
+        self.calls = []
+
+    def analyze(self, text, **_):
+        self.calls.append(len(text))
+        found, i = [], text.find("Ramesh Kumar")
+        while i != -1:
+            found.append(_Result(i, i + len("Ramesh Kumar")))
+            i = text.find("Ramesh Kumar", i + 1)
+        return found
+
+
+def test_spans_from_later_chunks_point_at_the_right_place_in_the_document(monkeypatch):
+    finder = _NameFinder()
+    monkeypatch.setattr(ai_worker, "_HAS_PRESIDIO", True)
+    monkeypatch.setattr(ai_worker, "_get_analyzer_engine", lambda: finder)
+    monkeypatch.setattr(ai_worker, "ANALYZE_CHUNK_CHARS", 500)
+
+    text = "\n".join(f"Complainant {i}: Ramesh Kumar, Model Town" for i in range(100))
+    spans = ai_worker.parse_text_for_sensitive_spans(text)
+
+    assert len(finder.calls) > 1 and max(finder.calls) <= 500
+    people = [s for s in spans if s["entity_type"] == "PERSON"]
+    assert len(people) == 100
+    assert all(text[s["span_start"]:s["span_end"]] == "Ramesh Kumar" for s in people)
