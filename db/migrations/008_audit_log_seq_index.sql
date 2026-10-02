@@ -1,0 +1,15 @@
+-- Apply once to existing PostgreSQL environments. New databases receive the
+-- index from models (AuditLog.seq, unique=True).
+--
+-- write_audit_log finds the chain's tail with ORDER BY seq DESC LIMIT 1 on
+-- every write, inside the global advisory lock, and the chain checks walk
+-- ORDER BY seq. With no index on seq each write sorted the whole table:
+-- 22.5 ms a write at 300k rows, which the lock turns into a ceiling of ~44
+-- audit writes a second for the entire system, falling as the log grows.
+--
+-- UNIQUE also enforces what the chain already relies on: seq is assigned as
+-- prev.seq + 1 under that lock and must never tie. If this fails on an
+-- existing database, two rows share a seq — that chain is already broken;
+-- check with:
+--   SELECT seq, count(*) FROM audit_log GROUP BY seq HAVING count(*) > 1;
+CREATE UNIQUE INDEX IF NOT EXISTS ix_audit_log_seq ON audit_log (seq);
