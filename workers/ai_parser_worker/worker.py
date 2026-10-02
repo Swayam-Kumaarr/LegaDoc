@@ -665,7 +665,7 @@ def process_tag_document(document_id: str, db: Optional[Any] = None) -> str:
         else:
             document.status = "ready"
 
-        session.commit()
+        session.flush()
         session.refresh(document)
 
         # Append to audit trail
@@ -692,6 +692,11 @@ def process_tag_document(document_id: str, db: Optional[Any] = None) -> str:
         logger.exception(f"AI Parser Worker failure on document {document_id}: {exc}")
         # FAIL-CLOSED: On error, default to unreviewed full redaction
         try:
+            # Roll back first: the failure may have been the database itself
+            # (the tags, status and audit row now commit together), and a
+            # session left mid-failed-transaction refuses the commit below,
+            # which would leave the document at "processing" instead.
+            session.rollback()
             if "document" in locals() and document is not None:
                 document.status = "needs_review"
                 session.commit()
@@ -746,7 +751,7 @@ def process_tag_case_diary_entry(case_diary_entry_id: str, db: Optional[Any] = N
         # uses for every role outside IO/SHO, so it must never be set before
         # the spans that make it safe are committed alongside it.
         entry.status = "ready"
-        session.commit()
+        session.flush()
         session.refresh(entry)
 
         write_audit_log(
@@ -884,7 +889,7 @@ def process_extract_credential_fields(credential_document_id: str, db: Optional[
         cred_doc.extracted_fields = extracted_fields
         cred_doc.match_status = match_status
         cred_doc.status = "ready"
-        session.commit()
+        session.flush()
         session.refresh(cred_doc)
 
         write_audit_log(
@@ -909,6 +914,7 @@ def process_extract_credential_fields(credential_document_id: str, db: Optional[
     except Exception as exc:
         logger.exception(f"AI Parser Worker failure on credential document {credential_document_id}: {exc}")
         try:
+            session.rollback()  # see process_tag_document
             if "cred_doc" in locals() and cred_doc is not None:
                 cred_doc.status = "needs_review"
                 cred_doc.match_status = "needs_review"
