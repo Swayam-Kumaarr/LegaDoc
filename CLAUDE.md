@@ -158,6 +158,10 @@ and safe to re-run:
 for f in db/migrations/*.sql; do docker exec -i legadoc-db-1 psql -U postgres -d legadoc < "$f"; done
 ```
 
+`008_audit_log_seq_index.sql` adds a UNIQUE index on `audit_log.seq`. If it
+fails, two audit rows share a `seq` and the chain is already broken — the file
+has the query to find them.
+
 After `004_case_diary_sensitivity_tags.sql`, run the one-time backfill. Diary
 entries tagged before spans were stored have nothing to redact with; this
 hides them from restricted roles until they are re-tagged (issue #92):

@@ -391,7 +391,7 @@ class AuditLog(Base):
     # the microsecond, which silently broke prev_hash linkage for all but the
     # first of them). seq is assigned as strictly prev.seq + 1 inside the same
     # locked critical section as the hash computation, so it can never tie.
-    seq = Column(Integer, nullable=False)
+    seq = Column(Integer, nullable=False, unique=True, index=True)  # ix_audit_log_seq, db/migrations/008
     fabric_tx_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
