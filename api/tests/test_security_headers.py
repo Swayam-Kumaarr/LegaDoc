@@ -4,7 +4,7 @@ Verifies that all API responses include defense-in-depth headers:
 - X-Content-Type-Options: nosniff
 - X-Frame-Options: DENY
 - Strict-Transport-Security: max-age=31536000; includeSubDomains
-- Content-Security-Policy: strict default-src 'none' for JSON API, scoped for /demo
+- Content-Security-Policy: strict default-src 'none' for JSON API, scoped for /docs
 """
 
 def test_api_responses_include_mandatory_security_headers(client):
@@ -17,16 +17,16 @@ def test_api_responses_include_mandatory_security_headers(client):
     assert "frame-ancestors 'none'" in resp.headers["content-security-policy"]
 
 
-def test_demo_route_has_scoped_content_security_policy(client):
+def test_demo_harness_is_gone_and_gets_no_relaxed_policy(client):
+    # /demo served an unauthenticated HTML cockpit with 'unsafe-inline'
+    # scripts and invented personas (officer.raj / Password123!) that no
+    # seeder creates. It was removed; the path must not quietly come back
+    # with the relaxed policy it used to carry.
     resp = client.get("/demo")
-    assert resp.status_code == 200
-    assert resp.headers["x-content-type-options"] == "nosniff"
-    assert resp.headers["x-frame-options"] == "DENY"
-    assert "max-age=31536000" in resp.headers["strict-transport-security"]
+    assert resp.status_code == 404
     csp = resp.headers["content-security-policy"]
-    assert "default-src 'self'" in csp
-    assert "'unsafe-inline'" in csp
-    assert "frame-ancestors 'none'" in csp
+    assert "default-src 'none'" in csp
+    assert "'unsafe-inline'" not in csp
 
 
 def test_error_responses_still_contain_security_headers(client):
