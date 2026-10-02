@@ -118,12 +118,15 @@ export default function NeedsReviewQueue() {
                         <StatusChip status={ageHours(item.created_at) >= 24 ? 'error' : 'neutral'} label={ageLabel(item.created_at)} />
                       </td>
                       <td style={{ textAlign: 'right' }}>
+                        {/* Straight to the document, where it can be read and
+                            released. "Inspect Case" landed on the case docket,
+                            from which there was no way to clear the review. */}
                         <Link
-                          to={`/cases/${item.case_id}`}
+                          to={`/cases/${item.case_id}/documents/${item.id}`}
                           className="btn btn-primary"
                           style={{ height: '28px', fontSize: '12px', padding: '0 8px' }}
                         >
-                          Inspect Case
+                          Review Document
                         </Link>
                       </td>
                     </tr>

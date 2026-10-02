@@ -1082,3 +1082,82 @@ def test_scanned_image_upload_still_goes_to_ocr_with_no_text_yet(client, make_us
     own = {j["task_name"] for j in fake_queue.enqueued if j["kwargs"].get("document_id") == resp.json()["id"]}
     assert own == {"chain_worker.write_hash", "ocr_worker.extract_document"}
     assert db_session.get(models.Document, UUID(resp.json()["id"])).raw_text is None
+
+
+def _document_in_review(client, make_user, db_session):
+    """A typed document parked in needs_review, with one tagged phone number."""
+    case, io, io_token = _setup_case_with_io(client, make_user, db_session)
+    doc_id = client.post(
+        "/documents",
+        data={"case_id": case["id"], "doc_type": "Witness Statement"},
+        files={"file": ("statement.txt", b"Contact Rahul at 9876543210 please.", "text/plain")},
+        headers=auth_headers(io_token),
+    ).json()["id"]
+    document = db_session.get(models.Document, UUID(doc_id))
+    document.raw_text = "Contact Rahul at 9876543210 please."
+    document.status = "needs_review"
+    db_session.add(models.DocumentSensitivityTag(
+        document_id=document.id, entity_type="PHONE_NUMBER",
+        span_start=17, span_end=27, confidence=60, source="ai_parser",
+    ))
+    db_session.commit()
+    return case, doc_id, io_token
+
+
+def test_the_reviewer_can_read_a_document_held_for_review(client, make_user, db_session):
+    """The queue promised that an investigating officer would review held
+    documents, while the read path withheld their text from everyone — the IO
+    included. Nothing in review could be reviewed by the person it was waiting
+    on. Full-text roles read it; restricted roles stay fail-closed."""
+    case, doc_id, io_token = _document_in_review(client, make_user, db_session)
+
+    as_io = client.get(f"/documents/{doc_id}", headers=auth_headers(io_token)).json()
+    assert as_io["status"] == "needs_review"
+    assert as_io["text"] == "Contact Rahul at 9876543210 please."
+
+    duty_token = login(client, "duty@example.com", "pw").json()["access_token"]
+    as_duty = client.get(f"/documents/{doc_id}", headers=auth_headers(duty_token)).json()
+    assert as_duty["text"] is None  # the parser may have missed something
+
+
+def test_releasing_a_reviewed_document_makes_it_readable_redacted(client, make_user, db_session):
+    """No endpoint ever moved a document out of needs_review, so it stayed
+    there for good. Release is the human confirming the redaction."""
+    case, doc_id, io_token = _document_in_review(client, make_user, db_session)
+
+    resp = client.post(f"/documents/{doc_id}/release-review", headers=auth_headers(io_token))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "ready"
+
+    duty_token = login(client, "duty@example.com", "pw").json()["access_token"]
+    as_duty = client.get(f"/documents/{doc_id}", headers=auth_headers(duty_token)).json()
+    assert "9876543210" not in as_duty["text"]
+    assert "[REDACTED:PHONE_NUMBER]" in as_duty["text"]
+
+    row = (
+        db_session.query(models.AuditLog)
+        .filter(models.AuditLog.action == "document_review_released")
+        .one()
+    )
+    assert row.target_id == UUID(doc_id)
+    assert row.action_metadata["tag_count"] == 1
+    assert verify_chain_intact(db_session)
+
+
+def test_release_is_refused_to_the_wrong_role_and_from_the_wrong_state(client, make_user, db_session):
+    case, doc_id, io_token = _document_in_review(client, make_user, db_session)
+
+    duty_token = login(client, "duty@example.com", "pw").json()["access_token"]
+    assert client.post(f"/documents/{doc_id}/release-review", headers=auth_headers(duty_token)).status_code == 403
+
+    assert client.post(f"/documents/{doc_id}/release-review", headers=auth_headers(io_token)).status_code == 200
+    # Already released: a second release is a conflict, not a silent no-op.
+    assert client.post(f"/documents/{doc_id}/release-review", headers=auth_headers(io_token)).status_code == 409
+
+
+def test_an_io_cannot_release_a_document_on_someone_elses_case(client, make_user, db_session):
+    case, doc_id, io_token = _document_in_review(client, make_user, db_session)
+    make_user("io", email="other.io@example.com", password="pw")
+    other = login(client, "other.io@example.com", "pw").json()["access_token"]
+
+    assert client.post(f"/documents/{doc_id}/release-review", headers=auth_headers(other)).status_code == 403

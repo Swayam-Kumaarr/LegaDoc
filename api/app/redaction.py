@@ -111,7 +111,19 @@ def apply_redaction(raw_text: str, tags: list, policies: Optional[list] = None,
 def get_document_view(document: "models.Document", tags: list, role: str, full_access_roles: set,
                       policies: Optional[list] = None) -> dict:
     """The single function every read path for a document's content should
-    call — never build a "redacted vs full" branch ad hoc per endpoint."""
+    call — never build a "redacted vs full" branch ad hoc per endpoint.
+
+    A document in needs_review is withheld from restricted roles only. Review
+    status means the parser was not confident it found every piece of
+    personal data, which matters to a reader who would see the redacted copy:
+    a missed name would reach them. It does not matter to a full-text role,
+    who sees the raw text once the document is released anyway. Withholding it
+    from them as well protected nothing, and left the investigating officer
+    unable to read the document they were the one expected to review — so
+    nothing in review could ever be reviewed.
+    """
+    if document.status == "needs_review" and role in full_access_roles:
+        return {"status": document.status, "text": document.raw_text}
     if document.status != "ready":
         return {"status": document.status, "text": None}
     if role in full_access_roles:

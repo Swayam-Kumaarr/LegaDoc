@@ -34,6 +34,11 @@ export default function DocumentViewer() {
   const [correctionAlert, setCorrectionAlert] = useState(null);
   const [submittingCorrection, setSubmittingCorrection] = useState(false);
 
+  // Release from review — see POST /documents/:id/release-review.
+  const [releasing, setReleasing] = useState(false);
+  const [releaseAlert, setReleaseAlert] = useState(null);
+  const canRelease = ['io', 'sho', 'config_admin'].includes(user?.role);
+
   const fetchDoc = async () => {
     setLoading(true);
     setLoadError(null);
@@ -52,6 +57,23 @@ export default function DocumentViewer() {
     fetchDoc();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId]);
+
+  const handleRelease = async () => {
+    setReleasing(true);
+    setReleaseAlert(null);
+    try {
+      const updated = await apiClient(`/documents/${docId}/release-review`, { method: 'POST' });
+      setDocumentData(updated);
+      setReleaseAlert({
+        type: 'success',
+        msg: 'Redaction confirmed. The document is now released to restricted roles, redacted as shown in their view. Recorded in the audit trail.',
+      });
+    } catch (err) {
+      setReleaseAlert({ type: 'error', msg: `Release failed: ${formatError(err)}` });
+    } finally {
+      setReleasing(false);
+    }
+  };
 
   const handleApplyCorrection = async (e) => {
     e.preventDefault();
@@ -147,6 +169,36 @@ export default function DocumentViewer() {
           The browser renders solid unrevealed blocks with entity categorization. No underlying sensitive data is present in the DOM.
         </div>
 
+        {/* Held for review. There was no way out of this state anywhere in the
+            product, so a document the parser was unsure about stayed unreadable
+            for good. A reviewer reads it here, adds any span the parser missed
+            with the correction form, then releases it. */}
+        {doc.status === 'needs_review' && (
+          <div className="alert alert-warning" style={{ marginBottom: '16px' }}>
+            <strong>Awaiting human review.</strong> The parser was not confident it found every
+            piece of personal data in this document, so it is hidden from roles that only see the
+            redacted copy.
+            {canRelease ? (
+              <>
+                {' '}Check the text below, add any missing redaction with the correction form, then
+                release it.
+                <div style={{ marginTop: '10px' }}>
+                  <button className="btn btn-primary" onClick={handleRelease} disabled={releasing}>
+                    {releasing ? 'Releasing…' : 'Confirm redaction and release'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>{' '}An investigating officer or administrator has to review it before it is shown here.</>
+            )}
+          </div>
+        )}
+        {releaseAlert && (
+          <div className={`alert ${releaseAlert.type === 'success' ? 'alert-success' : 'alert-error'}`} style={{ marginBottom: '16px' }}>
+            {releaseAlert.msg}
+          </div>
+        )}
+
         {/* Two-Column Grid: Document Render Area (left) + Metadata Sidebar (right) (PRD Section 8) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: '20px', alignItems: 'start' }}>
 
@@ -179,7 +231,9 @@ export default function DocumentViewer() {
               <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
                 {doc.status === 'ready'
                   ? 'No text available for this document.'
-                  : `Document is still processing (status: ${doc.status}). Text will appear once redaction completes.`}
+                  : doc.status === 'needs_review'
+                    ? 'Withheld until the redaction has been reviewed.'
+                    : `Document is still processing (status: ${doc.status}). Text will appear once redaction completes.`}
               </p>
             )}
 
