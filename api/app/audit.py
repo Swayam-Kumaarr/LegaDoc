@@ -9,7 +9,7 @@ import json
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app import models
@@ -96,15 +96,39 @@ def write_audit_log(
     return entry
 
 
+# Rows fetched per round-trip while walking the chain. Both checks below read
+# the entire audit_log, and GET /cases/:id/audit-log runs one on every call.
+# Loading it with .all() held every row as an ORM object at once: measured
+# +243 MiB at 100k rows and +739 MiB at 300k — past the API's 768 MB
+# mem_limit. Streaming holds one batch: +2-3 MiB at either size, and faster.
+_CHAIN_BATCH_ROWS = 1000
+
+
+def _chain_in_order(db: Session):
+    """Every audit row in chain order, fetched in batches rather than all at once.
+
+    A generator so the result is closed even when a caller stops at the
+    first broken link: on Postgres, yield_per streams through a server-side
+    cursor, and verify_case_chain_integrity queries again right after.
+    """
+    result = db.execute(
+        select(models.AuditLog).order_by(models.AuditLog.seq.asc()).execution_options(yield_per=_CHAIN_BATCH_ROWS)
+    ).scalars()
+    try:
+        yield from result
+    finally:
+        result.close()
+
+
 def verify_chain_intact(db: Session) -> bool:
-    """Walks every row in order and recomputes each hash — a debugging/ops
-    tool, not something a normal request path calls. Returns False the
+    """Walks every row in order and recomputes each hash. GET
+    /cases/:id/audit-log calls this on every request, so it streams the
+    table rather than loading it (see _CHAIN_BATCH_ROWS). Returns False the
     moment any row's stored row_hash doesn't match what its content +
     prev_hash actually hash to, which is exactly what "someone tampered
     with or deleted a row" looks like."""
-    rows = db.query(models.AuditLog).order_by(models.AuditLog.seq.asc()).all()
     prev_hash = None
-    for row in rows:
+    for row in _chain_in_order(db):
         content = _row_content(row.case_id, row.actor_user_id, row.action, row.target_type, row.target_id, row.action_metadata, row.created_at)
         expected = hashlib.sha256(f"{prev_hash}|{content}".encode("utf-8")).hexdigest()
         if expected != row.row_hash or row.prev_hash != prev_hash:
@@ -123,12 +147,11 @@ def verify_case_chain_integrity(db: Session, case_id) -> dict:
       case_id, chain_intact, total_entries, latest_hash
     """
     case_uuid = case_id if isinstance(case_id, UUID) else UUID(str(case_id))
-    rows = db.query(models.AuditLog).order_by(models.AuditLog.seq.asc()).all()
     prev_hash = None
     chain_intact = True
-    case_rows = []
+    case_count, case_latest_hash = 0, None
 
-    for row in rows:
+    for row in _chain_in_order(db):
         content = _row_content(row.case_id, row.actor_user_id, row.action, row.target_type, row.target_id, row.action_metadata, row.created_at)
         expected = hashlib.sha256(f"{prev_hash}|{content}".encode("utf-8")).hexdigest()
         if expected != row.row_hash or row.prev_hash != prev_hash:
@@ -136,10 +159,11 @@ def verify_case_chain_integrity(db: Session, case_id) -> dict:
             break
         prev_hash = row.row_hash
         if row.case_id == case_uuid:
-            case_rows.append(row)
+            case_count += 1
+            case_latest_hash = row.row_hash
 
-    total_entries = len(case_rows) if chain_intact else db.query(models.AuditLog).filter(models.AuditLog.case_id == case_uuid).count()
-    latest_hash = case_rows[-1].row_hash if (chain_intact and case_rows) else None
+    total_entries = case_count if chain_intact else db.query(models.AuditLog).filter(models.AuditLog.case_id == case_uuid).count()
+    latest_hash = case_latest_hash if chain_intact else None
 
     return {
         "case_id": case_uuid,
