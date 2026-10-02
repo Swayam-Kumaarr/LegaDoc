@@ -74,8 +74,9 @@ ImageDraw.Draw(_img).text((12, 36), 'Test 123', fill='black');\
 _arr = np.array(_img);\
 PaddleOCR(use_angle_cls=False, lang='en', show_log=False).ocr(_arr, cls=False)"
 # English only, angle classifier off: exactly what worker.py builds. The
-# Paddle Hindi model and the cls model were preloaded here until #129 moved
-# Hindi to Tesseract and turned the classifier off; nothing ran them after.
+# Paddle Hindi model was preloaded here until #129 moved Hindi to Tesseract;
+# nothing loaded it after. (PaddleOCR's constructor still fetches the small
+# cls model even with use_angle_cls=False, so that one stays in the image.)
 
 COPY workers/ocr_worker/worker.py .
 # worker.py imports this as a bare module (`from layout_reconstruction
