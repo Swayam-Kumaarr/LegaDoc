@@ -27,7 +27,6 @@ export default function Judiciary() {
 
   const [selectedCaseId, setSelectedCaseId] = useState('');
   const [bailRecords, setBailRecords] = useState([]);
-  const [bailPathway, setBailPathway] = useState(null);
   const [counselEmail, setCounselEmail] = useState('');
   const [bailAlert, setBailAlert] = useState(null);
   const [bailDecision, setBailDecision] = useState(true);
@@ -84,22 +83,9 @@ export default function Judiciary() {
     }
   };
 
-  const fetchBailPathway = async (caseId) => {
-    if (!caseId) return;
-    try {
-      const data = await apiClient(`/cases/${caseId}/bail/pathway`);
-      setBailPathway(data?.statutory_pathway || null);
-    } catch (err) {
-      setBailPathway(null);
-    }
-  };
-
   useEffect(() => {
     if (selectedCaseId) {
       fetchBailRecords(selectedCaseId);
-      fetchBailPathway(selectedCaseId);
-    } else {
-      setBailPathway(null);
     }
   }, [selectedCaseId]);
 
@@ -292,61 +278,70 @@ export default function Judiciary() {
                     <strong>{(selectedCase.bail_status || 'No Bail Track').replace(/_/g, ' ')}</strong>
                   </p>
 
-                  {/* Statutory Pathway Guidance Box — fetched live from
-                      GET /cases/:id/bail/pathway, which matches the case's
-                      real crime_type against the 15-crime-type statutory
-                      taxonomy in bail_pathways.py. Falls back to the
-                      "General Cognizable Offense" entry server-side if the
-                      crime type has no dedicated statutory entry. */}
-                  {bailPathway ? (
-                    <div style={{
-                      background: 'var(--surface-sunken)',
-                      border: '1px solid var(--border-default)',
-                      borderRadius: '4px',
-                      padding: '12px',
-                      marginBottom: '16px',
-                      fontSize: '12px',
-                      lineHeight: '1.5'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                          Statutory Bail Classification ({bailPathway.crime_type}):
-                        </span>
-                        <span style={{
-                          fontWeight: 600,
-                          color: /non-bailable/i.test(bailPathway.bailable_status || '') ? '#b91c1c' : '#0369a1'
-                        }}>
-                          {bailPathway.bailable_status}
-                        </span>
-                      </div>
-                      <div style={{ color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                        <strong>Primary Statute:</strong> {bailPathway.primary_statute}
-                      </div>
-                      <div style={{ color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                        <strong>Applicable Sections:</strong> {bailPathway.applicable_sections}
-                      </div>
-                      <div style={{ color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                        <strong>Jurisdiction:</strong> {bailPathway.jurisdiction_court}
-                      </div>
-                      {Array.isArray(bailPathway.statutory_pathway) && bailPathway.statutory_pathway.length > 0 && (
-                        <div style={{ color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                          <strong>Statutory Pathway:</strong>
-                          <ol style={{ margin: '4px 0 0 18px', padding: 0 }}>
-                            {bailPathway.statutory_pathway.map((step, i) => (
-                              <li key={i}>{step}</li>
-                            ))}
-                          </ol>
+                  {/* The bail track as this system actually runs it.
+
+                      This box used to show a "Statutory Bail Classification"
+                      from api/app/bail_pathways.py: bailable or non-bailable,
+                      the primary statute, applicable sections, jurisdiction and
+                      "special conditions" for each of 15 crime types, presented
+                      to the bench as the confirmed statutory position. None of
+                      it had been reviewed by anyone able to stand behind it. It
+                      cited CrPC and IPC sections, both repealed on 1 July 2024,
+                      and listed invented "mandatory" bail conditions such as
+                      surrender of digital passwords and bank-guarantee
+                      execution. A magistrate does not need software to tell
+                      them whether an offence is bailable, and being told wrongly
+                      is worse than not being told.
+
+                      What is shown instead is backed by code: the stages
+                      routers/bail.py enforces, in the order it enforces them,
+                      with this case's position marked. */}
+                  {(() => {
+                    const stages = [
+                      ['Arrested', 'Arrest recorded'],
+                      ['Application_Filed', 'Bail application filed'],
+                      ['Hearing_Scheduled', 'Hearing scheduled'],
+                      ['Order_Issued', 'Order issued'],
+                      ['Surety_Registered', 'Surety registered'],
+                    ];
+                    const current = selectedCase.bail_status;
+                    const reached = stages.findIndex(([code]) => code === current);
+                    return (
+                      <div style={{
+                        background: 'var(--surface-sunken)',
+                        border: '1px solid var(--border-default)',
+                        borderRadius: '4px',
+                        padding: '12px',
+                        marginBottom: '16px',
+                        fontSize: '12px',
+                        lineHeight: '1.6'
+                      }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
+                          Bail track stages
                         </div>
-                      )}
-                      <div style={{ color: 'var(--text-secondary)' }}>
-                        <strong>Special Conditions:</strong> {bailPathway.special_conditions}
+                        {current === 'Denied_Final' && (
+                          <div style={{ color: '#b91c1c', fontWeight: 600, marginBottom: '6px' }}>
+                            Bail denied. The track ends here.
+                          </div>
+                        )}
+                        <ol style={{ margin: '0 0 0 18px', padding: 0 }}>
+                          {stages.map(([code, label], i) => (
+                            <li key={code} style={{
+                              color: i <= reached ? 'var(--text-primary)' : 'var(--text-secondary)',
+                              fontWeight: code === current ? 600 : 400,
+                            }}>
+                              {label}{code === current ? ' — current stage' : ''}
+                            </li>
+                          ))}
+                        </ol>
+                        <div style={{ color: 'var(--text-secondary)', marginTop: '6px' }}>
+                          Each stage opens only after the one before it. An application cannot be
+                          filed before an arrest is recorded, and a surety cannot be registered
+                          unless bail was granted.
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginBottom: '16px' }}>
-                      Loading statutory bail pathway…
-                    </p>
-                  )}
+                    );
+                  })()}
 
                   {bailAlert && (
                     <div className={`alert ${bailAlert.type === 'success' ? 'alert-success' : 'alert-error'}`}>{bailAlert.msg}</div>
