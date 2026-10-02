@@ -200,7 +200,7 @@ export default function PoliceInvestigation() {
         </div>
 
         <div className="domain-notice">
-          <strong>Security Standard (Audit Section 1.2 & 1.5):</strong> Access control is verified server-side on every request.
+          <strong>Access control:</strong> Access control is verified server-side on every request.
           Sensitive fields (complainant identity, phone numbers, addresses) are redacted at the server boundary before transmission.
         </div>
 
@@ -245,20 +245,20 @@ export default function PoliceInvestigation() {
                   value={crimeType}
                   onChange={(e) => setCrimeType(e.target.value)}
                 >
-                  <option value="Domestic Violence">Domestic Violence (Protection of Women / Sec 498A IPC)</option>
-                  <option value="Cybercrime">Cybercrime (IT Act / Financial Cyberfraud)</option>
-                  <option value="NDPS">NDPS (Narcotics & Psychotropic Substances)</option>
-                  <option value="Homicide">Homicide (BNS / Sec 302 IPC)</option>
-                  <option value="Financial Fraud">Financial Fraud & Money Laundering (PMLA)</option>
-                  <option value="Theft">Theft & Burglary (Sec 379/380 IPC)</option>
-                  <option value="Robbery">Armed Robbery & Dacoity (Sec 392 IPC)</option>
-                  <option value="Sexual Assault">Sexual Assault & Rape (Sec 376 IPC / POCSO)</option>
-                  <option value="Acid Attack">Acid Attack (Sec 326A IPC)</option>
-                  <option value="Road Accident">Road Accident & Rash Driving (Sec 279/304A IPC)</option>
-                  <option value="Public Corruption">Public Corruption & Bribery (PC Act)</option>
-                  <option value="Cyber Identity Theft">Cyber Identity Theft (Sec 66C IT Act)</option>
-                  <option value="Organized Crime">Organized Crime & Extortion (MCOCA / IPC 384)</option>
-                  <option value="Kidnapping">Kidnapping & Abduction (Sec 363/364A IPC)</option>
+                  <option value="Domestic Violence">Domestic Violence</option>
+                  <option value="Cybercrime">Cybercrime & Online Financial Fraud</option>
+                  <option value="NDPS">Narcotics & Psychotropic Substances</option>
+                  <option value="Homicide">Homicide</option>
+                  <option value="Financial Fraud">Financial Fraud & Money Laundering</option>
+                  <option value="Theft">Theft & Burglary</option>
+                  <option value="Robbery">Armed Robbery & Dacoity</option>
+                  <option value="Sexual Assault">Sexual Assault</option>
+                  <option value="Acid Attack">Acid Attack</option>
+                  <option value="Road Accident">Road Accident & Rash Driving</option>
+                  <option value="Public Corruption">Public Corruption & Bribery</option>
+                  <option value="Cyber Identity Theft">Cyber Identity Theft</option>
+                  <option value="Organized Crime">Organized Crime & Extortion</option>
+                  <option value="Kidnapping">Kidnapping & Abduction</option>
                   <option value="General Cognizable Offense">General Cognizable Offense</option>
                 </select>
               </div>
@@ -320,7 +320,7 @@ export default function PoliceInvestigation() {
                   <option value="Panchnama">Panchnama (Seizure / Scene of Crime)</option>
                   <option value="Forensic_Report">Forensic Analysis Report</option>
                   <option value="CCTV_Footage">Binary Media (CCTV / Phone Dump)</option>
-                  <option value="Witness_Statement">Witness Statement (Section 161)</option>
+                  <option value="Witness_Statement">Witness Statement</option>
                 </select>
               </div>
 
@@ -362,7 +362,7 @@ export default function PoliceInvestigation() {
 
         {/* Case Diary Section */}
         <div className="card">
-          <h2 className="card-title">Append Case Diary Entry (Section 172 CrPC / BNSS)</h2>
+          <h2 className="card-title">Append Case Diary Entry</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '12px' }}>
             Day-to-day chronological record of investigation. Append-only. Restricted to the assigned IO/SHO;
             routes through the redaction pipeline before other roles can view it.

@@ -40,7 +40,7 @@ export default function Dashboard() {
   const metrics = [
     { label: 'Total Cases', value: String(cases.length), sub: 'Visible under your current role' },
     { label: 'FIR Registered', value: String(cases.filter((c) => c.investigation_status === 'FIR_Registered').length), sub: 'Awaiting evidence collection' },
-    { label: 'Charge Sheet Filed', value: String(cases.filter((c) => c.investigation_status === 'Charge_Sheet_Filed').length), sub: 'Section 173 CrPC / BNSS 2023' },
+    { label: 'Charge Sheet Filed', value: String(cases.filter((c) => c.investigation_status === 'Charge_Sheet_Filed').length), sub: 'Final report submitted to court' },
     { label: 'In Trial or Judgment', value: String(cases.filter((c) => ['Trial', 'Judgment'].includes(c.investigation_status)).length), sub: 'Before the court' },
   ];
 
@@ -86,7 +86,7 @@ export default function Dashboard() {
                 My Cases
               </h2>
               <span className="text-caption">
-                Case dockets visible to this official identity under Section 156/157 CrPC
+                Case dockets visible to this account
               </span>
             </div>
             <Link to="/cases" className="text-caption" style={{ color: 'var(--color-primary)', fontWeight: 600, textDecoration: 'none' }}>

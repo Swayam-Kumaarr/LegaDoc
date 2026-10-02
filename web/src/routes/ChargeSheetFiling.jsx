@@ -52,7 +52,7 @@ export default function ChargeSheetFiling() {
       <div className="page-container">
         <div className="page-header">
           <div>
-            <h1 className="page-title">Charge Sheet Filing (Section 173 CrPC / BNSS)</h1>
+            <h1 className="page-title">Charge Sheet Filing</h1>
             <p className="page-desc">
               Filing is checked against this case's actual documents and evidence requests —
               the mandatory items for its crime type are defined server-side and verified live,

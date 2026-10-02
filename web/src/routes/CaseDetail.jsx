@@ -136,13 +136,13 @@ export default function CaseDetail() {
             Evidentiary Documents ({documents.length})
           </button>
           <button className={`gov-tab-btn ${activeTab === 'evidence' ? 'active' : ''}`} onClick={() => setActiveTab('evidence')}>
-            Section 91 Requisitions ({evidenceRequests.length})
+            Requisitions ({evidenceRequests.length})
           </button>
           <button className={`gov-tab-btn ${activeTab === 'bail' ? 'active' : ''}`} onClick={() => setActiveTab('bail')}>
             Bail Docket
           </button>
           <button className={`gov-tab-btn ${activeTab === 'diary' ? 'active' : ''}`} onClick={() => setActiveTab('diary')}>
-            Case Diary (Sec 172 CrPC)
+            Case Diary
           </button>
           <button className={`gov-tab-btn ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}>
             Audit Trail & Chain of Custody
@@ -187,7 +187,7 @@ export default function CaseDetail() {
         {activeTab === 'evidence' && (
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--color-border)' }}>
-              <span className="text-label">Section 91 CrPC Production Orders</span>
+              <span className="text-label">Requisitions to External Agencies</span>
             </div>
             <div className="table-container" style={{ border: 'none', borderRadius: 0 }}>
               <table className="data-table">
@@ -217,7 +217,7 @@ export default function CaseDetail() {
         {activeTab === 'bail' && (
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--color-border)' }}>
-              <span className="text-label">Bail Track (Section 437/439 CrPC)</span>
+              <span className="text-label">Bail Track</span>
             </div>
             <div className="table-container" style={{ border: 'none', borderRadius: 0 }}>
               <table className="data-table">
@@ -243,7 +243,7 @@ export default function CaseDetail() {
 
         {activeTab === 'diary' && (
           <div className="card">
-            <h3 className="card-title">Daily Police Diary of Proceedings (Section 172 CrPC)</h3>
+            <h3 className="card-title">Daily Diary of the Investigation</h3>
             {diaryRes.error ? (
               <p className="text-body" style={{ color: 'var(--color-status-error, #b91c1c)' }}>{diaryRes.error}</p>
             ) : diaryEntries.length === 0 ? (

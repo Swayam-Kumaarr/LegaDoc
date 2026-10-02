@@ -99,8 +99,12 @@ export default function ExternalAuthority() {
         </div>
 
         <div className="domain-notice">
-          <strong>Security Standard (Audit Section 1.8 & 2.0):</strong> Access is strictly restricted to
-          requisitions routed to your organization. You have no access to the broader case docket.
+          {/* Written as if every reader were an external lab. Oversight roles
+              (config admin, auditor, court, prosecutor, SHO) see the whole
+              registry here by design, so the sentence was false for them. */}
+          <strong>Access control:</strong> an account at an external organisation sees
+          only the requisitions routed to that organisation, and none of the wider case
+          docket. Oversight roles see every requisition.
         </div>
 
         {statusMessage && (

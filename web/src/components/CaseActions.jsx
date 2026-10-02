@@ -89,7 +89,7 @@ export default function CaseActions({ caseData, role, onChanged }) {
       () => apiClient(`/cases/${caseData.id}/evidence-requests`, {
         body: { requested_org_id: targetId, doc_type_expected: docType.trim() || null },
       }),
-      `Section 91 requisition sent to ${target ? target.name : 'the organisation'}.`,
+      `Requisition sent to ${target ? target.name : 'the organisation'}.`,
     );
   };
 
@@ -142,7 +142,7 @@ export default function CaseActions({ caseData, role, onChanged }) {
 
         {canRequisition && (
           <form onSubmit={handleRequisition}>
-            <label className="form-label" htmlFor="requisition-target">Raise Section 91 Requisition</label>
+            <label className="form-label" htmlFor="requisition-target">Raise Requisition</label>
             <select
               id="requisition-target"
               className="form-select"

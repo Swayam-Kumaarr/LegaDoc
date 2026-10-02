@@ -321,7 +321,7 @@ function MainLayout() {
                           <line x1="12" y1="8" x2="12" y2="12"></line>
                           <line x1="12" y1="16" x2="12.01" y2="16"></line>
                         </svg>
-                        <span>{t('nav_authority', 'Section 91 Requisitions')}</span>
+                        <span>{t('nav_authority', 'External Requisitions')}</span>
                       </NavLink>
                     </div>
                   )}
