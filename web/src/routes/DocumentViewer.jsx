@@ -143,7 +143,7 @@ export default function DocumentViewer() {
 
         {/* Security Rule Callout */}
         <div className="domain-notice">
-          <strong>Security Requirement (Section 6.5):</strong> Redacted spans are enforced server-side.
+          <strong>How redaction is applied:</strong> Redacted spans are enforced server-side.
           The browser renders solid unrevealed blocks with entity categorization. No underlying sensitive data is present in the DOM.
         </div>
 
