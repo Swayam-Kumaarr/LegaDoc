@@ -281,7 +281,9 @@ export default function Judiciary() {
                   {/* The bail track as this system actually runs it.
 
                       This box used to show a "Statutory Bail Classification"
-                      from api/app/bail_pathways.py: bailable or non-bailable,
+                      from a hardcoded table (bail_pathways.py, since deleted
+                      with its GET /cases/:id/bail/pathway endpoint): bailable
+                      or non-bailable,
                       the primary statute, applicable sections, jurisdiction and
                       "special conditions" for each of 15 crime types, presented
                       to the bench as the confirmed statutory position. None of
