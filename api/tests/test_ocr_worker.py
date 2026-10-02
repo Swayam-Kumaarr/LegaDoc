@@ -596,15 +596,14 @@ def test_fusion_keeps_latin_and_digits_from_paddleocr():
 
 def test_an_english_only_page_is_left_to_paddleocr_alone():
     """The Devanagari pass is a second opinion on Hindi, not a general
-    improvement. On the real Delhi FIR — English, 4 spurious Devanagari
-    detections out of 371 — Tesseract contributes only its own Latin-as-
-    Devanagari garbage ("हार" over "Act(s)"), so the page must not be fused
-    at all."""
+    improvement. On the real Delhi FIR — English — Tesseract finds only a
+    handful of one-to-three-glyph "words" forced onto Latin print ("हार" over
+    "Act(s)"), so the page must be neither masked nor fused."""
     paddle = _load_delhi_test_boxes()
     tess = _load_fixture_boxes("delhi_tesseract_hin_boxes.json")
 
-    assert layout_mod.page_is_bilingual(paddle) is False
-    assert layout_mod.page_is_bilingual(_load_fixture_boxes("haryana_paddle_boxes.json")) is True
+    assert layout_mod.is_devanagari_page(tess) is False
+    assert layout_mod.is_devanagari_page(_load_fixture_boxes("haryana_tesseract_hin_boxes.json")) is True
 
     unfused = layout_mod.process_ocr_boxes_to_layout(paddle)["reconstructed_text"]
     offered = layout_mod.process_ocr_boxes_to_layout(paddle, tess)["reconstructed_text"]
@@ -748,3 +747,181 @@ def test_sections_are_read_per_line_and_per_act():
     # A number printed before the Act name is not one of its sections; the
     # Section/s heading fallback still catches it.
     assert sections(["धाराएं: 379, 411 भा.दं.सं."]) == ["379"]
+
+
+# --- Bounded recognition: wide line crops are recognized in pieces ---------
+#
+# PaddleOCR's recognizer memory grows with a crop's width and is never given
+# back; the full-width lines of a dense FIR drove one OCR job to 4.9 GB. These
+# pin the cut planning and the merge; the memory effect itself is measured
+# with scripts/ocr_mem_probe.py (see _MAX_REC_RATIO in worker.py).
+
+def _ink_line(words, height=10, space=6, letter_gap=1, letter=4):
+    """Per-column ink counts for a line of words: letters `letter` columns
+    wide separated by `letter_gap` blank columns, words by `space`."""
+    ink = [0, 0]
+    for n in words:
+        for i in range(n):
+            ink += [height] * letter + ([0] * letter_gap if i < n - 1 else [])
+        ink += [0] * space
+    return ink[:-space] + [0, 0]
+
+
+def _pieces(width, cuts):
+    edges = [0] + [c for c, _ in cuts] + [width]
+    return [b - a for a, b in zip(edges, edges[1:])]
+
+
+def test_a_line_within_the_bound_is_not_cut():
+    ink = _ink_line([5, 5])
+    assert len(ink) < 14 * 10
+    assert ocr_worker.plan_line_cuts(ink, ink, 10, 14) == []
+
+
+def test_a_wide_line_is_cut_only_between_words_and_every_piece_is_bounded():
+    ink = _ink_line([6] * 20)                       # ~20 words, far wider than 14x
+    cuts = ocr_worker.plan_line_cuts(ink, ink, 10, 14)
+    assert cuts
+    assert all(w <= 14 * 10 for w in _pieces(len(ink), cuts))
+    for cut, gap in cuts:
+        assert ink[cut] == 0
+        assert gap == 6, "cut in a 1 px letter gap instead of a word gap"
+
+
+def test_an_underlined_heading_is_still_cut_at_its_word_gaps():
+    """The rule under a heading touches every column, so the full-height ink
+    has no gap; the middle band still shows the spaces between words."""
+    band = _ink_line([6] * 20)
+    full = [v + 1 for v in band]                   # the underline
+    cuts = ocr_worker.plan_line_cuts(band, full, 10, 14)
+    assert cuts and all(gap == 6 for _, gap in cuts)
+
+
+def test_a_line_with_no_gap_is_still_bounded():
+    """No blank column at all (e.g. a long unbroken identifier): the cut falls
+    on the emptiest column, flagged gap 0 so no space is inserted on rejoin."""
+    ink = [5] * 400
+    ink[200] = 1
+    cuts = ocr_worker.plan_line_cuts(ink, ink, 10, 14)
+    assert cuts and all(gap == 0 for _, gap in cuts)
+    assert all(w <= 14 * 10 for w in _pieces(len(ink), cuts))
+
+
+class _Crop:
+    def __init__(self, width):
+        self.shape = (10, width, 3)
+
+
+def test_bounded_recognizer_merges_pieces_back_into_one_reading(monkeypatch):
+    narrow, wide = _Crop(50), _Crop(900)
+    parts = {id(wide): [(_Crop(300), ""), (_Crop(300), " "), (_Crop(300), "")]}
+    monkeypatch.setattr(ocr_worker, "split_wide_crop", lambda c: parts.get(id(c), [(c, "")]))
+
+    readings = iter([("Time :", 0.99), ("Registered", 0.9), ("the case", 0.6), ("1124", 0.3)])
+    calls = []
+
+    def recognizer(crops):
+        calls.append(len(crops))
+        return [next(readings) for _ in crops], 0.1
+
+    merged, elapse = ocr_worker._BoundedRecognizer(recognizer)([narrow, wide])
+
+    assert calls == [4], "all pieces go to the model in one call"
+    assert merged[0] == ("Time :", 0.99), "a narrow line is passed through untouched"
+    text, score = merged[1]
+    # " " only where the cut was at a space-sized gap; "" keeps "the case1124"
+    # together the way an identifier cut mid-token must be.
+    assert text == "Registered the case1124"
+    assert score == pytest.approx((0.9 + 0.6 + 0.3) / 3)
+    assert elapse == 0.1
+
+
+# --- Hindi is masked out of the English pass (issue #107) ------------------
+#
+# Tesseract's `hin` pass runs first; on a page with real Hindi its words are
+# painted out of the image PaddleOCR's English engine reads, so there is no
+# Devanagari left for it to transliterate into Latin junk. Fixtures below are
+# that pipeline's real output on haryana_fir.jpg: the Tesseract words, and the
+# English boxes read from the masked page.
+
+def _masked_haryana():
+    return layout_mod.process_ocr_boxes_to_layout(
+        _load_fixture_boxes("haryana_masked_paddle_en_boxes.json"),
+        _load_fixture_boxes("haryana_masked_tesseract_hin_boxes.json"),
+    )
+
+
+def test_masked_english_pass_has_no_transliteration_junk():
+    text = _masked_haryana()["reconstructed_text"]
+    for junk in ("R4IuT", "4RT 154", "(4I)", "(fai)", "(ul T aoR)", "(a$)", "(fam)", "Laisrvrtint",
+                 "Ttn Perod", "lxry", "SEVCES", "SEATICES", "3QA44", "faftc", "iaaur", "Dccurtenct", "qfa anI"):
+        assert junk not in text, junk
+
+
+def test_masked_page_keeps_every_field_and_its_hindi():
+    res = _masked_haryana()
+    fields, text = res["fields"], res["reconstructed_text"]
+    assert fields["fir_number"] == "0380"
+    assert fields["district"] == "KURUKSHETRA"
+    assert fields["police_station"] == "SHAHABAD"
+    assert fields["year"] == "2017"
+    assert fields["registration_date"] == "24/07/2017"
+    assert fields["registration_time"] == "16:43 hrs"
+    assert fields["ipc_sections"] == ["IPC 380", "IPC 457"]
+    assert fields["type_of_information"] == "Written"
+
+    assert "HARYANA POLICE CITIZEN SERVICES (हरियाणा पुलिस नागरिक सेवा)" in text
+    # The statute number, read by the English pass once the Hindi around it
+    # is masked — the old Paddle Hindi pass read it as "15४".
+    assert "(धारा 154 दंड प्रक्रिया सहिंता के तहत)" in text
+    assert "P.S. (थाना): SHAHABAD" in text
+    assert "Year (वर्ष): 2017" in text, "a low-confidence bracketed gloss is kept, not left as a gap"
+    assert "Occurrence of offence" in text
+
+
+def test_bracketed_glosses_are_kept_at_a_lower_confidence():
+    words = [
+        {"text": "थाना", "confidence": 0.9, "box": [0, 0, 10, 10]},
+        {"text": "(वर्ष):", "confidence": 0.28, "box": [0, 0, 10, 10]},
+        {"text": "वर्ष", "confidence": 0.28, "box": [0, 0, 10, 10]},   # no bracket: not enough
+        {"text": "(ज़िला):", "confidence": 0.1, "box": [0, 0, 10, 10]},  # below even the gloss bar
+        {"text": "#88१%8॥4&", "confidence": 0.9, "box": [0, 0, 10, 10]},  # not a Devanagari word
+    ]
+    trusted, glosses = layout_mod.select_devanagari_words(words)
+    assert [w["text"] for w in trusted] == ["थाना"]
+    assert [w["text"] for w in glosses] == ["(वर्ष):"]
+
+
+def _hindi_words(n):
+    return [{"text": "थाना", "confidence": 0.9, "box": [10 * i, 0, 10 * i + 8, 10], "lang": "hi_tesseract"} for i in range(n)]
+
+
+def test_hindi_page_is_masked_before_the_english_pass(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ocr_worker, "preprocess_image_bytes", lambda b: b)
+    monkeypatch.setattr(ocr_worker, "run_tesseract_devanagari", lambda b: _hindi_words(12))
+    monkeypatch.setattr(ocr_worker, "mask_regions", lambda b, boxes: seen.setdefault("masked", len(boxes)) and b"MASKED")
+    monkeypatch.setattr(ocr_worker, "run_paddle_ocr", lambda b: seen.setdefault("paddle_input", b) and [
+        {"text": "P.S.", "confidence": 0.99, "box": [200, 0, 240, 10], "lang": "en"}])
+
+    res = ocr_worker.run_ocr_on_document_bytes(b"PAGE", "test")
+
+    assert seen["masked"] == 12
+    assert seen["paddle_input"] == b"MASKED"
+    assert res["engine_used"] == "paddleocr+tesseract_hin"
+    assert "थाना" in res["reconstructed_text"] and "P.S." in res["reconstructed_text"]
+
+
+def test_english_page_is_read_unmasked_and_unfused(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ocr_worker, "preprocess_image_bytes", lambda b: b)
+    monkeypatch.setattr(ocr_worker, "run_tesseract_devanagari", lambda b: _hindi_words(6))
+    monkeypatch.setattr(ocr_worker, "mask_regions", lambda b, boxes: pytest.fail("English page was masked"))
+    monkeypatch.setattr(ocr_worker, "run_paddle_ocr", lambda b: seen.setdefault("paddle_input", b) and [
+        {"text": "FIR NO: 035008", "confidence": 0.99, "box": [200, 0, 400, 10], "lang": "en"}])
+
+    res = ocr_worker.run_ocr_on_document_bytes(b"PAGE", "test")
+
+    assert seen["paddle_input"] == b"PAGE"
+    assert res["engine_used"] == "paddleocr"
+    assert "थाना" not in res["reconstructed_text"]

@@ -65,22 +65,41 @@ def normalize_devanagari_digits(text: str) -> str:
 # has_devanagari_letters.
 _DEVANAGARI_LETTER_RE = re.compile(r"[ऀ-॥॰-ॿ]")
 
-# How much of a page must read as Devanagari before the Tesseract pass is
-# worth fusing in. An English-only FIR produces a handful of spurious
-# Devanagari detections (4 of 371 boxes on the real Delhi fixture), and
-# fusing on that evidence only lets Tesseract's own Latin-as-Devanagari
-# garbage ("हार" over "Act(s)") into a page that was reading correctly.
-_BILINGUAL_MIN_BOXES = 8
-_BILINGUAL_MIN_RATIO = 0.10
+# A page is treated as bilingual when Tesseract's `hin` pass finds at least
+# this many trusted Devanagari words on it (is_devanagari_word, confidence
+# >= _TRUSTED_DEVANAGARI_CONFIDENCE). Measured on the committed scans: the
+# English-only Delhi FIR yields 6, all one-to-three-glyph fragments Tesseract
+# forces onto Latin print ("हार" over "Act(s)"); the bilingual Haryana FIR
+# yields 41, every one a real Hindi word. Fusing — or masking — on the Delhi
+# page's evidence would only damage text that was reading correctly.
+_DEVANAGARI_PAGE_MIN_WORDS = 12
+_TRUSTED_DEVANAGARI_CONFIDENCE = 0.5
+# A lower bar for a word that carries its own bracket: the forms print every
+# Hindi gloss in brackets after its English label ("Year (वर्ष):"), and
+# Tesseract reads those correctly but often with little confidence
+# ("(वर्ष):" 0.28, "(ज़िला):" 0.21). The bracket is the corroboration.
+_GLOSS_DEVANAGARI_CONFIDENCE = 0.2
 
 
-def page_is_bilingual(boxes: List[Dict[str, Any]]) -> bool:
-    """True when enough of the page reads as Devanagari to be worth a second,
-    Devanagari-specialist OCR pass. See _BILINGUAL_MIN_RATIO."""
-    if not boxes:
-        return False
-    dev = sum(1 for b in boxes if has_devanagari_letters(b.get("text", "")))
-    return dev >= _BILINGUAL_MIN_BOXES and dev / len(boxes) >= _BILINGUAL_MIN_RATIO
+def select_devanagari_words(tesseract_boxes: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Splits a Tesseract `hin` reading into (trusted words, bracketed glosses)
+    — the Devanagari this page is known to carry, and where it sits."""
+    trusted, glosses = [], []
+    for b in tesseract_boxes:
+        text = b.get("text", "")
+        if not is_devanagari_word(text):
+            continue
+        conf = float(b.get("confidence", 0.0))
+        if conf >= _TRUSTED_DEVANAGARI_CONFIDENCE:
+            trusted.append(b)
+        elif conf >= _GLOSS_DEVANAGARI_CONFIDENCE and ("(" in text or ")" in text):
+            glosses.append(b)
+    return trusted, glosses
+
+
+def is_devanagari_page(tesseract_boxes: List[Dict[str, Any]]) -> bool:
+    """True when the page carries real Hindi. See _DEVANAGARI_PAGE_MIN_WORDS."""
+    return len(select_devanagari_words(tesseract_boxes)[0]) >= _DEVANAGARI_PAGE_MIN_WORDS
 
 
 def strip_devanagari(text: str) -> str:
@@ -155,7 +174,7 @@ def fuse_devanagari_boxes(
         with high confidence: a region a Latin model is sure about is Latin,
         and this is where Tesseract's transliterated garbage lands.
 
-    Only called for pages that pass page_is_bilingual.
+    Only called for pages that pass is_devanagari_page.
     """
     dev = [
         b for b in tesseract_boxes
@@ -869,10 +888,13 @@ def process_ocr_boxes_to_layout(
     -> Bilingual Field Extraction.
 
     devanagari_boxes are Tesseract `hin` detections for the same page, used
-    only on a page that passes page_is_bilingual — see fuse_devanagari_boxes.
+    only on a page that passes is_devanagari_page — see fuse_devanagari_boxes.
+    The bracketed glosses select_devanagari_words picks out below the trusted
+    confidence are added as well: the worker masks them out of the English
+    pass (see worker.mask_regions), so this is the only reading they get.
     """
-    if devanagari_boxes and page_is_bilingual(raw_boxes):
-        raw_boxes = fuse_devanagari_boxes(raw_boxes, devanagari_boxes)
+    if devanagari_boxes and is_devanagari_page(devanagari_boxes):
+        raw_boxes = fuse_devanagari_boxes(raw_boxes, devanagari_boxes) + select_devanagari_words(devanagari_boxes)[1]
 
     filtered_boxes = drop_contained_duplicate_text(deduplicate_boxes_nms(raw_boxes))
     rows = reconstruct_layout_rows(filtered_boxes)

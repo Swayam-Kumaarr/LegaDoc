@@ -41,6 +41,17 @@ preprocessing upscale. Confirmed not configurable away: det_limit_side_len
 FLAGS_fraction_of_cpu_memory_to_use=0.1 each moved it by under 5%. Note the
 peak also drifts up as the cap does (4,793 at 5 GB, 4,911 at 6.5 GB), so read
 it as "needs roughly this much", not as a hard floor.
+
+What actually sets that peak is the widest line crops, not the region count:
+the recognizer's memory grows with a crop's width and is not returned, and
+dense forms are full of full-width lines. worker.py now recognizes any crop
+wider than OCR_MAX_REC_RATIO (14) x its height in pieces cut at word gaps,
+and no longer loads PaddleOCR's Hindi model at all: Tesseract `hin` runs
+first, its Hindi words are masked out of the English pass, and its reading
+is fused back in (#107). Same arm64 Mac, same 2.2 GB cap, pipeline mode:
+  haryana_fir.jpg   main 1,599 MiB / 38 s  ->  953 MiB / 14.5 s
+  delhi_fir.webp    main OOM               ->  989 MiB / 39 s
+Re-measure on x86_64 before lowering the mem_limits above.
 """
 
 import json

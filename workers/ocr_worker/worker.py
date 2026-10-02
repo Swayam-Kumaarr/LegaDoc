@@ -9,7 +9,7 @@ import io
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 from uuid import UUID
 
 # Adjust sys.path to locate api/app as a package
@@ -31,9 +31,9 @@ from app.database import SessionLocal
 from app.storage import get_storage
 
 try:
-    from layout_reconstruction import page_is_bilingual, process_ocr_boxes_to_layout
+    from layout_reconstruction import is_devanagari_page, process_ocr_boxes_to_layout, select_devanagari_words
 except ImportError:
-    from workers.ocr_worker.layout_reconstruction import page_is_bilingual, process_ocr_boxes_to_layout
+    from workers.ocr_worker.layout_reconstruction import is_devanagari_page, process_ocr_boxes_to_layout, select_devanagari_words
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ def _is_pdf(data: bytes) -> bool:
     return bool(data) and data[:5] == b"%PDF-"
 
 
-def pdf_bytes_to_page_images(pdf_bytes: bytes, dpi: int = 200) -> List[bytes]:
+def iter_pdf_page_images(pdf_bytes: bytes, dpi: int = 200) -> Iterator[bytes]:
     """Rasterizes each page of a PDF to PNG bytes via PyMuPDF — no external
     binary dependency (unlike pdf2image, which needs poppler installed
     separately), just a pip package. Confirmed live: a real submitted FIR
@@ -90,19 +90,20 @@ def pdf_bytes_to_page_images(pdf_bytes: bytes, dpi: int = 200) -> List[bytes]:
     returns None on non-raster bytes, so preprocessing was skipped
     unnoticed) and then failed both OCR engines outright, since neither
     PaddleOCR nor Tesseract reads a raw PDF as an image — every real PDF
-    upload was quietly failing OCR entirely, not just running degraded."""
+    upload was quietly failing OCR entirely, not just running degraded.
+
+    A generator: each page is rasterized only when the OCR loop reaches it,
+    so one page image is held at a time instead of all of them (up to
+    MAX_PDF_PAGES PNGs of a 200 dpi scan) for the whole job."""
     if not _HAS_PYMUPDF:
         raise RuntimeError("PyMuPDF not installed — cannot rasterize PDF pages for OCR")
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
-        images = []
         for i, page in enumerate(doc):
             if i >= MAX_PDF_PAGES:
                 logger.warning(f"PDF has more than {MAX_PDF_PAGES} pages — truncating OCR to the first {MAX_PDF_PAGES}")
                 break
-            pix = page.get_pixmap(dpi=dpi)
-            images.append(pix.tobytes("png"))
-        return images
+            yield page.get_pixmap(dpi=dpi).tobytes("png")
     finally:
         doc.close()
 
@@ -167,7 +168,8 @@ def run_ocr_on_document_bytes(data: bytes, log_label: str) -> Dict[str, Any]:
                 "page_count": page_count,
             }
 
-    page_images = pdf_bytes_to_page_images(data) if _is_pdf(data) else [data]
+    page_images = iter_pdf_page_images(data) if _is_pdf(data) else iter([data])
+    page_count = 0
 
     page_texts: List[str] = []
     row_count = 0
@@ -176,9 +178,27 @@ def run_ocr_on_document_bytes(data: bytes, log_label: str) -> Dict[str, Any]:
     engine_used = "paddleocr"
 
     for page_bytes in page_images:
+        page_count += 1
         processed_bytes = preprocess_image_bytes(page_bytes)
+
+        # Tesseract's `hin` pass runs first, on every page. It is cheap (1-5 s,
+        # ~470 MiB in its own process) and says where this page's Hindi is. On
+        # a page that has Hindi, those words are painted out before PaddleOCR
+        # reads it, so the English model never sees Devanagari and cannot
+        # transliterate it into Latin junk (issue #107); Tesseract's reading
+        # of them is fused back in by position. PaddleOCR's own Hindi model is
+        # no longer loaded: since #91 its Devanagari was discarded in favour
+        # of Tesseract's, and what was left of it — the page-is-bilingual
+        # signal and Latin residue — was the other source of the junk.
+        devanagari_boxes = run_tesseract_devanagari(processed_bytes)
+        hindi_page = is_devanagari_page(devanagari_boxes)
+        english_input = processed_bytes
+        if hindi_page:
+            trusted, glosses = select_devanagari_words(devanagari_boxes)
+            english_input = mask_regions(processed_bytes, [b["box"] for b in trusted + glosses])
+
         try:
-            raw_boxes = run_paddle_ocr(processed_bytes)
+            raw_boxes = run_paddle_ocr(english_input)
             page_engine = "paddleocr"
         except Exception as paddle_err:
             logger.warning(f"PaddleOCR failed for {log_label}, attempting Tesseract fallback: {paddle_err}")
@@ -190,16 +210,11 @@ def run_ocr_on_document_bytes(data: bytes, log_label: str) -> Dict[str, Any]:
                 continue  # skip this page rather than failing the whole document
         if page_engine == "tesseract_fallback":
             engine_used = "tesseract_fallback"  # any page needing fallback marks the whole document
-
-        # A bilingual page gets a second, Devanagari-only reading fused in;
-        # Paddle's Hindi output is not usable on its own (issue #91). Skipped
-        # on an English page — the gate is in page_is_bilingual — and on the
-        # fallback path, which is already Tesseract.
-        devanagari_boxes = None
-        if page_engine == "paddleocr" and page_is_bilingual(raw_boxes):
-            devanagari_boxes = run_tesseract_devanagari(processed_bytes)
-            if devanagari_boxes:
-                engine_used = "paddleocr+tesseract_hin"
+            devanagari_boxes = None  # the fallback read the unmasked page in hin+eng already
+        elif hindi_page:
+            engine_used = "paddleocr+tesseract_hin"
+        else:
+            devanagari_boxes = None
 
         layout = process_ocr_boxes_to_layout(raw_boxes, devanagari_boxes)
         if first_layout is None:
@@ -216,7 +231,7 @@ def run_ocr_on_document_bytes(data: bytes, log_label: str) -> Dict[str, Any]:
         "token_count": token_count,
         "template": first_layout["template"] if first_layout else "unknown",
         "fields": first_layout["fields"] if first_layout else {},
-        "page_count": len(page_images),
+        "page_count": page_count,
     }
 
 
@@ -263,7 +278,6 @@ def preprocess_image_bytes(image_bytes: bytes) -> bytes:
 
 # Module-level cached OCR engines (Issue #37)
 _OCR_EN = None
-_OCR_HI = None
 
 # PaddleOCR defaults to 10 CPU threads and recognition batches of 6, and every
 # thread keeps its own working buffers. Measured on one 768x1024 FIR scan with
@@ -276,84 +290,217 @@ _OCR_CPU_THREADS = int(os.environ.get("OCR_CPU_THREADS", "2"))
 _OCR_REC_BATCH_NUM = int(os.environ.get("OCR_REC_BATCH_NUM", "1"))
 
 
-def get_paddle_ocr_engines():
-    """Initializes and caches PaddleOCR engines for English and Hindi.
-    Explicitly loads and validates Hindi language model (PP-OCR Devanagari) to prevent
-    silent fallback to English weights.
+# Widest line crop, as width/height, handed to the recognizer in one piece.
+# The PP-OCR recognizers resize every crop to a fixed 48 px height and keep
+# its aspect ratio, and their memory grows with the resulting width and is
+# never returned. Measured on the Delhi FIR (768x1024, English pass alone):
+# crops up to ~320 px wide add nothing over detection, but the full-width
+# form lines (ratio 20-53, 1,000-2,500 px) take the process from 733 MiB to
+# 1,846 MiB — they, not the page size or the number of lines, set the peak.
+#
+# 14 is measured, not picked. The whole OCR job (both Paddle passes and
+# Tesseract) peaked at 1,213 MiB on the Haryana FIR and 1,235 MiB on Delhi,
+# against 2,717 and 4,911 before, with every extracted field unchanged. 10
+# held both near 1,050 MiB but cut often enough to split the transliterated
+# Hindi glosses issue #107 relies on finding in one piece, and a header's
+# Latin junk and `type_of_information` came back. 18 kept the text but let
+# Delhi back up to 1,527 MiB.
+_MAX_REC_RATIO = float(os.environ.get("OCR_MAX_REC_RATIO", "14"))
+
+
+def _blank_runs(ink: List[int]) -> List[tuple]:
+    """(start, end) runs of columns whose ink count is zero."""
+    runs, start = [], None
+    for x, v in enumerate(ink):
+        if v == 0 and start is None:
+            start = x
+        elif v != 0 and start is not None:
+            runs.append((start, x))
+            start = None
+    return runs
+
+
+def plan_line_cuts(band_ink: List[int], full_ink: List[int], height: int, max_ratio: float) -> List[tuple]:
+    """Where to cut a line crop so no piece is wider than max_ratio * height.
+
+    band_ink / full_ink are per-column counts of ink pixels, over the middle
+    band of rows and over the whole height. Returns [(column, gap_width)].
+
+    Each cut goes in the widest ink-free gap of its window, read from the
+    middle band so an underlined heading, whose rule touches every column,
+    still shows the gaps between its words. That is the space between words,
+    not the 1-2 px between letters. gap_width is 0 when a window has no gap
+    at all and the cut falls on its emptiest column instead — the bound on
+    piece width is what keeps memory flat, so it always holds.
     """
-    global _OCR_EN, _OCR_HI
+    w = len(full_ink)
+    limit = max_ratio * height
+    if height <= 0 or w <= limit:
+        return []
+    runs = [(a, b) for a, b in _blank_runs(band_ink) if a > 0 and b < w]
+    cuts, x = [], 0
+    while w - x > limit:
+        lo, hi = x + 2 * height, x + limit
+        window = [(a, b) for a, b in runs if lo < (a + b) / 2 <= hi]
+        if window:
+            a, b = max(window, key=lambda r: (r[1] - r[0], r[0]))
+            cut, gap = (a + b) // 2, b - a
+        else:
+            lo_i, hi_i = int(lo), int(hi)
+            span = full_ink[lo_i:hi_i]
+            cut, gap = lo_i + span.index(min(span)), 0
+        cuts.append((cut, gap))
+        x = cut
+    return cuts
+
+
+def split_wide_crop(crop) -> List[tuple]:
+    """Splits a line crop wider than _MAX_REC_RATIO into pieces for the
+    recognizer; returns [(piece, joiner)], joiner being the text that goes
+    before that piece's reading when the line is put back together.
+
+    A piece is joined back with a space only when it was cut at a
+    space-sized gap, so an identifier with no spaces ("DL3SDF1124",
+    "JF32AAFG037425") that had to be cut comes back without one.
+    """
+    h, w = crop.shape[:2]
+    if h <= 0 or w <= _MAX_REC_RATIO * h:
+        return [(crop, "")]
+    gray = crop.mean(axis=2) if crop.ndim == 3 else crop
+    dark = gray < 128
+    band = dark[int(0.15 * h): max(int(0.85 * h), int(0.15 * h) + 1)]
+    cuts = plan_line_cuts(band.sum(axis=0).tolist(), dark.sum(axis=0).tolist(), h, _MAX_REC_RATIO)
+
+    pieces, x, joiner = [], 0, ""
+    for cut, gap in cuts:
+        pieces.append((crop[:, x:cut], joiner))
+        joiner = " " if gap >= 0.25 * h else ""
+        x = cut
+    pieces.append((crop[:, x:], joiner))
+    return pieces
+
+
+class _BoundedRecognizer:
+    """Wraps a PaddleOCR engine's text recognizer so no crop wider than
+    _MAX_REC_RATIO reaches the model (see _MAX_REC_RATIO).
+
+    Everything else in the engine — detection, rotated cropping, the angle
+    classifier, reading order, the drop-score filter, the result format — is
+    PaddleOCR's own, so a line narrower than the bound is recognized exactly
+    as before. A wider one is recognized piece by piece and returned as one
+    reading, scored by the pieces' width-weighted confidence.
+    """
+
+    def __init__(self, recognizer):
+        self._recognizer = recognizer
+
+    def __call__(self, img_crop_list):
+        plan, flat = [], []
+        for crop in img_crop_list:
+            pieces = split_wide_crop(crop)
+            plan.append([(len(flat) + i, joiner, piece.shape[1]) for i, (piece, joiner) in enumerate(pieces)])
+            flat.extend(piece for piece, _ in pieces)
+
+        results, elapse = self._recognizer(flat)
+
+        merged = []
+        for parts in plan:
+            if len(parts) == 1:
+                merged.append(results[parts[0][0]])
+                continue
+            text, weighted, width = "", 0.0, 0
+            for idx, joiner, piece_w in parts:
+                piece_text, score = results[idx][0], float(results[idx][1])
+                if piece_text.strip():
+                    text += (joiner if text else "") + piece_text.strip()
+                weighted += score * piece_w
+                width += piece_w
+            merged.append((text, weighted / width if width else 0.0))
+        return merged, elapse
+
+
+def get_paddle_ocr_engine():
+    """Initializes and caches the PaddleOCR English engine.
+
+    English only: Devanagari is read by Tesseract (run_tesseract_devanagari)
+    and masked out of this engine's input — see run_ocr_on_document_bytes.
+
+    No angle classifier. Its job is to flip text it thinks is upside down,
+    and on these upright scans it flipped small print instead: "Time From"
+    on the Haryana FIR came back as "mog #!L". Dropping it also skips one
+    model per line.
+    """
+    global _OCR_EN
     if not _HAS_PADDLE:
         raise RuntimeError("PaddleOCR engine not installed")
 
-    engine_kwargs = {
-        "use_angle_cls": True,
-        "show_log": False,
-        "cpu_threads": _OCR_CPU_THREADS,
-        "rec_batch_num": _OCR_REC_BATCH_NUM,
-    }
-
     if _OCR_EN is None:
         logger.info("Initializing PaddleOCR English model (lang='en')...")
-        _OCR_EN = PaddleOCR(lang="en", **engine_kwargs)
+        _OCR_EN = PaddleOCR(
+            lang="en",
+            use_angle_cls=False,
+            show_log=False,
+            cpu_threads=_OCR_CPU_THREADS,
+            rec_batch_num=_OCR_REC_BATCH_NUM,
+        )
+        _OCR_EN.text_recognizer = _BoundedRecognizer(_OCR_EN.text_recognizer)
 
-    if _OCR_HI is None:
-        logger.info("Initializing PaddleOCR Hindi model (lang='hi')...")
-        try:
-            _OCR_HI = PaddleOCR(lang="hi", **engine_kwargs)
-        except Exception as exc:
-            logger.error(f"Failed to load PaddleOCR Hindi language pack: {exc}")
-            raise RuntimeError(f"PaddleOCR Hindi language pack failed to initialize: {exc}")
+    return _OCR_EN
 
-    return _OCR_EN, _OCR_HI
+
+def mask_regions(image_bytes: bytes, boxes: List[List[int]]) -> bytes:
+    """Paints the given [x1, y1, x2, y2] regions white, so the English engine
+    reads the page as if they were blank. Returns the input unchanged if it
+    cannot be decoded."""
+    if not _HAS_CV2 or not boxes:
+        return image_bytes
+    img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return image_bytes
+    for x1, y1, x2, y2 in boxes:
+        cv2.rectangle(img, (int(x1) - 1, int(y1) - 1), (int(x2) + 1, int(y2) + 1), (255, 255, 255), -1)
+    ok, encoded = cv2.imencode(".png", img)
+    return encoded.tobytes() if ok else image_bytes
 
 
 def run_paddle_ocr(image_bytes: bytes) -> List[Dict[str, Any]]:
-    """Runs PaddleOCR on image bytes with explicit Hindi and English models:
-    [{"text": str, "confidence": float, "box": [x1, y1, x2, y2], "lang": str}, ...]
+    """Runs PaddleOCR's English engine on image bytes:
+    [{"text": str, "confidence": float, "box": [x1, y1, x2, y2], "lang": "en"}, ...]
     """
-    ocr_en, ocr_hi = get_paddle_ocr_engines()
+    ocr_en = get_paddle_ocr_engine()
 
     import tempfile
     with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
         tmp.write(image_bytes)
         tmp.flush()
-
-        # Run Hindi engine (covers Devanagari script, numerals, and bilingual headers)
-        res_hi = ocr_hi.ocr(tmp.name, cls=True)
-        # Run English engine (covers Latin script and English legal terms)
-        res_en = ocr_en.ocr(tmp.name, cls=True)
+        result = ocr_en.ocr(tmp.name, cls=False)
 
     words = []
-    # Place Hindi results first so Devanagari glyphs take precedence
-    for result_set, lang in ((res_hi, "hi"), (res_en, "en")):
-        if result_set and result_set[0]:
-            for line in result_set[0]:
-                box_pts = line[0]
-                text = line[1][0]
-                score = float(line[1][1])
-
-                x1 = int(min(p[0] for p in box_pts))
-                y1 = int(min(p[1] for p in box_pts))
-                x2 = int(max(p[0] for p in box_pts))
-                y2 = int(max(p[1] for p in box_pts))
-
-                words.append({
-                    "text": text,
-                    "confidence": score,
-                    "box": [x1, y1, x2, y2],
-                    "lang": lang,
-                })
+    if result and result[0]:
+        for line in result[0]:
+            box_pts = line[0]
+            words.append({
+                "text": line[1][0],
+                "confidence": float(line[1][1]),
+                "box": [
+                    int(min(p[0] for p in box_pts)),
+                    int(min(p[1] for p in box_pts)),
+                    int(max(p[0] for p in box_pts)),
+                    int(max(p[1] for p in box_pts)),
+                ],
+                "lang": "en",
+            })
 
     return words
 
 
 def run_tesseract_devanagari(image_bytes: bytes) -> List[Dict[str, Any]]:
-    """Word-level Tesseract `hin` detections, used only to supply the
-    Devanagari half of a bilingual page (see fuse_devanagari_boxes).
+    """Word-level Tesseract `hin` detections: where a page's Hindi is (to mask
+    it out of the English pass) and what it says (fused back in by
+    fuse_devanagari_boxes). See run_ocr_on_document_bytes.
 
-    This is not a fallback — Paddle succeeded. It runs as a second opinion on
-    the script Paddle reads worst, and returns [] on any failure so a page
-    still gets its Paddle reading.
+    Not the fallback engine. Returns [] on any failure, which leaves the page
+    to be read as English, unmasked.
     """
     if not _HAS_TESSERACT or not _HAS_PIL:
         return []
