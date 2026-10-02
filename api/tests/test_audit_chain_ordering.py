@@ -113,3 +113,76 @@ def test_streamed_chain_check_still_stops_at_a_tampered_row(db_session, make_org
     assert result["chain_intact"] is False
     assert result["total_entries"] == 9
     assert result["latest_hash"] is None
+
+
+# --- The per-request check is incremental -----------------------------------
+#
+# chain_intact_for_request verifies the last row it vouched for plus every
+# row since, and walks everything at most every AUDIT_FULL_VERIFY_SECONDS.
+
+def _write(db_session, user, n, start=0):
+    return [write_audit_log(db_session, action=f"inc{start + i}", actor_user_id=user.id, metadata={"i": start + i})
+            for i in range(n)]
+
+
+def test_incremental_check_agrees_with_the_full_walk_as_the_chain_grows(db_session, make_org, make_user):
+    from app import audit
+    user = make_user("io", org=make_org())
+    _write(db_session, user, 5)
+    assert audit.chain_intact_for_request(db_session) is True     # first call: full walk
+    _write(db_session, user, 4, start=5)
+    assert audit.chain_intact_for_request(db_session) is True     # only the 4 new rows
+    assert verify_chain_intact(db_session) is True
+
+
+def test_tampering_with_a_new_row_is_caught_on_the_next_request(db_session, make_org, make_user):
+    from app import audit, models
+    user = make_user("io", org=make_org())
+    _write(db_session, user, 3)
+    assert audit.chain_intact_for_request(db_session) is True
+    new_rows = _write(db_session, user, 3, start=3)
+    db_session.query(models.AuditLog).filter(models.AuditLog.id == new_rows[1].id).update({"action": "forged"})
+    db_session.commit()
+
+    assert audit.chain_intact_for_request(db_session) is False
+    assert audit.chain_intact_for_request(db_session) is False, "a broken chain stays reported broken"
+
+
+def test_tampering_with_the_checkpoint_row_is_caught_on_the_next_request(db_session, make_org, make_user):
+    from app import audit, models
+    user = make_user("io", org=make_org())
+    rows = _write(db_session, user, 4)
+    assert audit.chain_intact_for_request(db_session) is True
+    db_session.query(models.AuditLog).filter(models.AuditLog.id == rows[-1].id).update({"action_metadata": {"i": 99}})
+    db_session.commit()
+    assert audit.chain_intact_for_request(db_session) is False
+
+
+def test_a_deleted_new_row_is_caught_by_the_seq_gap(db_session, make_org, make_user):
+    from app import audit, models
+    user = make_user("io", org=make_org())
+    _write(db_session, user, 2)
+    assert audit.chain_intact_for_request(db_session) is True
+    new_rows = _write(db_session, user, 3, start=2)
+    db_session.query(models.AuditLog).filter(models.AuditLog.id == new_rows[1].id).delete()
+    db_session.commit()
+    assert audit.chain_intact_for_request(db_session) is False
+
+
+def test_tampering_with_an_older_row_is_caught_by_the_next_full_walk(db_session, make_org, make_user, monkeypatch):
+    """The trade this check makes: an edit behind the checkpoint is not seen
+    until the next full walk — at most AUDIT_FULL_VERIFY_SECONDS later — while
+    the full check (and the Config Admin chain-integrity endpoint) sees it at
+    once."""
+    from app import audit, models
+    user = make_user("io", org=make_org())
+    rows = _write(db_session, user, 6)
+    assert audit.chain_intact_for_request(db_session) is True
+    db_session.query(models.AuditLog).filter(models.AuditLog.id == rows[1].id).update({"action": "forged"})
+    db_session.commit()
+
+    assert verify_chain_intact(db_session) is False
+    assert audit.chain_intact_for_request(db_session) is True          # inside the window
+
+    monkeypatch.setattr(audit, "AUDIT_FULL_VERIFY_SECONDS", 0)          # window elapsed
+    assert audit.chain_intact_for_request(db_session) is False

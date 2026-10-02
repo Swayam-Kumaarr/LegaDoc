@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.audit import verify_case_chain_integrity, verify_chain_intact, write_audit_log
+from app.audit import chain_intact_for_request, verify_case_chain_integrity, write_audit_log
 from app.database import get_db
 from app.rate_limit import ai_parser_limiter
 from app.security import (
@@ -70,7 +70,7 @@ def get_audit_log(
 
     assert_case_access(case_uuid, claims, db)
 
-    chain_intact = verify_chain_intact(db)
+    chain_intact = chain_intact_for_request(db)
     user_role = claims.get("role")
 
     if user_role in FULL_AUDIT_ROLES:
