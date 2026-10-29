@@ -20,4 +20,4 @@ httpx==0.28.1
 # so leaving it undeclared turned `docker exec legadoc-api-1 pytest` — the
 # command CLAUDE.md documents — into zero tests executed rather than one file
 # skipped. Version-matched to workers/ocr_worker/requirements.txt.
-pymupdf==1.28.2
+pymupdf==2.0
